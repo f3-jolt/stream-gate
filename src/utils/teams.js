@@ -35,4 +35,12 @@ function getTeamByAbbrev(abbrev) {
   return getTeams().find(t => t.abbrev.toUpperCase() === abbrev.toUpperCase()) || null;
 }
 
-module.exports = { getTeams, searchTeams, getTeamByAbbrev, invalidateTeamsCache, TEAMS_JSON_PATH };
+function searchCustomTeams(query) {
+  const q = query.toUpperCase();
+  return getTeams()
+    .filter(t => t.conference === 'Custom' && (t.name.toUpperCase().includes(q) || t.abbrev.toUpperCase().includes(q)))
+    .slice(0, 25)
+    .map(t => ({ name: t.name, value: t.abbrev }));
+}
+
+module.exports = { getTeams, searchTeams, searchCustomTeams, getTeamByAbbrev, invalidateTeamsCache, TEAMS_JSON_PATH };

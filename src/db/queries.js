@@ -237,6 +237,30 @@ function clearExpiredPendingRoutes() {
   return db.prepare("DELETE FROM pending_routes WHERE expires_at <= datetime('now')").run();
 }
 
+function updateUserPlatformUsername(discordId, platform, newUsername) {
+  const user = db.prepare('SELECT id FROM users WHERE discord_id = ?').get(discordId);
+  if (!user) throw new Error(`User ${discordId} not found`);
+  return db.prepare(
+    'UPDATE user_platforms SET platform_username = ?, platform_user_id = NULL, subscription_id = NULL WHERE user_id = ? AND platform = ?'
+  ).run(newUsername.toLowerCase(), user.id, platform);
+}
+
+function getLastStreams(discordId, limit = 3) {
+  return db.prepare(`
+    SELECT sp.platform, sp.platform_stream_id, sp.stream_title, sp.posted_at,
+           l.name AS league_name, l.abbr AS league_abbr
+    FROM stream_posts sp
+    JOIN leagues l ON l.id = sp.league_id
+    WHERE sp.discord_user_id = ?
+    ORDER BY sp.posted_at DESC
+    LIMIT ?
+  `).all(discordId, limit);
+}
+
+function getUserByDiscordUsername(username) {
+  return db.prepare("SELECT * FROM users WHERE discord_username LIKE ?").get(`%${username}%`);
+}
+
 // ── Health stats (per-guild) ──────────────────────────────────────────────────
 
 function getHealthStats(guildId) {
@@ -284,6 +308,9 @@ module.exports = {
   addLeague,
   updateLeague,
   getUsersInLeague,
+  updateUserPlatformUsername,
+  getLastStreams,
+  getUserByDiscordUsername,
   checkStreamPost,
   checkRecentStreamPostByTitle,
   saveStreamPost,

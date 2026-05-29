@@ -11,6 +11,8 @@ const {
   addLeague,
   updateLeague,
   addUserToLeague,
+  updateUserPlatformUsername,
+  getLastStreams,
   removeUserFromLeague,
   addUserPlatform,
   removeUserPlatform,
@@ -22,7 +24,7 @@ const {
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
-const { searchTeams, getTeamByAbbrev, invalidateTeamsCache, TEAMS_JSON_PATH } = require('../../utils/teams');
+const { searchTeams, searchCustomTeams, getTeamByAbbrev, invalidateTeamsCache, TEAMS_JSON_PATH } = require('../../utils/teams');
 const logger = require('../../utils/logger');
 
 // Admin check: server owner, MANAGE_GUILD permission, or configured admin role
@@ -123,6 +125,55 @@ module.exports = {
         .addStringOption(o => o.setName('url').setDescription('Override stream URL (skips live lookup)').setRequired(false))
         .addStringOption(o => o.setName('title').setDescription('Override stream title').setRequired(false))
     )
+    // edituser
+    .addSubcommand(sub =>
+      sub.setName('edituser')
+        .setDescription('Edit a user\'s platform, username, or team assignment in a league')
+        .addUserOption(o => o.setName('user').setDescription('Discord user').setRequired(true))
+        .addStringOption(o => o.setName('league').setDescription('League').setRequired(true).setAutocomplete(true))
+        .addStringOption(o => o.setName('platform').setDescription('Change platform').setRequired(false)
+          .addChoices({ name: 'Twitch', value: 'twitch' }, { name: 'YouTube', value: 'youtube' }))
+        .addStringOption(o => o.setName('username').setDescription('New platform username').setRequired(false))
+        .addStringOption(o => o.setName('team').setDescription('New team').setRequired(false).setAutocomplete(true))
+    )
+    // editteam
+    .addSubcommand(sub =>
+      sub.setName('editteam')
+        .setDescription('Edit a team\'s details')
+        .addStringOption(o => o.setName('team').setDescription('Team to edit').setRequired(true).setAutocomplete(true))
+        .addStringOption(o => o.setName('name').setDescription('New team name').setRequired(false))
+        .addStringOption(o => o.setName('mascot').setDescription('New mascot').setRequired(false))
+        .addStringOption(o => o.setName('abbreviation').setDescription('New abbreviation').setRequired(false))
+        .addStringOption(o => o.setName('primary_color').setDescription('New primary hex color').setRequired(false))
+        .addStringOption(o => o.setName('secondary_color').setDescription('New secondary hex color').setRequired(false))
+        .addStringOption(o => o.setName('conference').setDescription('New conference').setRequired(false))
+        .addAttachmentOption(o => o.setName('logo').setDescription('New logo image').setRequired(false))
+    )
+    // editcustomteam
+    .addSubcommand(sub =>
+      sub.setName('editcustomteam')
+        .setDescription('Edit a custom team\'s details')
+        .addStringOption(o => o.setName('team').setDescription('Custom team to edit').setRequired(true).setAutocomplete(true))
+        .addStringOption(o => o.setName('name').setDescription('New team name').setRequired(false))
+        .addStringOption(o => o.setName('mascot').setDescription('New mascot').setRequired(false))
+        .addStringOption(o => o.setName('abbreviation').setDescription('New abbreviation').setRequired(false))
+        .addStringOption(o => o.setName('primary_color').setDescription('New primary hex color').setRequired(false))
+        .addStringOption(o => o.setName('secondary_color').setDescription('New secondary hex color').setRequired(false))
+        .addAttachmentOption(o => o.setName('logo').setDescription('New logo image').setRequired(false))
+    )
+    // removeuser
+    .addSubcommand(sub =>
+      sub.setName('removeuser')
+        .setDescription('Remove a user from a league')
+        .addUserOption(o => o.setName('user').setDescription('Discord user').setRequired(true))
+        .addStringOption(o => o.setName('league').setDescription('League').setRequired(true).setAutocomplete(true))
+    )
+    // last3streams
+    .addSubcommand(sub =>
+      sub.setName('last3streams')
+        .setDescription('Show the last 3 posted streams for a user')
+        .addUserOption(o => o.setName('user').setDescription('Discord user').setRequired(true))
+    )
     // changeteam
     .addSubcommand(sub =>
       sub.setName('changeteam')
@@ -147,7 +198,11 @@ module.exports = {
     const focused = interaction.options.getFocused(true);
 
     if (focused.name === 'team') {
-      return interaction.respond(searchTeams(focused.value));
+      const sub = interaction.options.getSubcommand(false);
+      const results = sub === 'editcustomteam'
+        ? searchCustomTeams(focused.value)
+        : searchTeams(focused.value);
+      return interaction.respond(results);
     }
 
     if (focused.name === 'platform') {
@@ -190,6 +245,11 @@ module.exports = {
       case 'users':        return handleUsers(interaction);
       case 'health':       return handleHealth(interaction);
       case 'announce':        return handleAnnounce(interaction);
+      case 'edituser':        return handleEditUser(interaction);
+      case 'editteam':        return handleEditTeam(interaction);
+      case 'editcustomteam':  return handleEditCustomTeam(interaction);
+      case 'removeuser':      return handleRemoveUser(interaction);
+      case 'last3streams':    return handleLast3Streams(interaction);
       case 'changeteam':      return handleAdminChangeTeam(interaction);
       case 'addcustomteam':   return handleAddCustomTeam(interaction);
       default:
@@ -685,4 +745,250 @@ async function handleEditLeague(interaction) {
   updateLeague(league.id, updates);
   logger.info('League updated', { adminId: interaction.user.id, leagueId: league.id, updates });
   await interaction.editReply({ content: `League **${league.name}** updated:\n${notes.join('\n')}` });
+}
+
+async function handleEditUser(interaction) {
+  await interaction.deferReply({ flags: 64 });
+
+  const targetUser  = interaction.options.getUser('user');
+  const leagueAbbr  = interaction.options.getString('league').toUpperCase();
+  const newPlatform = interaction.options.getString('platform');
+  const newUsername = interaction.options.getString('username');
+  const teamAbbrev  = interaction.options.getString('team')?.toUpperCase();
+
+  const league = getLeagueByAbbr(interaction.guildId, leagueAbbr);
+  if (!league) return interaction.editReply({ content: `League **${leagueAbbr}** not found.` });
+
+  if (!newPlatform && !newUsername && !teamAbbrev) {
+    return interaction.editReply({ content: 'No changes provided. Pass at least one option to update.' });
+  }
+
+  const notes = [];
+  try {
+    if (newUsername || newPlatform) {
+      const platforms = getUserPlatforms(targetUser.id);
+      const platform = newPlatform || platforms[0]?.platform;
+      if (!platform) return interaction.editReply({ content: `<@${targetUser.id}> has no registered platform to update.` });
+
+      if (newUsername) {
+        updateUserPlatformUsername(targetUser.id, platform, newUsername);
+        notes.push(`**${platform}** username changed to \`${newUsername}\``);
+
+        if (platform === 'youtube' && process.env.YOUTUBE_API_KEY) {
+          const { getChannelIdByHandle, subscribeToChannel } = require('../../platforms/youtube/api');
+          const { updateSubscriptionId, updatePlatformUserId } = require('../../db/queries');
+          const channelId = await getChannelIdByHandle(newUsername);
+          if (channelId) {
+            await subscribeToChannel(channelId);
+            updateSubscriptionId('youtube', newUsername, channelId);
+            updatePlatformUserId('youtube', newUsername, channelId);
+            notes.push(`YouTube subscription updated`);
+          }
+        }
+      }
+    }
+
+    if (teamAbbrev) {
+      const team = getTeamByAbbrev(teamAbbrev);
+      if (!team) return interaction.editReply({ content: `Team **${teamAbbrev}** not found.` });
+      addUserToLeague(targetUser.id, league.id, interaction.user.id, team.name, team.abbrev);
+      notes.push(`Team changed to **${team.name}**`);
+    }
+
+    logger.info('Admin edited user', { adminId: interaction.user.id, targetId: targetUser.id, league: leagueAbbr });
+    await interaction.editReply({ content: `<@${targetUser.id}> updated in **${league.name}**:\n${notes.join('\n')}` });
+  } catch (err) {
+    logger.error('edituser error', { error: err.message });
+    await interaction.editReply({ content: `Failed: ${err.message}` });
+  }
+}
+
+async function handleEditTeam(interaction) {
+  await interaction.deferReply({ flags: 64 });
+
+  const teamAbbrev    = interaction.options.getString('team').toUpperCase();
+  const newName       = interaction.options.getString('name')?.trim();
+  const newMascot     = interaction.options.getString('mascot')?.trim();
+  const newAbbrev     = interaction.options.getString('abbreviation')?.trim().toUpperCase();
+  const primaryHex    = interaction.options.getString('primary_color')?.trim();
+  const secondaryHex  = interaction.options.getString('secondary_color')?.trim();
+  const newConference = interaction.options.getString('conference')?.trim();
+  const logoAttach    = interaction.options.getAttachment('logo');
+
+  const team = getTeamByAbbrev(teamAbbrev);
+  if (!team) return interaction.editReply({ content: `Team **${teamAbbrev}** not found.` });
+
+  const hexRegex = /^#?[0-9A-Fa-f]{6}$/;
+  if (primaryHex && !hexRegex.test(primaryHex)) {
+    return interaction.editReply({ content: `Invalid primary color **${primaryHex}**.` });
+  }
+  if (secondaryHex && !hexRegex.test(secondaryHex)) {
+    return interaction.editReply({ content: `Invalid secondary color **${secondaryHex}**.` });
+  }
+
+  const teamsData = JSON.parse(fs.readFileSync(TEAMS_JSON_PATH, 'utf8'));
+  const entry = teamsData[team.name];
+
+  if (newMascot)     entry.mascot = newMascot;
+  if (newAbbrev)     entry.abbrev = newAbbrev;
+  if (newConference) entry.conference = newConference;
+
+  if (primaryHex) {
+    const normalizeHex = h => h.startsWith('#') ? h : `#${h}`;
+    entry.colors = [normalizeHex(primaryHex)];
+    if (secondaryHex) entry.colors.push(normalizeHex(secondaryHex));
+  } else if (secondaryHex) {
+    const normalizeHex = h => h.startsWith('#') ? h : `#${h}`;
+    entry.colors = [entry.colors?.[0] || '#000000', normalizeHex(secondaryHex)];
+  }
+
+  if (logoAttach) {
+    try {
+      const ext = path.extname(logoAttach.name) || '.png';
+      const logoDir = entry.pic
+        ? path.dirname(path.resolve(process.cwd(), entry.pic.replace(/^\.\//, '')))
+        : path.join(process.cwd(), 'src/db/teams/logos');
+      if (!fs.existsSync(logoDir)) fs.mkdirSync(logoDir, { recursive: true });
+      const filename = `${(newAbbrev || teamAbbrev).toLowerCase()}${ext}`;
+      const logoPath = path.join(logoDir, filename);
+      const response = await axios.get(logoAttach.url, { responseType: 'arraybuffer' });
+      fs.writeFileSync(logoPath, response.data);
+      entry.pic = `./src/db/teams/logos/${filename}`;
+    } catch (err) {
+      return interaction.editReply({ content: `Failed to download logo: ${err.message}` });
+    }
+  }
+
+  // Handle name change — rename the JSON key
+  const finalName = newName || team.name;
+  if (newName && newName !== team.name) {
+    delete teamsData[team.name];
+  }
+  teamsData[finalName] = entry;
+
+  const sorted = Object.fromEntries(
+    Object.entries(teamsData).sort(([a], [b]) => a.localeCompare(b))
+  );
+  fs.writeFileSync(TEAMS_JSON_PATH, JSON.stringify(sorted, null, 2));
+  invalidateTeamsCache();
+
+  logger.info('Team edited', { adminId: interaction.user.id, team: finalName });
+  await interaction.editReply({ content: `Team **${finalName}** updated successfully.` });
+}
+
+async function handleRemoveUser(interaction) {
+  await interaction.deferReply({ flags: 64 });
+
+  const targetUser = interaction.options.getUser('user');
+  const leagueAbbr = interaction.options.getString('league').toUpperCase();
+
+  const league = getLeagueByAbbr(interaction.guildId, leagueAbbr);
+  if (!league) return interaction.editReply({ content: `League **${leagueAbbr}** not found.` });
+
+  removeUserFromLeague(targetUser.id, league.id);
+  logger.info('Admin removed user from league', { adminId: interaction.user.id, targetId: targetUser.id, league: leagueAbbr });
+  await interaction.editReply({ content: `<@${targetUser.id}> has been removed from **${league.name}**.` });
+}
+
+async function handleLast3Streams(interaction) {
+  await interaction.deferReply({ flags: 64 });
+
+  const targetUser = interaction.options.getUser('user');
+  const streams = getLastStreams(targetUser.id);
+
+  if (!streams.length) {
+    return interaction.editReply({ content: `No posted streams found for <@${targetUser.id}>.` });
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle(`Last ${streams.length} stream${streams.length > 1 ? 's' : ''} — ${targetUser.username}`)
+    .setColor(0x5865F2)
+    .setTimestamp();
+
+  for (const [i, s] of streams.entries()) {
+    const title = s.stream_title || s.platform_stream_id;
+    const url = s.platform === 'twitch'
+      ? `https://twitch.tv/${s.platform_stream_id}`
+      : `https://youtube.com/watch?v=${s.platform_stream_id}`;
+    const date = new Date(s.posted_at).toLocaleString();
+    embed.addFields({
+      name: `#${i + 1} — ${s.league_abbr} — ${s.platform}`,
+      value: `[${title}](${url})\n${date}`,
+    });
+  }
+
+  await interaction.editReply({ embeds: [embed] });
+}
+
+async function handleEditCustomTeam(interaction) {
+  await interaction.deferReply({ flags: 64 });
+
+  const teamAbbrev   = interaction.options.getString('team').toUpperCase();
+  const newName      = interaction.options.getString('name')?.trim();
+  const newMascot    = interaction.options.getString('mascot')?.trim();
+  const newAbbrev    = interaction.options.getString('abbreviation')?.trim().toUpperCase();
+  const primaryHex   = interaction.options.getString('primary_color')?.trim();
+  const secondaryHex = interaction.options.getString('secondary_color')?.trim();
+  const logoAttach   = interaction.options.getAttachment('logo');
+
+  const team = getTeamByAbbrev(teamAbbrev);
+  if (!team) return interaction.editReply({ content: `Team **${teamAbbrev}** not found.` });
+  if (team.conference !== 'Custom') {
+    return interaction.editReply({ content: `**${team.name}** is not a custom team. Use \`/admin editteam\` instead.` });
+  }
+
+  const hexRegex = /^#?[0-9A-Fa-f]{6}$/;
+  if (primaryHex && !hexRegex.test(primaryHex)) {
+    return interaction.editReply({ content: `Invalid primary color **${primaryHex}**.` });
+  }
+  if (secondaryHex && !hexRegex.test(secondaryHex)) {
+    return interaction.editReply({ content: `Invalid secondary color **${secondaryHex}**.` });
+  }
+
+  if (!newName && !newMascot && !newAbbrev && !primaryHex && !secondaryHex && !logoAttach) {
+    return interaction.editReply({ content: 'No changes provided. Pass at least one option to update.' });
+  }
+
+  const teamsData = JSON.parse(fs.readFileSync(TEAMS_JSON_PATH, 'utf8'));
+  const entry = teamsData[team.name];
+
+  if (newMascot) entry.mascot = newMascot;
+  if (newAbbrev) entry.abbrev = newAbbrev;
+
+  if (primaryHex) {
+    const normalize = h => h.startsWith('#') ? h : `#${h}`;
+    entry.colors = [normalize(primaryHex)];
+    if (secondaryHex) entry.colors.push(normalize(secondaryHex));
+  } else if (secondaryHex) {
+    const normalize = h => h.startsWith('#') ? h : `#${h}`;
+    entry.colors = [entry.colors?.[0] || '#000000', normalize(secondaryHex)];
+  }
+
+  if (logoAttach) {
+    try {
+      const customLogoDir = path.join(process.cwd(), 'src/db/teams/logos/custom');
+      if (!fs.existsSync(customLogoDir)) fs.mkdirSync(customLogoDir, { recursive: true });
+      const ext = path.extname(logoAttach.name) || '.png';
+      const filename = `${(newAbbrev || teamAbbrev).toLowerCase()}${ext}`;
+      const logoPath = path.join(customLogoDir, filename);
+      const response = await axios.get(logoAttach.url, { responseType: 'arraybuffer' });
+      fs.writeFileSync(logoPath, response.data);
+      entry.pic = `./src/db/teams/logos/custom/${filename}`;
+    } catch (err) {
+      return interaction.editReply({ content: `Failed to download logo: ${err.message}` });
+    }
+  }
+
+  const finalName = newName || team.name;
+  if (newName && newName !== team.name) delete teamsData[team.name];
+  teamsData[finalName] = entry;
+
+  const sorted = Object.fromEntries(
+    Object.entries(teamsData).sort(([a], [b]) => a.localeCompare(b))
+  );
+  fs.writeFileSync(TEAMS_JSON_PATH, JSON.stringify(sorted, null, 2));
+  invalidateTeamsCache();
+
+  logger.info('Custom team edited', { adminId: interaction.user.id, team: finalName });
+  await interaction.editReply({ content: `Custom team **${finalName}** updated successfully.` });
 }
