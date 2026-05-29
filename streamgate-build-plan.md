@@ -36,9 +36,8 @@
 | Database | SQLite via better-sqlite3 | Zero infrastructure, file-based, right for this scale |
 | Twitch detection | Twitch EventSub webhooks | Push-based, no polling |
 | YouTube detection | YouTube WebSub (PubSubHubbub) | Push-based, no polling, free |
-| Process manager | PM2 | Always-on, survives reboots |
-| Hosting | Oracle Cloud Free (A1 ARM) | Genuinely free forever |
-| Deploy | GitHub Actions + SSH | Automated on push to main |
+| Hosting | Fly.io Free Tier | Genuinely free, built-in HTTPS, persistent volume for SQLite |
+| Deploy | GitHub Actions + flyctl | Automated on push to main |
 
 ---
 
@@ -610,80 +609,89 @@ if (!interaction.member.roles.cache.has(process.env.ADMIN_ROLE_ID)) {
 
 ---
 
-## Phase 8: GitHub Actions Deploy to Oracle Cloud
+## Phase 8: Deploy to Fly.io
 
-**Goal:** Every push to `main` automatically deploys to Oracle Cloud via SSH.
+**Goal:** Every push to `main` automatically deploys to Fly.io. Bot stays running 24/7 on the free tier with a persistent volume for SQLite.
 
-### Oracle Cloud Server Prep (One Time)
+### Why Fly.io
+- Free tier: 3 shared VMs + 3GB persistent volume
+- Built-in HTTPS on `appname.fly.dev` — no domain or cert setup needed
+- Twitch EventSub and YouTube WebSub work against the fly.dev URL out of the box
 
+### Files added to the repo
+- `Dockerfile` — Node 20 Alpine image, production deps only
+- `fly.toml` — app config: 256MB RAM, no auto-stop, volume mounted at `/app/data`
+- `.dockerignore` — excludes node_modules, .env, data/, logs/
+- `.github/workflows/deploy.yml` — runs `flyctl deploy` on push to main
+
+### One-Time Setup
+
+**1. Install flyctl (Mac)**
 ```bash
-ssh -i your-key.pem ubuntu@YOUR_IP
-
-# Node 20
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs nginx certbot python3-certbot-nginx
-
-# PM2
-sudo npm install -g pm2
-
-# Clone repo
-cd /home/ubuntu
-git clone https://github.com/YOUR_USERNAME/streamgate.git
-cd streamgate
-
-# Create .env
-nano .env  # Fill in all values from .env.example
-
-# First run
-npm install --production
-pm2 start ecosystem.config.js
-pm2 save
-pm2 startup  # Run the printed sudo command
-
-# HTTPS (after pointing a domain at your Oracle IP)
-sudo certbot --nginx -d yourdomain.com
+brew install flyctl
 ```
 
-### GitHub Secrets to Add
+**2. Create a Fly.io account**
+```bash
+fly auth signup
+```
+Fly.io requires a credit card for identity verification but does not charge on the free tier.
+
+**3. Create the app**
+```bash
+fly apps create stream-gate
+```
+If `stream-gate` is taken, pick any unique name and update the `app =` line in `fly.toml`.
+
+**4. Create the persistent volume** (stores SQLite DB + logs)
+```bash
+fly volumes create streamgate_data --size 1 --app stream-gate
+```
+Pick the same region you chose during signup.
+
+**5. Set all environment variables as secrets**
+```bash
+fly secrets set \
+  DISCORD_TOKEN=your_token \
+  DISCORD_CLIENT_ID=your_client_id \
+  TWITCH_CLIENT_ID=your_client_id \
+  TWITCH_CLIENT_SECRET=your_secret \
+  TWITCH_WEBHOOK_SECRET=any_random_string \
+  YOUTUBE_API_KEY=your_key \
+  YOUTUBE_WEBSUB_SECRET=any_random_string \
+  PUBLIC_URL=https://stream-gate.fly.dev \
+  PORT=3000 \
+  --app stream-gate
+```
+
+**6. Deploy**
+```bash
+fly deploy --app stream-gate
+```
+
+**7. Register Discord slash commands**
+```bash
+fly ssh console --app stream-gate -C "node src/bot/commands/deploy.js"
+```
+
+**8. Add GitHub secret for auto-deploy**
+
+Get a deploy token:
+```bash
+fly tokens create deploy --app stream-gate
+```
+Go to **github.com/f3-jolt/stream-gate → Settings → Secrets → Actions** and add:
 
 | Secret | Value |
 |---|---|
-| `ORACLE_HOST` | Oracle instance public IP |
-| `ORACLE_USER` | `ubuntu` |
-| `ORACLE_SSH_KEY` | Full contents of private key `.pem` |
-
-### `.github/workflows/deploy.yml`
-
-```yaml
-name: Deploy StreamGate
-
-on:
-  push:
-    branches: [main]
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy to Oracle Cloud
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.ORACLE_HOST }}
-          username: ${{ secrets.ORACLE_USER }}
-          key: ${{ secrets.ORACLE_SSH_KEY }}
-          script: |
-            cd /home/ubuntu/streamgate
-            git pull origin main
-            npm install --production
-            pm2 restart streamgate || pm2 start ecosystem.config.js
-            pm2 save
-```
+| `FLY_API_TOKEN` | Output of the token command above |
 
 ### Acceptance Criteria
-- [ ] Push to `main` triggers the GitHub Action
-- [ ] Bot restarts and comes back online within 30 seconds
-- [ ] PM2 shows `streamgate` as `online` after deploy
-- [ ] Server reboots bring the bot back automatically via PM2 startup
+- [ ] `fly deploy` succeeds and bot comes online in Discord
+- [ ] `https://stream-gate.fly.dev/health` returns `{"status":"ok"}`
+- [ ] Push to `main` triggers GitHub Action and redeploys
+- [ ] Bot stays online after deploy (no auto-stop)
+- [ ] SQLite database persists across redeploys (`fly volumes list` shows the volume)
 
 ---
 
@@ -745,7 +753,7 @@ cron.schedule('0 3 * * *', async () => {
 
 ### Critical Path Notes
 
-- **Set up HTTPS before Phases 5 and 6.** Both Twitch EventSub and YouTube WebSub require it. Get your domain pointed at Oracle and Certbot configured before writing webhook code or you will waste debugging time.
+- **Fly.io provides HTTPS automatically.** Your `appname.fly.dev` URL is HTTPS from day one — no domain, Nginx, or Certbot setup needed. Set `PUBLIC_URL=https://your-app.fly.dev` in your secrets before registering Twitch/YouTube subscriptions.
 - **Phase 3 (title parser) is a dependency for Phase 4.** Build and test it in isolation first with unit tests before wiring it into routing.
 - **YouTube WebSub fires on uploads too**, not just live streams. The `checkIfLiveStream` call in Phase 6 is not optional.
 - **WebSub subscriptions expire.** The renewal cron in Phase 9 is not optional either. Without it, YouTube routing silently stops working after 10 days.

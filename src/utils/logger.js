@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const logsDir = path.join(process.cwd(), 'logs');
+const logsDir = path.join(process.cwd(), 'data', 'logs');
 
 function getLogPath() {
   const date = new Date().toISOString().slice(0, 10);
