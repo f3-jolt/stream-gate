@@ -1,10 +1,13 @@
+const fs = require('fs');
 const path = require('path');
+
+const TEAMS_JSON_PATH = path.join(process.cwd(), 'src/db/teams/ncca-teams.json');
 
 let _cache = null;
 
 function getTeams() {
   if (_cache) return _cache;
-  const data = require(path.join(process.cwd(), 'src/db/teams/ncca-teams.json'));
+  const data = JSON.parse(fs.readFileSync(TEAMS_JSON_PATH, 'utf8'));
   _cache = Object.entries(data).map(([name, info]) => ({
     name,
     abbrev: info.abbrev,
@@ -14,6 +17,10 @@ function getTeams() {
     colors: info.colors || [],
   }));
   return _cache;
+}
+
+function invalidateTeamsCache() {
+  _cache = null;
 }
 
 function searchTeams(query) {
@@ -28,4 +35,4 @@ function getTeamByAbbrev(abbrev) {
   return getTeams().find(t => t.abbrev.toUpperCase() === abbrev.toUpperCase()) || null;
 }
 
-module.exports = { getTeams, searchTeams, getTeamByAbbrev };
+module.exports = { getTeams, searchTeams, getTeamByAbbrev, invalidateTeamsCache, TEAMS_JSON_PATH };

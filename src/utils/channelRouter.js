@@ -72,7 +72,8 @@ async function postStreamToChannel(league, user, platform, streamData) {
     const teamAbbrev = league.team_abbrev || null;
     const team = teamAbbrev ? getTeamByAbbrev(teamAbbrev) : null;
     const { embed, files } = buildStreamEmbed(user, league, platform, streamData, team);
-    await channel.send({ embeds: [embed], files });
+    const content = league.ping_role_id ? `<@&${league.ping_role_id}>` : undefined;
+    await channel.send({ content, embeds: [embed], files });
 
     saveStreamPost(platform, streamData.id, user.discord_id, league.id, streamData.title);
     logger.info('Stream posted', {
@@ -146,7 +147,7 @@ function buildStreamEmbed(user, league, platform, streamData, team = null) {
 
   const files = [];
   const title = team?.name
-    ? `${team.name} is now playing! Check out their stream!`
+    ? `${team.name} is streaming their game!`
     : `${streamData.user_name} is LIVE on ${platformLabel}`;
 
   const embed = new EmbedBuilder()

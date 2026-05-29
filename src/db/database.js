@@ -104,6 +104,7 @@ function runMigrations() {
     `ALTER TABLE stream_posts ADD COLUMN stream_title TEXT`,
     `ALTER TABLE user_leagues ADD COLUMN team_name TEXT`,
     `ALTER TABLE user_leagues ADD COLUMN team_abbrev TEXT`,
+    `ALTER TABLE leagues ADD COLUMN ping_role_id TEXT`,
   ];
 
   for (const sql of migrations) {

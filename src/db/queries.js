@@ -161,10 +161,22 @@ function getLeagueById(id) {
   return db.prepare('SELECT * FROM leagues WHERE id = ?').get(id);
 }
 
-function addLeague(guildId, name, abbr, ppvChannelId, categoryId = null) {
+function addLeague(guildId, name, abbr, ppvChannelId, categoryId = null, pingRoleId = null) {
   return db.prepare(
-    'INSERT INTO leagues (guild_id, name, abbr, ppv_channel_id, category_id) VALUES (?, ?, ?, ?, ?)'
-  ).run(guildId, name, abbr.toUpperCase(), ppvChannelId, categoryId);
+    'INSERT INTO leagues (guild_id, name, abbr, ppv_channel_id, category_id, ping_role_id) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(guildId, name, abbr.toUpperCase(), ppvChannelId, categoryId, pingRoleId);
+}
+
+function updateLeague(leagueId, { pingRoleId, ppvChannelId, name } = {}) {
+  if (pingRoleId !== undefined) {
+    db.prepare('UPDATE leagues SET ping_role_id = ? WHERE id = ?').run(pingRoleId, leagueId);
+  }
+  if (ppvChannelId !== undefined) {
+    db.prepare('UPDATE leagues SET ppv_channel_id = ? WHERE id = ?').run(ppvChannelId, leagueId);
+  }
+  if (name !== undefined) {
+    db.prepare('UPDATE leagues SET name = ? WHERE id = ?').run(name, leagueId);
+  }
 }
 
 function getUsersInLeague(leagueId) {
@@ -213,7 +225,7 @@ function savePendingRoute(discordUserId, guildId, platform, platformStreamId, st
 
 function getPendingRoute(discordUserId, guildId) {
   return db.prepare(
-    'SELECT * FROM pending_routes WHERE discord_user_id = ? AND guild_id = ? AND expires_at > datetime("now")'
+    "SELECT * FROM pending_routes WHERE discord_user_id = ? AND guild_id = ? AND expires_at > datetime('now')"
   ).get(discordUserId, guildId);
 }
 
@@ -222,7 +234,7 @@ function clearPendingRoute(discordUserId, guildId) {
 }
 
 function clearExpiredPendingRoutes() {
-  return db.prepare('DELETE FROM pending_routes WHERE expires_at <= datetime("now")').run();
+  return db.prepare("DELETE FROM pending_routes WHERE expires_at <= datetime('now')").run();
 }
 
 // ── Health stats (per-guild) ──────────────────────────────────────────────────
@@ -270,6 +282,7 @@ module.exports = {
   getLeagueByAbbr,
   getLeagueById,
   addLeague,
+  updateLeague,
   getUsersInLeague,
   checkStreamPost,
   checkRecentStreamPostByTitle,

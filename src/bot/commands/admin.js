@@ -9,6 +9,7 @@ const {
   getLeagueByAbbr,
   getLeagueById,
   addLeague,
+  updateLeague,
   addUserToLeague,
   removeUserFromLeague,
   addUserPlatform,
@@ -18,7 +19,10 @@ const {
   getUsersInLeague,
   getHealthStats,
 } = require('../../db/queries');
-const { searchTeams, getTeamByAbbrev } = require('../../utils/teams');
+const fs = require('fs');
+const path = require('path');
+const axios = require('axios');
+const { searchTeams, getTeamByAbbrev, invalidateTeamsCache, TEAMS_JSON_PATH } = require('../../utils/teams');
 const logger = require('../../utils/logger');
 
 // Admin check: server owner, MANAGE_GUILD permission, or configured admin role
@@ -87,6 +91,16 @@ module.exports = {
         .addStringOption(o => o.setName('keyword').setDescription('Secondary keyword in stream title (e.g. OPEN). Case-insensitive.').setRequired(true))
         .addChannelOption(o => o.setName('channel').setDescription('PPV channel to post streams to').setRequired(true))
         .addChannelOption(o => o.setName('category').setDescription('Category that gates self-registration (optional)').setRequired(false))
+        .addRoleOption(o => o.setName('ping_role').setDescription('Role to ping when a stream is posted (optional)').setRequired(false))
+    )
+    // editleague
+    .addSubcommand(sub =>
+      sub.setName('editleague')
+        .setDescription('Edit an existing league')
+        .addStringOption(o => o.setName('league').setDescription('League to edit').setRequired(true).setAutocomplete(true))
+        .addRoleOption(o => o.setName('ping_role').setDescription('Role to ping on stream post (set to @everyone to clear)').setRequired(false))
+        .addChannelOption(o => o.setName('channel').setDescription('Change the PPV channel').setRequired(false))
+        .addStringOption(o => o.setName('name').setDescription('Rename the league').setRequired(false))
     )
     // users
     .addSubcommand(sub =>
@@ -108,6 +122,25 @@ module.exports = {
         .addStringOption(o => o.setName('platform').setDescription('Platform (auto-selected if user only has one)').setRequired(false).setAutocomplete(true))
         .addStringOption(o => o.setName('url').setDescription('Override stream URL (skips live lookup)').setRequired(false))
         .addStringOption(o => o.setName('title').setDescription('Override stream title').setRequired(false))
+    )
+    // changeteam
+    .addSubcommand(sub =>
+      sub.setName('changeteam')
+        .setDescription('Change the team assigned to a user in a league')
+        .addUserOption(o => o.setName('user').setDescription('Discord user').setRequired(true))
+        .addStringOption(o => o.setName('league').setDescription('League').setRequired(true).setAutocomplete(true))
+        .addStringOption(o => o.setName('team').setDescription('New team').setRequired(true).setAutocomplete(true))
+    )
+    // addcustomteam
+    .addSubcommand(sub =>
+      sub.setName('addcustomteam')
+        .setDescription('Add a custom team to the team list')
+        .addStringOption(o => o.setName('name').setDescription('Team name').setRequired(true))
+        .addStringOption(o => o.setName('mascot').setDescription('Mascot name').setRequired(true))
+        .addStringOption(o => o.setName('abbreviation').setDescription('Short abbreviation (e.g. TAMU)').setRequired(true))
+        .addStringOption(o => o.setName('primary_color').setDescription('Primary color hex (e.g. #500000)').setRequired(true))
+        .addAttachmentOption(o => o.setName('logo').setDescription('Team logo image (PNG recommended)').setRequired(true))
+        .addStringOption(o => o.setName('secondary_color').setDescription('Secondary color hex (e.g. #FFFFFF)').setRequired(false))
     ),
 
   async autocomplete(interaction) {
@@ -153,9 +186,12 @@ module.exports = {
       case 'status':       return handleStatus(interaction);
       case 'leagues':      return handleLeagues(interaction);
       case 'addleague':    return handleAddLeague(interaction);
+      case 'editleague':   return handleEditLeague(interaction);
       case 'users':        return handleUsers(interaction);
       case 'health':       return handleHealth(interaction);
-      case 'announce':     return handleAnnounce(interaction);
+      case 'announce':        return handleAnnounce(interaction);
+      case 'changeteam':      return handleAdminChangeTeam(interaction);
+      case 'addcustomteam':   return handleAddCustomTeam(interaction);
       default:
         return interaction.reply({ content: 'Unknown subcommand.', flags: 64 });
     }
@@ -340,15 +376,17 @@ async function handleAddLeague(interaction) {
   const keyword = interaction.options.getString('keyword').toUpperCase().trim();
   const channel = interaction.options.getChannel('channel');
   const category = interaction.options.getChannel('category');
+  const pingRole = interaction.options.getRole('ping_role');
 
   const settings = getGuildSettings(interaction.guildId);
   const triggerKeyword = settings?.trigger_keyword || 'GOI';
 
   try {
-    addLeague(interaction.guildId, name, keyword, channel.id, category?.id || null);
+    addLeague(interaction.guildId, name, keyword, channel.id, category?.id || null, pingRole?.id || null);
     logger.info('League added', { adminId: interaction.user.id, guildId: interaction.guildId, name, keyword, channelId: channel.id });
+    const pingNote = pingRole ? ` Role <@&${pingRole.id}> will be pinged on each stream.` : '';
     await interaction.editReply(
-      `League **${name}** added with keyword \`${keyword}\`.\nStreams with \`${triggerKeyword} ${keyword}\` in the title will post to <#${channel.id}>.`
+      `League **${name}** added with keyword \`${keyword}\`.\nStreams with \`${triggerKeyword} ${keyword}\` in the title will post to <#${channel.id}>.${pingNote}`
     );
   } catch (err) {
     logger.error('addleague failed', { error: err.message, guildId: interaction.guildId, name, keyword });
@@ -510,4 +548,141 @@ async function handleAnnounce(interaction) {
     logger.error('Announce error', { error: err.message });
     await interaction.editReply({ content: `Failed: ${err.message}` });
   }
+}
+
+async function handleAdminChangeTeam(interaction) {
+  await interaction.deferReply({ flags: 64 });
+
+  const targetUser = interaction.options.getUser('user');
+  const leagueAbbr = interaction.options.getString('league').toUpperCase();
+  const teamAbbrev = interaction.options.getString('team').toUpperCase();
+
+  const league = getLeagueByAbbr(interaction.guildId, leagueAbbr);
+  if (!league) {
+    return interaction.editReply({ content: `League **${leagueAbbr}** not found.` });
+  }
+
+  const team = getTeamByAbbrev(teamAbbrev);
+  if (!team) {
+    return interaction.editReply({ content: `Team **${teamAbbrev}** not found. Use autocomplete to pick a valid team.` });
+  }
+
+  try {
+    addUserToLeague(targetUser.id, league.id, interaction.user.id, team.name, team.abbrev);
+    logger.info('Admin changed user team', {
+      adminId: interaction.user.id,
+      targetId: targetUser.id,
+      league: league.abbr,
+      team: team.abbrev,
+    });
+    await interaction.editReply({
+      content: `Updated! <@${targetUser.id}>'s team in **${league.name}** is now **${team.name}**.`,
+    });
+  } catch (err) {
+    logger.error('Admin changeteam error', { error: err.message });
+    await interaction.editReply({ content: `Failed: ${err.message}` });
+  }
+}
+
+async function handleAddCustomTeam(interaction) {
+  await interaction.deferReply({ flags: 64 });
+
+  const name         = interaction.options.getString('name').trim();
+  const mascot       = interaction.options.getString('mascot').trim();
+  const abbrev       = interaction.options.getString('abbreviation').trim().toUpperCase();
+  const primaryHex   = interaction.options.getString('primary_color').trim();
+  const secondaryHex = interaction.options.getString('secondary_color')?.trim() || null;
+  const attachment   = interaction.options.getAttachment('logo');
+
+  const hexRegex = /^#?[0-9A-Fa-f]{6}$/;
+  if (!hexRegex.test(primaryHex)) {
+    return interaction.editReply({ content: `Invalid primary color **${primaryHex}**. Use hex format like \`#500000\`.` });
+  }
+  if (secondaryHex && !hexRegex.test(secondaryHex)) {
+    return interaction.editReply({ content: `Invalid secondary color **${secondaryHex}**. Use hex format like \`#FFFFFF\`.` });
+  }
+
+  const normalizeHex = h => h.startsWith('#') ? h : `#${h}`;
+  const colors = [normalizeHex(primaryHex)];
+  if (secondaryHex) colors.push(normalizeHex(secondaryHex));
+
+  if (getTeamByAbbrev(abbrev)) {
+    return interaction.editReply({ content: `A team with abbreviation **${abbrev}** already exists.` });
+  }
+
+  // Save logo
+  const customLogoDir = path.join(process.cwd(), 'src/db/teams/logos/custom');
+  if (!fs.existsSync(customLogoDir)) fs.mkdirSync(customLogoDir, { recursive: true });
+
+  const ext = path.extname(attachment.name) || '.png';
+  const filename = `${abbrev.toLowerCase()}${ext}`;
+  const logoPath = path.join(customLogoDir, filename);
+
+  try {
+    const response = await axios.get(attachment.url, { responseType: 'arraybuffer' });
+    fs.writeFileSync(logoPath, response.data);
+  } catch (err) {
+    logger.error('Failed to download custom team logo', { error: err.message });
+    return interaction.editReply({ content: 'Failed to download the logo. Please try again.' });
+  }
+
+  // Update JSON
+  const teamsData = JSON.parse(fs.readFileSync(TEAMS_JSON_PATH, 'utf8'));
+
+  teamsData[name] = {
+    conference: 'Custom',
+    abbrev,
+    mascot,
+    pic: `./src/db/teams/logos/custom/${filename}`,
+    colors,
+  };
+
+  const sorted = Object.fromEntries(
+    Object.entries(teamsData).sort(([a], [b]) => a.localeCompare(b))
+  );
+
+  fs.writeFileSync(TEAMS_JSON_PATH, JSON.stringify(sorted, null, 2));
+  invalidateTeamsCache();
+
+  logger.info('Custom team added', { name, abbrev, addedBy: interaction.user.id });
+  await interaction.editReply({ content: `Custom team **${name}** (\`${abbrev}\`) added successfully and is now available in team selects.` });
+}
+
+async function handleEditLeague(interaction) {
+  await interaction.deferReply({ flags: 64 });
+
+  const leagueAbbr  = interaction.options.getString('league').toUpperCase();
+  const pingRole    = interaction.options.getRole('ping_role');
+  const newChannel  = interaction.options.getChannel('channel');
+  const newName     = interaction.options.getString('name');
+
+  const league = getLeagueByAbbr(interaction.guildId, leagueAbbr);
+  if (!league) {
+    return interaction.editReply({ content: `League **${leagueAbbr}** not found.` });
+  }
+
+  if (!pingRole && !newChannel && !newName) {
+    return interaction.editReply({ content: 'No changes provided. Pass at least one option to update.' });
+  }
+
+  const updates = {};
+  const notes = [];
+
+  if (pingRole) {
+    // @everyone id === guildId — treat as "clear the ping role"
+    updates.pingRoleId = pingRole.id === interaction.guildId ? null : pingRole.id;
+    notes.push(updates.pingRoleId ? `Ping role set to <@&${pingRole.id}>` : 'Ping role cleared');
+  }
+  if (newChannel) {
+    updates.ppvChannelId = newChannel.id;
+    notes.push(`PPV channel set to <#${newChannel.id}>`);
+  }
+  if (newName) {
+    updates.name = newName;
+    notes.push(`Name changed to **${newName}**`);
+  }
+
+  updateLeague(league.id, updates);
+  logger.info('League updated', { adminId: interaction.user.id, leagueId: league.id, updates });
+  await interaction.editReply({ content: `League **${league.name}** updated:\n${notes.join('\n')}` });
 }
