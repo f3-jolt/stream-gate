@@ -113,4 +113,18 @@ async function syncSubscriptions() {
   }
 }
 
-module.exports = { getAppAccessToken, getTwitchUserByUsername, subscribeToStreamOnline, deleteSubscription, syncSubscriptions };
+async function getLiveStream(username) {
+  const data = await twitchApiGet('/streams', { user_login: username.toLowerCase() });
+  const stream = data.data?.[0];
+  if (!stream) return null;
+  return {
+    id: stream.id,
+    title: stream.title,
+    url: `https://twitch.tv/${stream.user_login}`,
+    user_login: stream.user_login,
+    user_name: stream.user_name,
+    videoId: null,
+  };
+}
+
+module.exports = { getAppAccessToken, getTwitchUserByUsername, subscribeToStreamOnline, deleteSubscription, syncSubscriptions, getLiveStream };

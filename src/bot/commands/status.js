@@ -7,14 +7,13 @@ module.exports = {
     .setDescription('View your StreamGate registration for this server'),
 
   async execute(interaction) {
+    await interaction.deferReply({ flags: 64 });
+
     const platforms = getUserPlatforms(interaction.user.id);
     const leagues = getUserLeagues(interaction.user.id, interaction.guildId);
 
     if (!platforms.length && !leagues.length) {
-      return interaction.reply({
-        content: 'You are not registered. Use `/register` to get started.',
-        ephemeral: true,
-      });
+      return interaction.editReply('You are not registered. Use `/register` to get started.');
     }
 
     const embed = new EmbedBuilder()
@@ -32,10 +31,13 @@ module.exports = {
     embed.addFields({
       name: `Leagues in ${interaction.guild.name}`,
       value: leagues.length
-        ? leagues.map(l => `**${l.abbr}** — ${l.name}`).join('\n')
+        ? leagues.map(l => {
+            const team = l.team_name ? ` — ${l.team_name}` : '';
+            return `**${l.name}** \`${l.abbr}\`${team}`;
+          }).join('\n')
         : 'None',
     });
 
-    await interaction.reply({ embeds: [embed], ephemeral: true });
+    await interaction.editReply({ embeds: [embed] });
   },
 };

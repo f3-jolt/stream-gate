@@ -6,6 +6,7 @@ const {
   addUserToLeague,
   addUserPlatform,
 } = require('../../db/queries');
+const { searchTeams, getTeamByAbbrev } = require('../../utils/teams');
 const logger = require('../../utils/logger');
 
 async function userCanAccessLeague(member, league) {
@@ -35,16 +36,28 @@ module.exports = {
     )
     .addStringOption(opt =>
       opt.setName('league')
-        .setDescription('League abbreviation (e.g. ALPHA)')
+        .setDescription('League to join')
+        .setRequired(true)
+        .setAutocomplete(true)
+    )
+    .addStringOption(opt =>
+      opt.setName('team')
+        .setDescription('Your team (e.g. Alabama, Ohio State)')
         .setRequired(true)
         .setAutocomplete(true)
     ),
 
   async autocomplete(interaction) {
-    const focused = interaction.options.getFocused().toUpperCase();
+    const focused = interaction.options.getFocused(true);
+
+    if (focused.name === 'team') {
+      return interaction.respond(searchTeams(focused.value));
+    }
+
+    const query = focused.value.toUpperCase();
     const leagues = getAllLeagues(interaction.guildId);
     const choices = leagues
-      .filter(l => l.abbr.includes(focused) || l.name.toUpperCase().includes(focused))
+      .filter(l => l.abbr.includes(query) || l.name.toUpperCase().includes(query))
       .slice(0, 25)
       .map(l => ({ name: `${l.abbr} — ${l.name}`, value: l.abbr }));
     await interaction.respond(choices);
@@ -54,13 +67,21 @@ module.exports = {
     const platform = interaction.options.getString('platform');
     const username = interaction.options.getString('username').replace(/^@/, '');
     const leagueAbbr = interaction.options.getString('league').toUpperCase();
+    const teamAbbrev = interaction.options.getString('team').toUpperCase();
 
     const league = getLeagueByAbbr(interaction.guildId, leagueAbbr);
-
     if (!league) {
       return interaction.reply({
         content: `League **${leagueAbbr}** not found. Use autocomplete to pick a valid league.`,
-        ephemeral: true,
+        flags: 64,
+      });
+    }
+
+    const team = getTeamByAbbrev(teamAbbrev);
+    if (!team) {
+      return interaction.reply({
+        content: `Team **${teamAbbrev}** not found. Use autocomplete to pick a valid team.`,
+        flags: 64,
       });
     }
 
@@ -68,16 +89,28 @@ module.exports = {
     if (!canAccess) {
       return interaction.reply({
         content: `You don't have access to the **${league.name}** league.`,
-        ephemeral: true,
+        flags: 64,
       });
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: 64 });
 
     try {
       getOrCreateUser(interaction.user.id, interaction.user.username);
       addUserPlatform(interaction.user.id, platform, username, null);
-      addUserToLeague(interaction.user.id, league.id, 'self');
+      addUserToLeague(interaction.user.id, league.id, 'self', team.name, team.abbrev);
+
+      if (platform === 'youtube' && process.env.YOUTUBE_API_KEY) {
+        const { getChannelIdByHandle, subscribeToChannel } = require('../../platforms/youtube/api');
+        const { updateSubscriptionId, updatePlatformUserId } = require('../../db/queries');
+        const channelId = await getChannelIdByHandle(username);
+        if (channelId) {
+          await subscribeToChannel(channelId);
+          updateSubscriptionId('youtube', username, channelId);
+          updatePlatformUserId('youtube', username, channelId);
+          logger.info('YouTube subscription created on self-register', { username, channelId });
+        }
+      }
 
       logger.info('User self-registered', {
         discordId: interaction.user.id,
@@ -88,7 +121,7 @@ module.exports = {
       });
 
       await interaction.editReply({
-        content: `Registered! Your **${platform}** account \`${username}\` is now linked to the **${league.name}** league.`,
+        content: `Registered! Your **${platform}** account \`${username}\` is now linked to the **${league.name}** league as **${team.name}**.`,
       });
     } catch (err) {
       logger.error('Registration error', { error: err.message, discordId: interaction.user.id });

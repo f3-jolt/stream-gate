@@ -13,6 +13,13 @@ function setGuildAdminRole(guildId, adminRoleId) {
   `).run(guildId, adminRoleId);
 }
 
+function setGuildTriggerKeyword(guildId, keyword) {
+  return db.prepare(`
+    INSERT INTO guild_settings (guild_id, trigger_keyword) VALUES (?, ?)
+    ON CONFLICT(guild_id) DO UPDATE SET trigger_keyword = excluded.trigger_keyword
+  `).run(guildId, keyword.toUpperCase());
+}
+
 // ── Users ─────────────────────────────────────────────────────────────────────
 
 function getOrCreateUser(discordId, discordUsername) {
@@ -28,7 +35,7 @@ function getOrCreateUser(discordId, discordUsername) {
 
 function getUserLeagues(discordId, guildId) {
   return db.prepare(`
-    SELECT l.*
+    SELECT l.*, ul.team_name, ul.team_abbrev
     FROM leagues l
     JOIN user_leagues ul ON ul.league_id = l.id
     JOIN users u ON u.id = ul.user_id
@@ -39,7 +46,7 @@ function getUserLeagues(discordId, guildId) {
 // Returns [{ guildId, guildName, leagues: [...] }] — used by the router to route per-guild
 function getUserLeaguesByGuild(discordId) {
   const rows = db.prepare(`
-    SELECT l.*
+    SELECT l.*, ul.team_name, ul.team_abbrev
     FROM leagues l
     JOIN user_leagues ul ON ul.league_id = l.id
     JOIN users u ON u.id = ul.user_id
@@ -55,13 +62,17 @@ function getUserLeaguesByGuild(discordId) {
   return Array.from(byGuild.entries()).map(([guildId, leagues]) => ({ guildId, leagues }));
 }
 
-function addUserToLeague(discordId, leagueId, addedBy) {
+function addUserToLeague(discordId, leagueId, addedBy, teamName = null, teamAbbrev = null) {
   const user = db.prepare('SELECT id FROM users WHERE discord_id = ?').get(discordId);
   if (!user) throw new Error(`User ${discordId} not found`);
 
-  return db.prepare(
-    'INSERT OR IGNORE INTO user_leagues (user_id, league_id, added_by) VALUES (?, ?, ?)'
-  ).run(user.id, leagueId, addedBy);
+  return db.prepare(`
+    INSERT INTO user_leagues (user_id, league_id, added_by, team_name, team_abbrev)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(user_id, league_id) DO UPDATE SET
+      team_name = excluded.team_name,
+      team_abbrev = excluded.team_abbrev
+  `).run(user.id, leagueId, addedBy, teamName, teamAbbrev);
 }
 
 function removeUserFromLeague(discordId, leagueId) {
@@ -121,6 +132,12 @@ function updateSubscriptionId(platform, platformUsername, subscriptionId) {
   ).run(subscriptionId, platform, platformUsername.toLowerCase());
 }
 
+function updatePlatformUserId(platform, platformUsername, platformUserId) {
+  return db.prepare(
+    'UPDATE user_platforms SET platform_user_id = ? WHERE platform = ? AND platform_username = ?'
+  ).run(platformUserId, platform, platformUsername.toLowerCase());
+}
+
 function getAllPlatformUsers(platform) {
   return db.prepare(`
     SELECT u.discord_id, up.platform_username, up.platform_user_id, up.subscription_id
@@ -152,7 +169,8 @@ function addLeague(guildId, name, abbr, ppvChannelId, categoryId = null) {
 
 function getUsersInLeague(leagueId) {
   return db.prepare(`
-    SELECT u.discord_id, u.discord_username, up.platform, up.platform_username
+    SELECT u.discord_id, u.discord_username, ul.team_name, ul.team_abbrev,
+           up.platform, up.platform_username
     FROM users u
     JOIN user_leagues ul ON ul.user_id = u.id
     LEFT JOIN user_platforms up ON up.user_id = u.id
@@ -169,10 +187,17 @@ function checkStreamPost(platform, platformStreamId, leagueId) {
   ).get(platform, platformStreamId, leagueId);
 }
 
-function saveStreamPost(platform, platformStreamId, discordUserId, leagueId) {
+function checkRecentStreamPostByTitle(leagueId, title) {
+  return db.prepare(`
+    SELECT id FROM stream_posts
+    WHERE league_id = ? AND stream_title = ? AND posted_at >= datetime('now', '-1 hour')
+  `).get(leagueId, title);
+}
+
+function saveStreamPost(platform, platformStreamId, discordUserId, leagueId, streamTitle = null) {
   return db.prepare(
-    'INSERT OR IGNORE INTO stream_posts (platform, platform_stream_id, discord_user_id, league_id) VALUES (?, ?, ?, ?)'
-  ).run(platform, platformStreamId, discordUserId, leagueId);
+    'INSERT OR IGNORE INTO stream_posts (platform, platform_stream_id, discord_user_id, league_id, stream_title) VALUES (?, ?, ?, ?, ?)'
+  ).run(platform, platformStreamId, discordUserId, leagueId, streamTitle);
 }
 
 // ── Pending routes ────────────────────────────────────────────────────────────
@@ -212,10 +237,10 @@ function getHealthStats(guildId) {
     WHERE l.guild_id = ? AND u.active = 1
   `).get(guildId).count;
 
-  const twitchSubs = db.prepare('SELECT COUNT(*) as count FROM user_platforms WHERE platform = "twitch" AND subscription_id IS NOT NULL').get().count;
-  const twitchTotal = db.prepare('SELECT COUNT(*) as count FROM user_platforms WHERE platform = "twitch"').get().count;
-  const youtubeSubs = db.prepare('SELECT COUNT(*) as count FROM user_platforms WHERE platform = "youtube" AND subscription_id IS NOT NULL').get().count;
-  const youtubeTotal = db.prepare('SELECT COUNT(*) as count FROM user_platforms WHERE platform = "youtube"').get().count;
+  const twitchSubs = db.prepare("SELECT COUNT(*) as count FROM user_platforms WHERE platform = 'twitch' AND subscription_id IS NOT NULL").get().count;
+  const twitchTotal = db.prepare("SELECT COUNT(*) as count FROM user_platforms WHERE platform = 'twitch'").get().count;
+  const youtubeSubs = db.prepare("SELECT COUNT(*) as count FROM user_platforms WHERE platform = 'youtube' AND subscription_id IS NOT NULL").get().count;
+  const youtubeTotal = db.prepare("SELECT COUNT(*) as count FROM user_platforms WHERE platform = 'youtube'").get().count;
 
   const stuckRoutes = db.prepare(`
     SELECT COUNT(*) as count FROM pending_routes
@@ -228,6 +253,7 @@ function getHealthStats(guildId) {
 module.exports = {
   getGuildSettings,
   setGuildAdminRole,
+  setGuildTriggerKeyword,
   getOrCreateUser,
   getUserLeagues,
   getUserLeaguesByGuild,
@@ -238,6 +264,7 @@ module.exports = {
   getUserByPlatform,
   getUserPlatforms,
   updateSubscriptionId,
+  updatePlatformUserId,
   getAllPlatformUsers,
   getAllLeagues,
   getLeagueByAbbr,
@@ -245,6 +272,7 @@ module.exports = {
   addLeague,
   getUsersInLeague,
   checkStreamPost,
+  checkRecentStreamPostByTitle,
   saveStreamPost,
   savePendingRoute,
   getPendingRoute,

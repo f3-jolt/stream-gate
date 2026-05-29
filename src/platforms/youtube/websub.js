@@ -70,9 +70,21 @@ async function handleYouTubeNotification(rawBody) {
 
   logger.info('YouTube WebSub notification', { videoId, channelId });
 
-  const isLive = await checkIfLiveStream(videoId);
+  let isLive = await checkIfLiveStream(videoId);
   if (!isLive) {
-    logger.info('YouTube video is not live, ignoring', { videoId });
+    // YouTube notifies before the stream status flips — retry for up to 5 minutes
+    const MAX_RETRIES = 5;
+    const RETRY_DELAY_MS = 60_000;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+      logger.info('YouTube retry live check', { videoId, attempt });
+      isLive = await checkIfLiveStream(videoId);
+      if (isLive) break;
+    }
+  }
+
+  if (!isLive) {
+    logger.info('YouTube video is not live after retries, ignoring', { videoId });
     return;
   }
 

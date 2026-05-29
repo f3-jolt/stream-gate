@@ -12,12 +12,17 @@ module.exports = {
       try {
         await command.execute(interaction);
       } catch (err) {
+        if (err.code === 10062) return; // Interaction expired — nothing to reply to
         logger.error('Command error', { command: interaction.commandName, error: err.message });
-        const reply = { content: 'An error occurred running that command.', ephemeral: true };
-        if (interaction.replied || interaction.deferred) {
-          await interaction.followUp(reply);
-        } else {
-          await interaction.reply(reply);
+        try {
+          const reply = { content: 'An error occurred running that command.', flags: 64 };
+          if (interaction.replied || interaction.deferred) {
+            await interaction.followUp(reply);
+          } else {
+            await interaction.reply(reply);
+          }
+        } catch {
+          // Interaction expired between the command error and this fallback — safe to ignore
         }
       }
       return;
@@ -29,7 +34,9 @@ module.exports = {
         try {
           await command.autocomplete(interaction);
         } catch (err) {
-          logger.error('Autocomplete error', { command: interaction.commandName, error: err.message });
+          if (err.code !== 10062) {
+            logger.error('Autocomplete error', { command: interaction.commandName, error: err.message });
+          }
         }
       }
       return;

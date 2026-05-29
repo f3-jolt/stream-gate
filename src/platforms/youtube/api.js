@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { getAllPlatformUsers, updateSubscriptionId } = require('../../db/queries');
+const { getAllPlatformUsers, updateSubscriptionId, updatePlatformUserId } = require('../../db/queries');
 const logger = require('../../utils/logger');
 
 const YT_API = 'https://www.googleapis.com/youtube/v3';
@@ -80,6 +80,7 @@ async function renewSubscriptions() {
 
       await subscribeToChannel(channelId);
       updateSubscriptionId('youtube', user.platform_username, channelId);
+      updatePlatformUserId('youtube', user.platform_username, channelId);
       logger.info('YouTube subscription renewed', { handle: user.platform_username, channelId });
     } catch (err) {
       logger.error('YouTube renewal error', { handle: user.platform_username, error: err.message });
@@ -87,4 +88,25 @@ async function renewSubscriptions() {
   }
 }
 
-module.exports = { getChannelIdByHandle, subscribeToChannel, checkIfLiveStream, getLiveStreamDetails, renewSubscriptions };
+async function getActiveLiveStream(channelId) {
+  const data = await ytGet('/search', {
+    channelId,
+    part: 'snippet',
+    type: 'video',
+    eventType: 'live',
+    maxResults: 1,
+  });
+  const item = data.items?.[0];
+  if (!item) return null;
+  const videoId = item.id.videoId;
+  return {
+    id: videoId,
+    title: item.snippet.title,
+    url: `https://youtube.com/watch?v=${videoId}`,
+    user_login: item.snippet.channelTitle,
+    user_name: item.snippet.channelTitle,
+    videoId,
+  };
+}
+
+module.exports = { getChannelIdByHandle, subscribeToChannel, checkIfLiveStream, getLiveStreamDetails, renewSubscriptions, getActiveLiveStream };

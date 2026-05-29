@@ -7,6 +7,6 @@ module.exports = {
 
   async execute(interaction) {
     const latency = Date.now() - interaction.createdTimestamp;
-    await interaction.reply({ content: `Pong! Latency: ${latency}ms`, ephemeral: true });
+    await interaction.reply({ content: `Pong! Latency: ${latency}ms`, flags: 64 });
   },
 };

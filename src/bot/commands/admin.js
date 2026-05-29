@@ -1,8 +1,10 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { postStreamToChannel } = require('../../utils/channelRouter');
 const {
   getOrCreateUser,
   getGuildSettings,
   setGuildAdminRole,
+  setGuildTriggerKeyword,
   getAllLeagues,
   getLeagueByAbbr,
   getLeagueById,
@@ -16,6 +18,7 @@ const {
   getUsersInLeague,
   getHealthStats,
 } = require('../../db/queries');
+const { searchTeams, getTeamByAbbrev } = require('../../utils/teams');
 const logger = require('../../utils/logger');
 
 // Admin check: server owner, MANAGE_GUILD permission, or configured admin role
@@ -37,6 +40,7 @@ module.exports = {
       sub.setName('setup')
         .setDescription('Configure StreamGate for this server')
         .addRoleOption(o => o.setName('admin_role').setDescription('Role that can use admin commands').setRequired(false))
+        .addStringOption(o => o.setName('keyword').setDescription('Stream title trigger word to match (e.g. GOI). Default: GOI').setRequired(false))
     )
     // register
     .addSubcommand(sub =>
@@ -47,6 +51,7 @@ module.exports = {
           .addChoices({ name: 'Twitch', value: 'twitch' }, { name: 'YouTube', value: 'youtube' }))
         .addStringOption(o => o.setName('username').setDescription('Platform username').setRequired(true))
         .addStringOption(o => o.setName('league').setDescription('League abbreviation').setRequired(true).setAutocomplete(true))
+        .addStringOption(o => o.setName('team').setDescription('Team the user represents').setRequired(true).setAutocomplete(true))
     )
     // unregister
     .addSubcommand(sub =>
@@ -79,7 +84,7 @@ module.exports = {
       sub.setName('addleague')
         .setDescription('Add a new league to this server')
         .addStringOption(o => o.setName('name').setDescription('League name').setRequired(true))
-        .addStringOption(o => o.setName('abbr').setDescription('Abbreviation used in GOI titles (e.g. ALPHA)').setRequired(true))
+        .addStringOption(o => o.setName('keyword').setDescription('Secondary keyword in stream title (e.g. OPEN). Case-insensitive.').setRequired(true))
         .addChannelOption(o => o.setName('channel').setDescription('PPV channel to post streams to').setRequired(true))
         .addChannelOption(o => o.setName('category').setDescription('Category that gates self-registration (optional)').setRequired(false))
     )
@@ -97,18 +102,35 @@ module.exports = {
     // announce
     .addSubcommand(sub =>
       sub.setName('announce')
-        .setDescription('Manually post a stream link to a league PPV channel')
-        .addStringOption(o => o.setName('league').setDescription('League abbreviation').setRequired(true).setAutocomplete(true))
-        .addStringOption(o => o.setName('url').setDescription('Stream URL').setRequired(true))
-        .addStringOption(o => o.setName('title').setDescription('Stream title').setRequired(true))
-        .addStringOption(o => o.setName('streamer').setDescription('Streamer display name').setRequired(false))
+        .setDescription('Post a registered user\'s current live stream to a league channel')
+        .addStringOption(o => o.setName('league').setDescription('League').setRequired(true).setAutocomplete(true))
+        .addUserOption(o => o.setName('user').setDescription('Registered Discord user').setRequired(true))
+        .addStringOption(o => o.setName('platform').setDescription('Platform (auto-selected if user only has one)').setRequired(false).setAutocomplete(true))
+        .addStringOption(o => o.setName('url').setDescription('Override stream URL (skips live lookup)').setRequired(false))
+        .addStringOption(o => o.setName('title').setDescription('Override stream title').setRequired(false))
     ),
 
   async autocomplete(interaction) {
-    const focused = interaction.options.getFocused().toUpperCase();
+    const focused = interaction.options.getFocused(true);
+
+    if (focused.name === 'team') {
+      return interaction.respond(searchTeams(focused.value));
+    }
+
+    if (focused.name === 'platform') {
+      const targetUser = interaction.options.get('user');
+      const platforms = targetUser ? getUserPlatforms(targetUser.value) : [];
+      const query = focused.value.toLowerCase();
+      const choices = platforms
+        .filter(p => p.platform.includes(query) || p.platform_username.toLowerCase().includes(query))
+        .map(p => ({ name: `${p.platform} — ${p.platform_username}`, value: p.platform }));
+      return interaction.respond(choices);
+    }
+
+    const query = focused.value.toUpperCase();
     const leagues = getAllLeagues(interaction.guildId);
     const choices = leagues
-      .filter(l => l.abbr.includes(focused) || l.name.toUpperCase().includes(focused))
+      .filter(l => l.abbr.includes(query) || l.name.toUpperCase().includes(query))
       .slice(0, 25)
       .map(l => ({ name: `${l.abbr} — ${l.name}`, value: l.abbr }));
     await interaction.respond(choices);
@@ -121,7 +143,7 @@ module.exports = {
     if (sub === 'setup') return handleSetup(interaction);
 
     if (!isAdmin(interaction)) {
-      return interaction.reply({ content: 'Not authorized.', ephemeral: true });
+      return interaction.reply({ content: 'Not authorized.', flags: 64 });
     }
 
     switch (sub) {
@@ -135,7 +157,7 @@ module.exports = {
       case 'health':       return handleHealth(interaction);
       case 'announce':     return handleAnnounce(interaction);
       default:
-        return interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
+        return interaction.reply({ content: 'Unknown subcommand.', flags: 64 });
     }
   },
 };
@@ -143,28 +165,40 @@ module.exports = {
 async function handleSetup(interaction) {
   if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild) &&
       interaction.member.id !== interaction.guild.ownerId) {
-    return interaction.reply({ content: 'You need the **Manage Server** permission to run setup.', ephemeral: true });
+    return interaction.reply({ content: 'You need the **Manage Server** permission to run setup.', flags: 64 });
   }
 
   const role = interaction.options.getRole('admin_role');
+  const keyword = interaction.options.getString('keyword');
 
-  if (role) {
-    setGuildAdminRole(interaction.guildId, role.id);
-    logger.info('Guild admin role set', { guildId: interaction.guildId, roleId: role.id });
-    await interaction.reply({
-      content: `StreamGate configured. Members with **${role.name}** can now use \`/admin\` commands.\n\nNext: use \`/admin addleague\` to create your first league.`,
-      ephemeral: true,
-    });
-  } else {
+  if (!role && !keyword) {
     const settings = getGuildSettings(interaction.guildId);
     const currentRole = settings?.admin_role_id
       ? `<@&${settings.admin_role_id}>`
       : 'Not set (only server owner and Manage Server users can run admin commands)';
-    await interaction.reply({
-      content: `**StreamGate Setup**\nAdmin role: ${currentRole}\n\nTo set an admin role: \`/admin setup admin_role:@YourRole\``,
-      ephemeral: true,
+    const currentKeyword = settings?.trigger_keyword || 'GOI';
+    return interaction.reply({
+      content: `**StreamGate Setup**\nAdmin role: ${currentRole}\nTrigger keyword: \`${currentKeyword}\`\n\nOptions:\n\`/admin setup admin_role:@YourRole\`\n\`/admin setup keyword:GOI\``,
+      flags: 64,
     });
   }
+
+  const lines = [];
+
+  if (role) {
+    setGuildAdminRole(interaction.guildId, role.id);
+    logger.info('Guild admin role set', { guildId: interaction.guildId, roleId: role.id });
+    lines.push(`Admin role set to **${role.name}**.`);
+  }
+
+  if (keyword) {
+    const kw = keyword.toUpperCase().trim();
+    setGuildTriggerKeyword(interaction.guildId, kw);
+    logger.info('Guild trigger keyword set', { guildId: interaction.guildId, keyword: kw });
+    lines.push(`Trigger keyword set to \`${kw}\`. Streams must include \`${kw}\` in their title to be routed.`);
+  }
+
+  await interaction.reply({ content: lines.join('\n'), flags: 64 });
 }
 
 async function handleRegister(interaction) {
@@ -175,15 +209,35 @@ async function handleRegister(interaction) {
 
   const league = getLeagueByAbbr(interaction.guildId, leagueAbbr);
   if (!league) {
-    return interaction.reply({ content: `League **${leagueAbbr}** not found in this server.`, ephemeral: true });
+    return interaction.reply({ content: `League **${leagueAbbr}** not found in this server.`, flags: 64 });
   }
 
-  await interaction.deferReply({ ephemeral: true });
+  const teamAbbrev = interaction.options.getString('team').toUpperCase();
+  const team = getTeamByAbbrev(teamAbbrev);
+  if (!team) {
+    return interaction.reply({ content: `Team **${teamAbbrev}** not found. Use autocomplete to pick a valid team.`, flags: 64 });
+  }
+
+  await interaction.deferReply({ flags: 64 });
 
   try {
     getOrCreateUser(target.id, target.username);
     addUserPlatform(target.id, platform, username, null);
-    addUserToLeague(target.id, league.id, interaction.user.id);
+    addUserToLeague(target.id, league.id, interaction.user.id, team.name, team.abbrev);
+
+    if (platform === 'youtube' && process.env.YOUTUBE_API_KEY) {
+      const { getChannelIdByHandle, subscribeToChannel } = require('../../platforms/youtube/api');
+      const { updateSubscriptionId, updatePlatformUserId } = require('../../db/queries');
+      const channelId = await getChannelIdByHandle(username);
+      if (channelId) {
+        await subscribeToChannel(channelId);
+        updateSubscriptionId('youtube', username, channelId);
+        updatePlatformUserId('youtube', username, channelId);
+        logger.info('YouTube subscription created on register', { username, channelId });
+      } else {
+        logger.warn('YouTube channel not found on register, subscription deferred to cron', { username });
+      }
+    }
 
     logger.info('Admin registered user', {
       adminId: interaction.user.id,
@@ -195,7 +249,7 @@ async function handleRegister(interaction) {
     });
 
     await interaction.editReply({
-      content: `Registered <@${target.id}> on **${platform}** as \`${username}\` for **${league.name}**.`,
+      content: `Registered <@${target.id}> on **${platform}** as \`${username}\` for **${league.name}** representing **${team.name}**.`,
     });
   } catch (err) {
     logger.error('Admin register error', { error: err.message });
@@ -209,7 +263,7 @@ async function handleUnregister(interaction) {
 
   removeUserPlatform(target.id, platform);
   logger.info('Admin unregistered platform', { adminId: interaction.user.id, targetId: target.id, platform });
-  await interaction.reply({ content: `Removed **${platform}** account for <@${target.id}>.`, ephemeral: true });
+  await interaction.reply({ content: `Removed **${platform}** account for <@${target.id}>.`, flags: 64 });
 }
 
 async function handleRemoveLeague(interaction) {
@@ -218,12 +272,12 @@ async function handleRemoveLeague(interaction) {
 
   const league = getLeagueByAbbr(interaction.guildId, leagueAbbr);
   if (!league) {
-    return interaction.reply({ content: `League **${leagueAbbr}** not found in this server.`, ephemeral: true });
+    return interaction.reply({ content: `League **${leagueAbbr}** not found in this server.`, flags: 64 });
   }
 
   removeUserFromLeague(target.id, league.id);
   logger.info('Admin removed user from league', { adminId: interaction.user.id, targetId: target.id, league: league.abbr });
-  await interaction.reply({ content: `Removed <@${target.id}> from **${league.name}**.`, ephemeral: true });
+  await interaction.reply({ content: `Removed <@${target.id}> from **${league.name}**.`, flags: 64 });
 }
 
 async function handleStatus(interaction) {
@@ -246,11 +300,14 @@ async function handleStatus(interaction) {
   embed.addFields({
     name: `Leagues in ${interaction.guild.name}`,
     value: leagues.length
-      ? leagues.map(l => `**${l.abbr}** — ${l.name}`).join('\n')
+      ? leagues.map(l => {
+          const team = l.team_name ? ` — ${l.team_name}` : '';
+          return `**${l.name}** \`${l.abbr}\`${team}`;
+        }).join('\n')
       : 'None',
   });
 
-  await interaction.reply({ embeds: [embed], ephemeral: true });
+  await interaction.reply({ embeds: [embed], flags: 64 });
 }
 
 async function handleLeagues(interaction) {
@@ -259,7 +316,7 @@ async function handleLeagues(interaction) {
   if (!leagues.length) {
     return interaction.reply({
       content: 'No leagues configured yet. Use `/admin addleague` to create one.',
-      ephemeral: true,
+      flags: 64,
     });
   }
 
@@ -268,29 +325,37 @@ async function handleLeagues(interaction) {
     .setColor(0x5865F2)
     .setDescription(
       leagues.map(l =>
-        `**${l.abbr}** — ${l.name}\nPPV: <#${l.ppv_channel_id}>${l.category_id ? `\nAccess gate: <#${l.category_id}>` : ''}`
+        `**${l.name}** \`keyword: ${l.abbr}\`\nPPV: <#${l.ppv_channel_id}>${l.category_id ? `\nAccess gate: <#${l.category_id}>` : ''}`
       ).join('\n\n')
     )
     .setTimestamp();
 
-  await interaction.reply({ embeds: [embed], ephemeral: true });
+  await interaction.reply({ embeds: [embed], flags: 64 });
 }
 
 async function handleAddLeague(interaction) {
+  await interaction.deferReply({ flags: 64 });
+
   const name = interaction.options.getString('name');
-  const abbr = interaction.options.getString('abbr').toUpperCase();
+  const keyword = interaction.options.getString('keyword').toUpperCase().trim();
   const channel = interaction.options.getChannel('channel');
   const category = interaction.options.getChannel('category');
 
+  const settings = getGuildSettings(interaction.guildId);
+  const triggerKeyword = settings?.trigger_keyword || 'GOI';
+
   try {
-    addLeague(interaction.guildId, name, abbr, channel.id, category?.id || null);
-    logger.info('League added', { adminId: interaction.user.id, guildId: interaction.guildId, name, abbr, channelId: channel.id });
-    await interaction.reply({
-      content: `League **${abbr}** (${name}) added. Streams tagged \`GOI ${abbr}\` will post to <#${channel.id}>.`,
-      ephemeral: true,
-    });
+    addLeague(interaction.guildId, name, keyword, channel.id, category?.id || null);
+    logger.info('League added', { adminId: interaction.user.id, guildId: interaction.guildId, name, keyword, channelId: channel.id });
+    await interaction.editReply(
+      `League **${name}** added with keyword \`${keyword}\`.\nStreams with \`${triggerKeyword} ${keyword}\` in the title will post to <#${channel.id}>.`
+    );
   } catch (err) {
-    await interaction.reply({ content: `Failed to add league: ${err.message}`, ephemeral: true });
+    logger.error('addleague failed', { error: err.message, guildId: interaction.guildId, name, keyword });
+    const msg = err.message?.includes('UNIQUE')
+      ? `A league with keyword \`${keyword}\` already exists in this server.`
+      : `Failed to add league: ${err.message}`;
+    await interaction.editReply(msg);
   }
 }
 
@@ -299,13 +364,13 @@ async function handleUsers(interaction) {
   const league = getLeagueByAbbr(interaction.guildId, leagueAbbr);
 
   if (!league) {
-    return interaction.reply({ content: `League **${leagueAbbr}** not found in this server.`, ephemeral: true });
+    return interaction.reply({ content: `League **${leagueAbbr}** not found in this server.`, flags: 64 });
   }
 
   const users = getUsersInLeague(league.id);
 
   if (!users.length) {
-    return interaction.reply({ content: `No users in **${league.name}**.`, ephemeral: true });
+    return interaction.reply({ content: `No users in **${league.name}**.`, flags: 64 });
   }
 
   const lines = [];
@@ -317,7 +382,8 @@ async function handleUsers(interaction) {
         .filter(x => x.discord_id === u.discord_id && x.platform)
         .map(x => `${x.platform}: ${x.platform_username}`)
         .join(', ');
-      lines.push(`<@${u.discord_id}> (${u.discord_username})${platformLines ? ` — ${platformLines}` : ''}`);
+      const team = u.team_name ? ` | **${u.team_name}**` : '';
+      lines.push(`<@${u.discord_id}> (${u.discord_username})${team}${platformLines ? ` — ${platformLines}` : ''}`);
     }
   }
 
@@ -327,11 +393,11 @@ async function handleUsers(interaction) {
     .setDescription(lines.join('\n'))
     .setTimestamp();
 
-  await interaction.reply({ embeds: [embed], ephemeral: true });
+  await interaction.reply({ embeds: [embed], flags: 64 });
 }
 
 async function handleHealth(interaction) {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: 64 });
 
   const stats = getHealthStats(interaction.guildId);
 
@@ -351,38 +417,95 @@ async function handleHealth(interaction) {
 
 async function handleAnnounce(interaction) {
   const leagueAbbr = interaction.options.getString('league').toUpperCase();
-  const url = interaction.options.getString('url');
-  const title = interaction.options.getString('title');
-  const streamer = interaction.options.getString('streamer') || interaction.user.username;
+  const targetUser = interaction.options.getUser('user');
+  const platformOption = interaction.options.getString('platform')?.toLowerCase();
+  const urlOverride = interaction.options.getString('url');
+  const titleOverride = interaction.options.getString('title');
 
   const league = getLeagueByAbbr(interaction.guildId, leagueAbbr);
   if (!league) {
-    return interaction.reply({ content: `League **${leagueAbbr}** not found in this server.`, ephemeral: true });
+    return interaction.reply({ content: `League **${leagueAbbr}** not found in this server.`, flags: 64 });
   }
 
-  await interaction.deferReply({ ephemeral: true });
+  const platforms = getUserPlatforms(targetUser.id);
+  if (!platforms.length) {
+    return interaction.reply({ content: `<@${targetUser.id}> has no registered platforms.`, flags: 64 });
+  }
+
+  let platform;
+  if (platformOption) {
+    platform = platforms.find(p => p.platform === platformOption);
+    if (!platform) {
+      return interaction.reply({ content: `<@${targetUser.id}> is not registered on **${platformOption}**.`, flags: 64 });
+    }
+  } else if (platforms.length === 1) {
+    platform = platforms[0];
+  } else {
+    const list = platforms.map(p => `\`${p.platform}\``).join(', ');
+    return interaction.reply({ content: `<@${targetUser.id}> has multiple platforms (${list}). Use the \`platform\` option to choose one.`, flags: 64 });
+  }
+
+  await interaction.deferReply({ flags: 64 });
 
   try {
-    const channel = await interaction.client.channels.fetch(league.ppv_channel_id);
-    const platform = url.includes('twitch.tv') ? 'twitch' : 'youtube';
-    const platformLabel = platform === 'twitch' ? 'Twitch' : 'YouTube';
-    const platformColor = platform === 'twitch' ? 0x6441a5 : 0xFF0000;
+    let streamData = null;
 
-    const embed = new EmbedBuilder()
-      .setTitle(`${streamer} is LIVE on ${platformLabel}`)
-      .setURL(url)
-      .setDescription(title)
-      .addFields(
-        { name: 'League', value: league.name, inline: true },
-        { name: 'Platform', value: platformLabel, inline: true }
-      )
-      .setColor(platformColor)
-      .setTimestamp();
+    if (urlOverride && titleOverride) {
+      streamData = {
+        url: urlOverride,
+        title: titleOverride,
+        user_name: platform.platform_username,
+      };
+    } else {
+      if (platform.platform === 'twitch' && process.env.TWITCH_CLIENT_ID) {
+        const { getLiveStream } = require('../../platforms/twitch/api');
+        streamData = await getLiveStream(platform.platform_username);
+      } else if (platform.platform === 'youtube' && process.env.YOUTUBE_API_KEY) {
+        const { getActiveLiveStream, getChannelIdByHandle, subscribeToChannel } = require('../../platforms/youtube/api');
+        const { updateSubscriptionId, updatePlatformUserId } = require('../../db/queries');
+        let channelId = platform.platform_user_id || platform.subscription_id;
+        if (!channelId) {
+          channelId = await getChannelIdByHandle(platform.platform_username);
+          if (channelId) {
+            await subscribeToChannel(channelId);
+            updateSubscriptionId('youtube', platform.platform_username, channelId);
+            updatePlatformUserId('youtube', platform.platform_username, channelId);
+          }
+        }
+        if (channelId) {
+          streamData = await getActiveLiveStream(channelId);
+        }
+      }
 
-    await channel.send({ embeds: [embed] });
-    await interaction.editReply({ content: `Announced in <#${league.ppv_channel_id}>.` });
+      if (!streamData) {
+        return interaction.editReply({
+          content: `Could not find an active live stream for **${platform.platform_username}** on ${platform.platform}. If they are live, use the \`url\` and \`title\` overrides.`,
+        });
+      }
+    }
 
-    logger.info('Admin manual announce', { adminId: interaction.user.id, guildId: interaction.guildId, league: league.abbr, url });
+    const { checkRecentStreamPostByTitle } = require('../../db/queries');
+    if (checkRecentStreamPostByTitle(league.id, streamData.title)) {
+      return interaction.editReply({ content: `That stream was already posted to **${league.name}** within the last hour.` });
+    }
+
+    // Use the team-enriched league row so postStreamToChannel can apply team colors/logo
+    const userLeagues = getUserLeagues(targetUser.id, interaction.guildId);
+    const enrichedLeague = userLeagues.find(l => l.id === league.id) || league;
+
+    const discordUser = { discord_id: targetUser.id, discord_username: targetUser.username };
+    await postStreamToChannel(enrichedLeague, discordUser, platform.platform, streamData);
+
+    logger.info('Admin manual announce', {
+      adminId: interaction.user.id,
+      targetId: targetUser.id,
+      guildId: interaction.guildId,
+      league: league.abbr,
+      platform: platform.platform,
+      username: platform.platform_username,
+    });
+
+    await interaction.editReply({ content: `Posted **${platform.platform_username}**'s stream to <#${league.ppv_channel_id}>.` });
   } catch (err) {
     logger.error('Announce error', { error: err.message });
     await interaction.editReply({ content: `Failed: ${err.message}` });

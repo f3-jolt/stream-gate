@@ -16,9 +16,10 @@ function initSchema() {
   db.exec(`
     -- Per-guild bot configuration (admin role, etc.)
     CREATE TABLE IF NOT EXISTS guild_settings (
-      guild_id      TEXT PRIMARY KEY,
-      admin_role_id TEXT,
-      created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+      guild_id         TEXT PRIMARY KEY,
+      admin_role_id    TEXT,
+      trigger_keyword  TEXT NOT NULL DEFAULT 'GOI',
+      created_at       DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
     -- Leagues are scoped to a guild
@@ -54,11 +55,13 @@ function initSchema() {
 
     -- League memberships are per-guild (user can be in ALPHA in Server A and ALPHA in Server B)
     CREATE TABLE IF NOT EXISTS user_leagues (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id    INTEGER NOT NULL REFERENCES users(id),
-      league_id  INTEGER NOT NULL REFERENCES leagues(id),
-      added_by   TEXT NOT NULL,
-      added_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id     INTEGER NOT NULL REFERENCES users(id),
+      league_id   INTEGER NOT NULL REFERENCES leagues(id),
+      added_by    TEXT NOT NULL,
+      team_name   TEXT,
+      team_abbrev TEXT,
+      added_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(user_id, league_id)
     );
 
@@ -97,6 +100,10 @@ function runMigrations() {
   const migrations = [
     `ALTER TABLE leagues ADD COLUMN guild_id TEXT NOT NULL DEFAULT ''`,
     `ALTER TABLE pending_routes ADD COLUMN guild_id TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE guild_settings ADD COLUMN trigger_keyword TEXT NOT NULL DEFAULT 'GOI'`,
+    `ALTER TABLE stream_posts ADD COLUMN stream_title TEXT`,
+    `ALTER TABLE user_leagues ADD COLUMN team_name TEXT`,
+    `ALTER TABLE user_leagues ADD COLUMN team_abbrev TEXT`,
   ];
 
   for (const sql of migrations) {

@@ -9,4 +9,9 @@ const client = new Client({
 });
 
 client.commands = new Collection();
+
+client.on('error', err => {
+  require('../utils/logger').error('Discord client error', { error: err.message });
+});
+
 module.exports = client;

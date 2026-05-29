@@ -1,9 +1,12 @@
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
+const path = require('path');
+const { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
 const { parseStreamTitle } = require('./titleParser');
+const { getTeamByAbbrev } = require('./teams');
 const {
   getUserByPlatform,
   getUserLeaguesByGuild,
   getLeagueByAbbr,
+  getGuildSettings,
   checkStreamPost,
   saveStreamPost,
   savePendingRoute,
@@ -17,17 +20,17 @@ function setClient(client) {
 }
 
 async function routeStream(platform, platformUsername, streamData) {
-  const { isGOI, abbr } = parseStreamTitle(streamData.title);
-  if (!isGOI) return;
-
   const user = getUserByPlatform(platform, platformUsername);
   if (!user) return;
 
-  // Get all (guild → leagues) pairs for this user and route each guild independently
   const guildGroups = getUserLeaguesByGuild(user.discord_id);
   if (!guildGroups.length) return;
 
   for (const { guildId, leagues } of guildGroups) {
+    const settings = getGuildSettings(guildId);
+    const keyword = settings?.trigger_keyword || 'GOI';
+    const { isMatch, abbr } = parseStreamTitle(streamData.title, keyword);
+    if (!isMatch) continue;
     await routeForGuild(guildId, leagues, user, platform, streamData, abbr);
   }
 }
@@ -66,10 +69,12 @@ async function postStreamToChannel(league, user, platform, streamData) {
       return;
     }
 
-    const embed = buildStreamEmbed(user, league, platform, streamData);
-    await channel.send({ embeds: [embed] });
+    const teamAbbrev = league.team_abbrev || null;
+    const team = teamAbbrev ? getTeamByAbbrev(teamAbbrev) : null;
+    const { embed, files } = buildStreamEmbed(user, league, platform, streamData, team);
+    await channel.send({ embeds: [embed], files });
 
-    saveStreamPost(platform, streamData.id, user.discord_id, league.id);
+    saveStreamPost(platform, streamData.id, user.discord_id, league.id, streamData.title);
     logger.info('Stream posted', {
       platform,
       user: user.discord_username,
@@ -122,7 +127,7 @@ async function sendDisambiguationDM(discordUserId, guildId, leagues, platform, s
   }
 }
 
-function buildStreamEmbed(user, league, platform, streamData) {
+function buildStreamEmbed(user, league, platform, streamData, team = null) {
   const streamUrl = platform === 'twitch'
     ? `https://twitch.tv/${streamData.user_login}`
     : `https://youtube.com/watch?v=${streamData.videoId}`;
@@ -130,16 +135,36 @@ function buildStreamEmbed(user, league, platform, streamData) {
   const platformColor = platform === 'twitch' ? 0x6441a5 : 0xFF0000;
   const platformLabel = platform === 'twitch' ? 'Twitch' : 'YouTube';
 
-  return new EmbedBuilder()
-    .setTitle(`${streamData.user_name} is LIVE on ${platformLabel}`)
+  const embedColor = team?.colors?.[0]
+    ? parseInt(team.colors[0].replace('#', ''), 16)
+    : platformColor;
+
+  const fields = [
+    { name: 'League', value: league.name, inline: true },
+    { name: 'Platform', value: platformLabel, inline: true },
+  ];
+
+  const files = [];
+  const title = team?.name
+    ? `${team.name} is now playing! Check out their stream!`
+    : `${streamData.user_name} is LIVE on ${platformLabel}`;
+
+  const embed = new EmbedBuilder()
+    .setTitle(title)
     .setURL(streamUrl)
     .setDescription(streamData.title)
-    .addFields(
-      { name: 'League', value: league.name, inline: true },
-      { name: 'Platform', value: platformLabel, inline: true }
-    )
-    .setColor(platformColor)
+    .addFields(fields)
+    .setColor(embedColor)
     .setTimestamp();
+
+  if (team?.pic) {
+    const logoPath = path.resolve(process.cwd(), team.pic.replace(/^\.\//, ''));
+    const attachment = new AttachmentBuilder(logoPath, { name: 'team-logo.png' });
+    embed.setThumbnail('attachment://team-logo.png');
+    files.push(attachment);
+  }
+
+  return { embed, files };
 }
 
 module.exports = { routeStream, routeForGuild, postStreamToChannel, setClient };
