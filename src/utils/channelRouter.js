@@ -31,7 +31,17 @@ async function routeStream(platform, platformUsername, streamData) {
     const keyword = settings?.trigger_keyword || 'GOI';
     const { isMatch, abbr } = parseStreamTitle(streamData.title, keyword);
     if (!isMatch) continue;
-    await routeForGuild(guildId, leagues, user, platform, streamData, abbr);
+    try {
+      await routeForGuild(guildId, leagues, user, platform, streamData, abbr);
+    } catch (err) {
+      logger.error('Failed to post stream to channel', {
+        error: err.message,
+        rawError: err.rawError ?? err.errors ?? undefined,
+        guild: guildId,
+        platform,
+        username: platformUsername,
+      });
+    }
   }
 }
 
@@ -62,30 +72,26 @@ async function routeForGuild(guildId, leagues, user, platform, streamData, abbr)
 }
 
 async function postStreamToChannel(league, user, platform, streamData) {
-  try {
-    const channel = await _client.channels.fetch(league.ppv_channel_id);
-    if (!channel) {
-      logger.error('PPV channel not found', { leagueId: league.id, channelId: league.ppv_channel_id });
-      return;
-    }
-
-    const teamAbbrev = league.team_abbrev || null;
-    const team = teamAbbrev ? getTeamByAbbrev(teamAbbrev) : null;
-    const { embed, files } = buildStreamEmbed(user, league, platform, streamData, team);
-    const content = league.ping_role_id ? `<@&${league.ping_role_id}>` : undefined;
-    await channel.send({ content, embeds: [embed], files });
-
-    saveStreamPost(platform, streamData.id, user.discord_id, league.id, streamData.title);
-    logger.info('Stream posted', {
-      platform,
-      user: user.discord_username,
-      league: league.abbr,
-      guild: league.guild_id,
-      channel: channel.name,
-    });
-  } catch (err) {
-    logger.error('Failed to post stream to channel', { error: err.message });
+  const channel = await _client.channels.fetch(league.ppv_channel_id);
+  if (!channel) {
+    logger.error('PPV channel not found', { leagueId: league.id, channelId: league.ppv_channel_id });
+    throw new Error(`PPV channel ${league.ppv_channel_id} not found`);
   }
+
+  const teamAbbrev = league.team_abbrev || null;
+  const team = teamAbbrev ? getTeamByAbbrev(teamAbbrev) : null;
+  const { embed, files } = buildStreamEmbed(user, league, platform, streamData, team);
+  const content = league.ping_role_id ? `<@&${league.ping_role_id}>` : undefined;
+  await channel.send({ content, embeds: [embed], files });
+
+  saveStreamPost(platform, streamData.id, user.discord_id, league.id, streamData.title);
+  logger.info('Stream posted', {
+    platform,
+    user: user.discord_username,
+    league: league.abbr,
+    guild: league.guild_id,
+    channel: channel.name,
+  });
 }
 
 async function sendDisambiguationDM(discordUserId, guildId, leagues, platform, streamData) {
@@ -129,8 +135,9 @@ async function sendDisambiguationDM(discordUserId, guildId, leagues, platform, s
 }
 
 function buildStreamEmbed(user, league, platform, streamData, team = null) {
+  const userLogin = streamData.user_login || user.discord_username;
   const streamUrl = platform === 'twitch'
-    ? `https://twitch.tv/${streamData.user_login}`
+    ? `https://twitch.tv/${userLogin}`
     : `https://youtube.com/watch?v=${streamData.videoId}`;
 
   const platformColor = platform === 'twitch' ? 0x6441a5 : 0xFF0000;
@@ -141,19 +148,22 @@ function buildStreamEmbed(user, league, platform, streamData, team = null) {
     : platformColor;
 
   const fields = [
-    { name: 'League', value: league.name, inline: true },
+    { name: 'League', value: league.name || league.abbr || 'Unknown', inline: true },
     { name: 'Platform', value: platformLabel, inline: true },
   ];
 
   const files = [];
+  const displayName = streamData.user_name || userLogin || user.discord_username;
   const title = team?.name
     ? `${team.name} is streaming their game!`
-    : `${streamData.user_name} is LIVE on ${platformLabel}`;
+    : `${displayName} is LIVE on ${platformLabel}`;
+
+  const description = streamData.title?.trim() || `${displayName} is live!`;
 
   const embed = new EmbedBuilder()
     .setTitle(title)
     .setURL(streamUrl)
-    .setDescription(streamData.title)
+    .setDescription(description)
     .addFields(fields)
     .setColor(embedColor)
     .setTimestamp();

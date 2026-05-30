@@ -5,8 +5,8 @@
     "mascot": "Falcons",
     "pic": "./src/db/teams/logos/airForce.png",
     "colors": [
-      "#FFFFFF",
-      "#0061AA"
+      "#0061AA",
+      "#FFFFFF"
     ]
   },
   "Akron": {
@@ -15,9 +15,9 @@
     "mascot": "Zips",
     "pic": "./src/db/teams/logos/akron.png",
     "colors": [
-      "#FFFFFF",
       "#C29C41",
-      "#000E41"
+      "#000E41",
+      "#FFFFFF"
     ]
   },
   "Alabama": {
@@ -27,8 +27,8 @@
     "pic": "./src/db/teams/logos/alabama.png",
     "colors": [
       "#CACCCE",
-      "#FFFFFF",
-      "#A80532"
+      "#A80532",
+      "#FFFFFF"
     ]
   },
   "Appalachian State": {
@@ -37,8 +37,8 @@
     "mascot": "Mountaineers",
     "pic": "./src/db/teams/logos/appalachianState.png",
     "colors": [
-      "#FFFFFF",
       "#FFC520",
+      "#FFFFFF",
       "#000000"
     ]
   },
@@ -48,9 +48,9 @@
     "mascot": "Wildcats",
     "pic": "./src/db/teams/logos/arizona.png",
     "colors": [
-      "#FFFFFF",
       "#BB003A",
-      "#003559"
+      "#003559",
+      "#FFFFFF"
     ]
   },
   "Arizona State": {
@@ -59,9 +59,9 @@
     "mascot": "Sun Devils",
     "pic": "./src/db/teams/logos/arizonaState.png",
     "colors": [
-      "#FFFFFF",
       "#FEC927",
-      "#96203D"
+      "#96203D",
+      "#FFFFFF"
     ]
   },
   "Arkansas": {
@@ -70,9 +70,9 @@
     "mascot": "Razorbacks",
     "pic": "./src/db/teams/logos/arkansas.png",
     "colors": [
-      "#FFFFFF",
       "#231F20",
-      "#CD1041"
+      "#CD1041",
+      "#FFFFFF"
     ]
   },
   "Arkansas State": {
@@ -83,8 +83,8 @@
     "colors": [
       "#C8C7C7",
       "#231F20",
-      "#FFFFFF",
-      "#ED1B2E"
+      "#ED1B2E",
+      "#FFFFFF"
     ]
   },
   "Army": {
@@ -93,9 +93,9 @@
     "mascot": "Black Knights",
     "pic": "./src/db/teams/logos/army.png",
     "colors": [
+      "#D19D00",
       "#FFFFFF",
-      "#000000",
-      "#D19D00"
+      "#000000"
     ]
   },
   "Auburn": {
@@ -104,9 +104,9 @@
     "mascot": "Tigers",
     "pic": "./src/db/teams/logos/auburn.png",
     "colors": [
-      "#FFFFFF",
       "#FE3300",
-      "#172240"
+      "#172240",
+      "#FFFFFF"
     ]
   },
   "Ball State": {
@@ -115,9 +115,9 @@
     "mascot": "Cardinals",
     "pic": "./src/db/teams/logos/ballState.png",
     "colors": [
+      "#DA0000",
       "#000000",
-      "#FFFFFF",
-      "#DA0000"
+      "#FFFFFF"
     ]
   },
   "Baylor": {
@@ -126,9 +126,9 @@
     "mascot": "Bears",
     "pic": "./src/db/teams/logos/baylor.png",
     "colors": [
-      "#FFFFFF",
       "#FFC227",
-      "#008649"
+      "#008649",
+      "#FFFFFF"
     ]
   },
   "Boise State": {
@@ -137,9 +137,9 @@
     "mascot": "Broncos",
     "pic": "./src/db/teams/logos/boiseState.png",
     "colors": [
-      "#FFFFFF",
       "#F27E34",
-      "#2D4492"
+      "#2D4492",
+      "#FFFFFF"
     ]
   },
   "Boston College": {
@@ -148,10 +148,10 @@
     "mascot": "Eagles",
     "pic": "./src/db/teams/logos/boston.png",
     "colors": [
-      "#FFFFFF",
       "#EEE8B7",
-      "#000000",
-      "#821E1E"
+      "#821E1E",
+      "#FFFFFF",
+      "#000000"
     ]
   },
   "Bowling Green": {
@@ -160,9 +160,9 @@
     "mascot": "Falcons",
     "pic": "./src/db/teams/logos/bowlingGreen.png",
     "colors": [
-      "#FFFFFF",
       "#F5793F",
-      "#4E2400"
+      "#4E2400",
+      "#FFFFFF"
     ]
   },
   "Buffalo": {
@@ -171,9 +171,9 @@
     "mascot": "Bulls",
     "pic": "./src/db/teams/logos/buffalo.png",
     "colors": [
+      "#0068B4",
       "#000000",
-      "#FFFFFF",
-      "#0068B4"
+      "#FFFFFF"
     ]
   },
   "BYU": {
@@ -182,8 +182,8 @@
     "mascot": "Cougars",
     "pic": "./src/db/teams/logos/byu.png",
     "colors": [
-      "#FFFFFF",
-      "#002D62"
+      "#002D62",
+      "#FFFFFF"
     ]
   },
   "California": {
@@ -192,9 +192,9 @@
     "mascot": "Golden Bears",
     "pic": "./src/db/teams/logos/california.png",
     "colors": [
-      "#FFFFFF",
       "#FFDE30",
-      "#003768"
+      "#003768",
+      "#FFFFFF"
     ]
   },
   "Central Michigan": {
@@ -204,8 +204,8 @@
     "pic": "./src/db/teams/logos/centralMichigan.png",
     "colors": [
       "#E2A253",
-      "#FFFFFF",
-      "#780006"
+      "#780006",
+      "#FFFFFF"
     ]
   },
   "Charlotte": {
@@ -215,8 +215,8 @@
     "pic": "./src/db/teams/logos/charlotte.png",
     "colors": [
       "#949431",
-      "#FFFFFF",
-      "#006331"
+      "#006331",
+      "#FFFFFF"
     ]
   },
   "Cincinnati": {
@@ -225,8 +225,8 @@
     "mascot": "Bearcats",
     "pic": "./src/db/teams/logos/cincinnati.png",
     "colors": [
-      "#FFFFFF",
       "#FD0026",
+      "#FFFFFF",
       "#000000"
     ]
   },
@@ -237,8 +237,8 @@
     "pic": "./src/db/teams/logos/clemson.png",
     "colors": [
       "#441F6F",
-      "#FFFFFF",
-      "#F06014"
+      "#F06014",
+      "#FFFFFF"
     ]
   },
   "Coastal Carolina": {
@@ -249,8 +249,8 @@
     "colors": [
       "#D59C3A",
       "#373434",
-      "#FFFFFF",
-      "#009297"
+      "#009297",
+      "#FFFFFF"
     ]
   },
   "Colorado": {
@@ -259,9 +259,9 @@
     "mascot": "Buffaloes",
     "pic": "./src/db/teams/logos/colorado.png",
     "colors": [
-      "#FFFFFF",
       "#231F20",
-      "#D9C994"
+      "#D9C994",
+      "#FFFFFF"
     ]
   },
   "Colorado State": {
@@ -271,9 +271,9 @@
     "pic": "./src/db/teams/logos/coloradoState.png",
     "colors": [
       "#F8E793",
+      "#008C75",
       "#000000",
-      "#FFFFFF",
-      "#008C75"
+      "#FFFFFF"
     ]
   },
   "Connecticut": {
@@ -283,8 +283,8 @@
     "pic": "./src/db/teams/logos/connecticut.png",
     "colors": [
       "#B2B2AE",
-      "#FFFFFF",
-      "#0A1D5A"
+      "#0A1D5A",
+      "#FFFFFF"
     ]
   },
   "Delaware": {
@@ -293,10 +293,10 @@
     "mascot": "Blue Hens",
     "pic": "./src/db/teams/logos/delaware.png",
     "colors": [
-      "#FFFFFF",
       "#100A04",
       "#FFDD00",
-      "#01539B"
+      "#01539B",
+      "#FFFFFF"
     ]
   },
   "Duke": {
@@ -305,8 +305,8 @@
     "mascot": "Blue Devils",
     "pic": "./src/db/teams/logos/duke.png",
     "colors": [
-      "#FFFFFF",
-      "#004C7D"
+      "#004C7D",
+      "#FFFFFF"
     ]
   },
   "East Carolina": {
@@ -315,10 +315,10 @@
     "mascot": "Pirates",
     "pic": "./src/db/teams/logos/eastCarolina.png",
     "colors": [
-      "#000000",
-      "#FFFFFF",
       "#FFCE28",
-      "#4A1F68"
+      "#4A1F68",
+      "#000000",
+      "#FFFFFF"
     ]
   },
   "Eastern Michigan": {
@@ -328,8 +328,8 @@
     "pic": "./src/db/teams/logos/easternMichigan.png",
     "colors": [
       "#7F7F7F",
-      "#FFFFFF",
-      "#0B5F24"
+      "#0B5F24",
+      "#FFFFFF"
     ]
   },
   "Florida": {
@@ -339,9 +339,9 @@
     "pic": "./src/db/teams/logos/florida.png",
     "colors": [
       "#39734A",
-      "#FFFFFF",
       "#FF4208",
-      "#2139CE"
+      "#2139CE",
+      "#FFFFFF"
     ]
   },
   "Florida Atlantic": {
@@ -351,8 +351,8 @@
     "pic": "./src/db/teams/logos/floridaAtlantic.png",
     "colors": [
       "#CD1041",
-      "#FFFFFF",
-      "#004B85"
+      "#004B85",
+      "#FFFFFF"
     ]
   },
   "Florida Intl": {
@@ -361,9 +361,9 @@
     "mascot": "Golden Panthers",
     "pic": "./src/db/teams/logos/floridaIntl.png",
     "colors": [
-      "#FFFFFF",
       "#C5960B",
-      "#002D62"
+      "#002D62",
+      "#FFFFFF"
     ]
   },
   "Florida State": {
@@ -372,10 +372,10 @@
     "mascot": "Seminoles",
     "pic": "./src/db/teams/logos/floridaState.png",
     "colors": [
-      "#FFFFFF",
       "#231F20",
       "#A8936B",
-      "#900028"
+      "#900028",
+      "#FFFFFF"
     ]
   },
   "Fresno State": {
@@ -384,9 +384,9 @@
     "mascot": "Bulldogs",
     "pic": "./src/db/teams/logos/fresnoState.png",
     "colors": [
-      "#FFFFFF",
       "#E32F38",
-      "#00427A"
+      "#00427A",
+      "#FFFFFF"
     ]
   },
   "Georgia": {
@@ -395,9 +395,9 @@
     "mascot": "Bulldogs",
     "pic": "./src/db/teams/logos/georgia.png",
     "colors": [
+      "#A0000B",
       "#FFFFFF",
-      "#000000",
-      "#A0000B"
+      "#000000"
     ]
   },
   "Georgia Southern": {
@@ -408,8 +408,8 @@
     "colors": [
       "#9DB7c4",
       "#9B8348",
-      "#FFFFFF",
-      "#003775"
+      "#003775",
+      "#FFFFFF"
     ]
   },
   "Georgia State": {
@@ -419,8 +419,8 @@
     "pic": "./src/db/teams/logos/georgiaState.png",
     "colors": [
       "#F8112B",
-      "#FFFFFF",
-      "#005DAA"
+      "#005DAA",
+      "#FFFFFF"
     ]
   },
   "Georgia Tech": {
@@ -429,9 +429,9 @@
     "mascot": "Yellow Jackets",
     "pic": "./src/db/teams/logos/georgiaTech.png",
     "colors": [
-      "#FFFFFF",
       "#FDB813",
-      "#160A06"
+      "#160A06",
+      "#FFFFFF"
     ]
   },
   "Hawaii": {
@@ -440,9 +440,9 @@
     "mascot": "Rainbow Warriors",
     "pic": "./src/db/teams/logos/hawaii.png",
     "colors": [
+      "#004231",
       "#FFFFFF",
-      "#000000",
-      "#004231"
+      "#000000"
     ]
   },
   "Hawaii State": {
@@ -461,9 +461,9 @@
     "mascot": "Cougars",
     "pic": "./src/db/teams/logos/houston.png",
     "colors": [
-      "#FFFFFF",
       "#012259",
-      "#C90822"
+      "#C90822",
+      "#FFFFFF"
     ]
   },
   "Illinois": {
@@ -472,9 +472,9 @@
     "mascot": "Fighting Illini",
     "pic": "./src/db/teams/logos/illinois.png",
     "colors": [
-      "#FFFFFF",
       "#1B4178",
-      "#F5873C"
+      "#F5873C",
+      "#FFFFFF"
     ]
   },
   "Indiana": {
@@ -483,8 +483,8 @@
     "mascot": "Hoosiers",
     "pic": "./src/db/teams/logos/indiana.png",
     "colors": [
-      "#FFFFFF",
-      "#A82B3D"
+      "#A82B3D",
+      "#FFFFFF"
     ]
   },
   "Iowa": {
@@ -493,8 +493,8 @@
     "mascot": "Hawkeyes",
     "pic": "./src/db/teams/logos/iowa.png",
     "colors": [
-      "#FFFFFF",
       "#FFD700",
+      "#FFFFFF",
       "#000000"
     ]
   },
@@ -504,9 +504,9 @@
     "mascot": "Cyclones",
     "pic": "./src/db/teams/logos/iowaState.png",
     "colors": [
-      "#FFFFFF",
       "#FEC938",
-      "#840A2C"
+      "#840A2C",
+      "#FFFFFF"
     ]
   },
   "Jacksonville State": {
@@ -516,8 +516,8 @@
     "pic": "./src/db/teams/logos/jacksonvilleState.png",
     "colors": [
       "#1D1819",
-      "#FFFFFF",
-      "#E53F40"
+      "#E53F40",
+      "#FFFFFF"
     ]
   },
   "James Madison": {
@@ -527,9 +527,9 @@
     "pic": "./src/db/teams/logos/jamesMadison.png",
     "colors": [
       "#B3B5B8",
-      "#FFFFFF",
       "#D5A10E",
-      "#263997"
+      "#263997",
+      "#FFFFFF"
     ]
   },
   "Kansas": {
@@ -540,8 +540,8 @@
     "colors": [
       "#E51837",
       "#FFD204",
-      "#FFFFFF",
-      "#006AB5"
+      "#006AB5",
+      "#FFFFFF"
     ]
   },
   "Kansas State": {
@@ -550,8 +550,8 @@
     "mascot": "Wildcats",
     "pic": "./src/db/teams/logos/kansasState.png",
     "colors": [
-      "#FFFFFF",
-      "#633194"
+      "#633194",
+      "#FFFFFF"
     ]
   },
   "Kennesaw State": {
@@ -560,9 +560,9 @@
     "mascot": "Owls",
     "pic": "./src/db/teams/logos/kennesawState.png",
     "colors": [
-      "#FFFFFF",
       "#F0B410",
-      "#231F20"
+      "#231F20",
+      "#FFFFFF"
     ]
   },
   "Kent State": {
@@ -571,9 +571,9 @@
     "mascot": "Golden Flashes",
     "pic": "./src/db/teams/logos/kentState.png",
     "colors": [
-      "#FFFFFF",
       "#F7BD0A",
-      "#131149"
+      "#131149",
+      "#FFFFFF"
     ]
   },
   "Kentucky": {
@@ -583,8 +583,8 @@
     "pic": "./src/db/teams/logos/kentucky.png",
     "colors": [
       "#EBEBE4",
-      "#FFFFFF",
-      "#003399"
+      "#003399",
+      "#FFFFFF"
     ]
   },
   "Liberty": {
@@ -593,9 +593,9 @@
     "mascot": "Flames",
     "pic": "./src/db/teams/logos/liberty.png",
     "colors": [
-      "#FFFFFF",
       "#A70F00",
-      "#02298A"
+      "#02298A",
+      "#FFFFFF"
     ]
   },
   "Louisiana Lafayette": {
@@ -606,8 +606,8 @@
     "colors": [
       "#231F20",
       "#F4A42A",
-      "#FFFFFF",
-      "#D73347"
+      "#D73347",
+      "#FFFFFF"
     ]
   },
   "Louisiana Monroe": {
@@ -617,9 +617,9 @@
     "pic": "./src/db/teams/logos/louisianaMonroe.png",
     "colors": [
       "#B38807",
-      "#FFFFFF",
       "#98012E",
-      "#231F20"
+      "#231F20",
+      "#FFFFFF"
     ]
   },
   "Louisiana Tech": {
@@ -628,9 +628,9 @@
     "mascot": "Bulldogs",
     "pic": "./src/db/teams/logos/louisianaTech.png",
     "colors": [
-      "#FFFFFF",
       "#ED1C24",
-      "#006AB5"
+      "#006AB5",
+      "#FFFFFF"
     ]
   },
   "Louisville": {
@@ -640,9 +640,9 @@
     "pic": "./src/db/teams/logos/louisville.png",
     "colors": [
       "#FFC010",
-      "#FFFFFF",
       "#070707",
-      "#FD0B20"
+      "#FD0B20",
+      "#FFFFFF"
     ]
   },
   "LSU": {
@@ -651,9 +651,9 @@
     "mascot": "Tigers",
     "pic": "./src/db/teams/logos/lsu.png",
     "colors": [
-      "#FFFFFF",
       "#FDB827",
-      "#33297B"
+      "#33297B",
+      "#FFFFFF"
     ]
   },
   "Marshall": {
@@ -662,9 +662,9 @@
     "mascot": "Thundering Herd",
     "pic": "./src/db/teams/logos/marshall.png",
     "colors": [
+      "#01592F",
       "#000000",
-      "#FFFFFF",
-      "#01592F"
+      "#FFFFFF"
     ]
   },
   "Maryland": {
@@ -674,9 +674,9 @@
     "pic": "./src/db/teams/logos/maryland.png",
     "colors": [
       "#C68746",
+      "#D5002B",
       "#000000",
-      "#FFFFFF",
-      "#D5002B"
+      "#FFFFFF"
     ]
   },
   "Massachusetts": {
@@ -686,8 +686,8 @@
     "pic": "./src/db/teams/logos/massachusetts.png",
     "colors": [
       "#12090A",
-      "#FFFFFF",
-      "#9F011A"
+      "#9F011A",
+      "#FFFFFF"
     ]
   },
   "Memphis": {
@@ -697,8 +697,8 @@
     "pic": "./src/db/teams/logos/memphis.png",
     "colors": [
       "#FEC003",
-      "#FFFFFF",
-      "#2A2A9B"
+      "#2A2A9B",
+      "#FFFFFF"
     ]
   },
   "Miami": {
@@ -707,9 +707,9 @@
     "mascot": "Hurricanes",
     "pic": "./src/db/teams/logos/miami.png",
     "colors": [
-      "#FFFFFF",
       "#E75C2D",
-      "#003E24"
+      "#003E24",
+      "#FFFFFF"
     ]
   },
   "Miami (OH)": {
@@ -719,9 +719,9 @@
     "pic": "./src/db/teams/logos/miamiOH.png",
     "colors": [
       "#3F7D91",
-      "#FFFFFF",
       "#080808",
-      "#C60808"
+      "#C60808",
+      "#FFFFFF"
     ]
   },
   "Michigan": {
@@ -730,9 +730,9 @@
     "mascot": "Wolverines",
     "pic": "./src/db/teams/logos/michigan.png",
     "colors": [
-      "#FFFFFF",
       "#FAC417",
-      "#272341"
+      "#272341",
+      "#FFFFFF"
     ]
   },
   "Michigan State": {
@@ -741,9 +741,9 @@
     "mascot": "Spartans",
     "pic": "./src/db/teams/logos/michiganState.png",
     "colors": [
+      "#1C453A",
       "#000000",
-      "#FFFFFF",
-      "#1C453A"
+      "#FFFFFF"
     ]
   },
   "Middle Tennessee": {
@@ -753,8 +753,8 @@
     "pic": "./src/db/teams/logos/middleTennessee.png",
     "colors": [
       "#231F20",
-      "#FFFFFF",
-      "#0079C2"
+      "#0079C2",
+      "#FFFFFF"
     ]
   },
   "Minnesota": {
@@ -763,9 +763,9 @@
     "mascot": "Golden Gophers",
     "pic": "./src/db/teams/logos/minnesota.png",
     "colors": [
-      "#FFFFFF",
       "#FFF63E",
-      "#7F011B"
+      "#7F011B",
+      "#FFFFFF"
     ]
   },
   "Mississippi State": {
@@ -774,9 +774,9 @@
     "mascot": "Bulldogs",
     "pic": "./src/db/teams/logos/mississippiState.png",
     "colors": [
-      "#FFFFFF",
       "#D1D5D8",
-      "#762123"
+      "#762123",
+      "#FFFFFF"
     ]
   },
   "Missouri": {
@@ -785,9 +785,9 @@
     "mascot": "Tigers",
     "pic": "./src/db/teams/logos/missouri.png",
     "colors": [
-      "#FFFFFF",
       "#E8AF11",
-      "#231F20"
+      "#231F20",
+      "#FFFFFF"
     ]
   },
   "Missouri State": {
@@ -796,9 +796,9 @@
     "mascot": "Bears",
     "pic": "./src/db/teams/logos/missouriState.png",
     "colors": [
+      "#5F0000",
       "#000000",
-      "#FFFFFF",
-      "#5F0000"
+      "#FFFFFF"
     ]
   },
   "Navy": {
@@ -807,9 +807,9 @@
     "mascot": "Midshipmen",
     "pic": "./src/db/teams/logos/navy.png",
     "colors": [
-      "#FFFFFF",
       "#FCBA29",
-      "#131630"
+      "#131630",
+      "#FFFFFF"
     ]
   },
   "NC State": {
@@ -819,8 +819,8 @@
     "pic": "./src/db/teams/logos/ncState.png",
     "colors": [
       "#221E1F",
-      "#FFFFFF",
-      "#EF1216"
+      "#EF1216",
+      "#FFFFFF"
     ]
   },
   "Nebraska": {
@@ -829,8 +829,8 @@
     "mascot": "cornhuskers",
     "pic": "./src/db/teams/logos/nebraska.png",
     "colors": [
-      "#FFFFFF",
-      "#F20017"
+      "#F20017",
+      "#FFFFFF"
     ]
   },
   "Nevada": {
@@ -839,8 +839,8 @@
     "mascot": "Wolf Pack",
     "pic": "./src/db/teams/logos/nevada.png",
     "colors": [
-      "#FFFFFF",
-      "#153E5F"
+      "#153E5F",
+      "#FFFFFF"
     ]
   },
   "New Mexico": {
@@ -850,8 +850,8 @@
     "pic": "./src/db/teams/logos/newMexico.png",
     "colors": [
       "#C4C4C4",
-      "#FFFFFF",
       "#D41045",
+      "#FFFFFF",
       "#000000"
     ]
   },
@@ -861,9 +861,9 @@
     "mascot": "Aggies",
     "pic": "./src/db/teams/logos/newMexicoState.png",
     "colors": [
-      "#FFFFFF",
       "#221E1F",
-      "#891216"
+      "#891216",
+      "#FFFFFF"
     ]
   },
   "North Carolina": {
@@ -873,8 +873,8 @@
     "pic": "./src/db/teams/logos/northCarolina.png",
     "colors": [
       "#00275D",
-      "#FFFFFF",
-      "#98BFE5"
+      "#98BFE5",
+      "#FFFFFF"
     ]
   },
   "North Texas": {
@@ -884,8 +884,8 @@
     "pic": "./src/db/teams/logos/northTexas.png",
     "colors": [
       "#2D2327",
-      "#FFFFFF",
-      "#00853D"
+      "#00853D",
+      "#FFFFFF"
     ]
   },
   "Northern Illinois": {
@@ -894,9 +894,9 @@
     "mascot": "huskies",
     "pic": "./src/db/teams/logos/northernIllinois.png",
     "colors": [
-      "#FFFFFF",
       "#0F0D0D",
-      "#F1122C"
+      "#F1122C",
+      "#FFFFFF"
     ]
   },
   "Northwestern": {
@@ -905,9 +905,9 @@
     "mascot": "Wildcats",
     "pic": "./src/db/teams/logos/northwestern.png",
     "colors": [
+      "#393996",
       "#000000",
-      "#FFFFFF",
-      "#393996"
+      "#FFFFFF"
     ]
   },
   "Notre Dame": {
@@ -916,9 +916,9 @@
     "mascot": "Fighting Irish",
     "pic": "./src/db/teams/logos/notreDame.png",
     "colors": [
-      "#FFFFFF",
       "#BAA008",
-      "#00122B"
+      "#00122B",
+      "#FFFFFF"
     ]
   },
   "Ohio": {
@@ -929,8 +929,8 @@
     "colors": [
       "#313139",
       "#E7CEAD",
-      "#FFFFFF",
-      "#295A29"
+      "#295A29",
+      "#FFFFFF"
     ]
   },
   "Ohio State": {
@@ -941,8 +941,8 @@
     "colors": [
       "#C5CCCF",
       "#080808",
-      "#FFFFFF",
-      "#DE3121"
+      "#DE3121",
+      "#FFFFFF"
     ]
   },
   "Oklahoma": {
@@ -951,9 +951,9 @@
     "mascot": "Sooners",
     "pic": "./src/db/teams/logos/oklahoma.png",
     "colors": [
+      "#BA0034",
       "#000000",
-      "#FFFFFF",
-      "#BA0034"
+      "#FFFFFF"
     ]
   },
   "Oklahoma State": {
@@ -962,9 +962,9 @@
     "mascot": "Cowboys",
     "pic": "./src/db/teams/logos/oklahomaState.png",
     "colors": [
+      "#FF6500",
       "#FFFFFF",
-      "#000000",
-      "#FF6500"
+      "#000000"
     ]
   },
   "Old Dominion": {
@@ -974,8 +974,8 @@
     "pic": "./src/db/teams/logos/oldDominion.png",
     "colors": [
       "#999DA0",
-      "#FFFFFF",
-      "#00507D"
+      "#00507D",
+      "#FFFFFF"
     ]
   },
   "Ole Miss": {
@@ -984,9 +984,9 @@
     "mascot": "Rebels",
     "pic": "./src/db/teams/logos/oleMiss.png",
     "colors": [
-      "#FFFFFF",
       "#FF002C",
-      "#002C91"
+      "#002C91",
+      "#FFFFFF"
     ]
   },
   "Oregon": {
@@ -995,9 +995,9 @@
     "mascot": "Ducks",
     "pic": "./src/db/teams/logos/oregon.png",
     "colors": [
-      "#FFFFFF",
       "#F4E600",
-      "#044520"
+      "#044520",
+      "#FFFFFF"
     ]
   },
   "Oregon State": {
@@ -1006,9 +1006,9 @@
     "mascot": "Beavers",
     "pic": "./src/db/teams/logos/oregonState.png",
     "colors": [
-      "#FFFFFF",
       "#AE3800",
-      "#000203"
+      "#000203",
+      "#FFFFFF"
     ]
   },
   "Penn State": {
@@ -1017,8 +1017,8 @@
     "mascot": "Nittany Lions",
     "pic": "./src/db/teams/logos/pennState.png",
     "colors": [
-      "#FFFFFF",
-      "#00265D"
+      "#00265D",
+      "#FFFFFF"
     ]
   },
   "Pittsburgh": {
@@ -1028,8 +1028,8 @@
     "pic": "./src/db/teams/logos/pittsburgh.png",
     "colors": [
       "#242021",
-      "#FFFFFF",
-      "#003263"
+      "#003263",
+      "#FFFFFF"
     ]
   },
   "Purdue": {
@@ -1039,8 +1039,8 @@
     "pic": "./src/db/teams/logos/purdue.png",
     "colors": [
       "#9FA3A6",
-      "#FFFFFF",
       "#B89D29",
+      "#FFFFFF",
       "#000000"
     ]
   },
@@ -1050,8 +1050,8 @@
     "mascot": "Owls",
     "pic": "./src/db/teams/logos/rice.png",
     "colors": [
-      "#FFFFFF",
-      "#003D7D"
+      "#003D7D",
+      "#FFFFFF"
     ]
   },
   "Rutgers": {
@@ -1061,8 +1061,8 @@
     "pic": "./src/db/teams/logos/rutgers.png",
     "colors": [
       "#0E1112",
-      "#FFFFFF",
-      "#EE363D"
+      "#EE363D",
+      "#FFFFFF"
     ]
   },
   "Sam Houston State": {
@@ -1071,9 +1071,9 @@
     "mascot": "Bearkats",
     "pic": "./src/db/teams/logos/samHoustonState.png",
     "colors": [
-      "#FFFFFF",
       "#231F20",
-      "#F78F1E"
+      "#F78F1E",
+      "#FFFFFF"
     ]
   },
   "San Diego State": {
@@ -1082,10 +1082,10 @@
     "mascot": "Aztecs",
     "pic": "./src/db/teams/logos/sanDiegoState.png",
     "colors": [
-      "#FFFFFF",
       "#7C6642",
       "#BF2C37",
-      "#231F20"
+      "#231F20",
+      "#FFFFFF"
     ]
   },
   "San José State": {
@@ -1094,9 +1094,9 @@
     "mascot": "Spartans",
     "pic": "./src/db/teams/logos/sanJoseState.png",
     "colors": [
-      "#FFFFFF",
       "#FFC021",
-      "#005893"
+      "#005893",
+      "#FFFFFF"
     ]
   },
   "SMU": {
@@ -1105,8 +1105,8 @@
     "mascot": "Mustangs",
     "pic": "./src/db/teams/logos/smu.png",
     "colors": [
-      "#FFFFFF",
-      "#E32F38"
+      "#E32F38",
+      "#FFFFFF"
     ]
   },
   "South Alabama": {
@@ -1116,8 +1116,8 @@
     "pic": "./src/db/teams/logos/southAlabama.png",
     "colors": [
       "#D11241",
-      "#FFFFFF",
-      "#003E7E"
+      "#003E7E",
+      "#FFFFFF"
     ]
   },
   "South Carolina": {
@@ -1126,9 +1126,9 @@
     "mascot": "Gamecocks",
     "pic": "./src/db/teams/logos/southCarolina.png",
     "colors": [
+      "#CD0000",
       "#FFFFFF",
-      "#000000",
-      "#CD0000"
+      "#000000"
     ]
   },
   "South Florida": {
@@ -1138,8 +1138,8 @@
     "pic": "./src/db/teams/logos/southFlorida.png",
     "colors": [
       "#A08B4D",
-      "#FFFFFF",
-      "#004A36"
+      "#004A36",
+      "#FFFFFF"
     ]
   },
   "Southern Mississippi": {
@@ -1148,9 +1148,9 @@
     "mascot": "Golden Eagles",
     "pic": "./src/db/teams/logos/southernMississippi.png",
     "colors": [
-      "#FFFFFF",
       "#201C1D",
-      "#FFAA3C"
+      "#FFAA3C",
+      "#FFFFFF"
     ]
   },
   "Stanford": {
@@ -1159,8 +1159,8 @@
     "mascot": "Cardinal",
     "pic": "./src/db/teams/logos/stanford.png",
     "colors": [
-      "#FFFFFF",
-      "#A80532"
+      "#A80532",
+      "#FFFFFF"
     ]
   },
   "Syracuse": {
@@ -1169,9 +1169,9 @@
     "mascot": "Orange",
     "pic": "./src/db/teams/logos/syracuse.png",
     "colors": [
-      "#FFFFFF",
       "#F37321",
-      "#002D62"
+      "#002D62",
+      "#FFFFFF"
     ]
   },
   "TCU": {
@@ -1181,9 +1181,9 @@
     "pic": "./src/db/teams/logos/tcu.png",
     "colors": [
       "#1E1B1C",
-      "#FFFFFF",
       "#EBEBEB",
-      "#3C377D"
+      "#3C377D",
+      "#FFFFFF"
     ]
   },
   "Temple": {
@@ -1192,9 +1192,9 @@
     "mascot": "Owls",
     "pic": "./src/db/teams/logos/temple.png",
     "colors": [
+      "#A80532",
       "#000000",
-      "#FFFFFF",
-      "#A80532"
+      "#FFFFFF"
     ]
   },
   "Tennessee": {
@@ -1204,8 +1204,8 @@
     "pic": "./src/db/teams/logos/tennessee.png",
     "colors": [
       "#FF8200",
-      "#FFFFFF",
-      "#58595B"
+      "#58595B",
+      "#FFFFFF"
     ]
   },
   "Texas": {
@@ -1214,8 +1214,8 @@
     "mascot": "Longhorns",
     "pic": "./src/db/teams/logos/texas.png",
     "colors": [
-      "#FFFFFF",
-      "#EE7524"
+      "#EE7524",
+      "#FFFFFF"
     ]
   },
   "Texas A&M": {
@@ -1224,8 +1224,8 @@
     "mascot": "Aggies",
     "pic": "./src/db/teams/logos/texasAM.png",
     "colors": [
-      "#FFFFFF",
-      "#5C0025"
+      "#5C0025",
+      "#FFFFFF"
     ]
   },
   "Texas San Antonio": {
@@ -1234,9 +1234,9 @@
     "mascot": "Roadrunners",
     "pic": "./src/db/teams/logos/texasSanAntonio.png",
     "colors": [
-      "#FFFFFF",
       "#F47321",
-      "#002A5C"
+      "#002A5C",
+      "#FFFFFF"
     ]
   },
   "Texas State": {
@@ -1245,9 +1245,9 @@
     "mascot": "Bobcats",
     "pic": "./src/db/teams/logos/texasState.png",
     "colors": [
-      "#FFFFFF",
       "#9B8449",
-      "#744143"
+      "#744143",
+      "#FFFFFF"
     ]
   },
   "Texas Tech": {
@@ -1256,9 +1256,9 @@
     "mascot": "Red Raiders",
     "pic": "./src/db/teams/logos/texasTech.png",
     "colors": [
+      "#C80025",
       "#FFFFFF",
-      "#000000",
-      "#C80025"
+      "#000000"
     ]
   },
   "Toledo": {
@@ -1267,9 +1267,9 @@
     "mascot": "Rockets",
     "pic": "./src/db/teams/logos/toledo.png",
     "colors": [
-      "#FFFFFF",
       "#FFD51D",
-      "#00488F"
+      "#00488F",
+      "#FFFFFF"
     ]
   },
   "Troy": {
@@ -1278,10 +1278,10 @@
     "mascot": "Trojans",
     "pic": "./src/db/teams/logos/troy.png",
     "colors": [
-      "#000000",
       "#6E7272",
-      "#FFFFFF",
-      "#AE0210"
+      "#AE0210",
+      "#000000",
+      "#FFFFFF"
     ]
   },
   "Tulane": {
@@ -1292,8 +1292,8 @@
     "colors": [
       "#00A6eb",
       "#6EA396",
-      "#FFFFFF",
-      "#005837"
+      "#005837",
+      "#FFFFFF"
     ]
   },
   "Tulsa": {
@@ -1302,10 +1302,10 @@
     "mascot": "Golden Hurricane",
     "pic": "./src/db/teams/logos/tulsa.png",
     "colors": [
-      "#000000",
       "#E21721",
-      "#FFFFFF",
-      "#004371"
+      "#004371",
+      "#000000",
+      "#FFFFFF"
     ]
   },
   "UAB": {
@@ -1315,9 +1315,9 @@
     "pic": "./src/db/teams/logos/uab.png",
     "colors": [
       "#E7BD05",
-      "#FFFFFF",
       "#040504",
-      "#054338"
+      "#054338",
+      "#FFFFFF"
     ]
   },
   "UCF": {
@@ -1326,9 +1326,9 @@
     "mascot": "Knights",
     "pic": "./src/db/teams/logos/ucf.png",
     "colors": [
-      "#FFFFFF",
       "#B4985A",
-      "#231F20"
+      "#231F20",
+      "#FFFFFF"
     ]
   },
   "UCLA": {
@@ -1337,10 +1337,10 @@
     "mascot": "Bruins",
     "pic": "./src/db/teams/logos/ucla.png",
     "colors": [
-      "#FFFFFF",
-      "#000000",
       "#FFB325",
-      "#005C8E"
+      "#005C8E",
+      "#FFFFFF",
+      "#000000"
     ]
   },
   "UNLV": {
@@ -1349,9 +1349,9 @@
     "mascot": "Rebels",
     "pic": "./src/db/teams/logos/unlv.png",
     "colors": [
-      "#FFFFFF",
       "#D50026",
-      "#231E1F"
+      "#231E1F",
+      "#FFFFFF"
     ]
   },
   "USC": {
@@ -1360,9 +1360,9 @@
     "mascot": "Trojans",
     "pic": "./src/db/teams/logos/usc.png",
     "colors": [
-      "#FFFFFF",
       "#FFAC33",
-      "#AE2531"
+      "#AE2531",
+      "#FFFFFF"
     ]
   },
   "Utah": {
@@ -1371,9 +1371,9 @@
     "mascot": "Utes",
     "pic": "./src/db/teams/logos/utah.png",
     "colors": [
-      "#FFFFFF",
       "#231F20",
-      "#CD1041"
+      "#CD1041",
+      "#FFFFFF"
     ]
   },
   "Utah State": {
@@ -1382,9 +1382,9 @@
     "mascot": "Aggies",
     "pic": "./src/db/teams/logos/utahState.png",
     "colors": [
+      "#003263",
       "#000000",
-      "#FFFFFF",
-      "#003263"
+      "#FFFFFF"
     ]
   },
   "UTEP": {
@@ -1394,9 +1394,9 @@
     "pic": "./src/db/teams/logos/utep.png",
     "colors": [
       "#C2BFBC",
-      "#FFFFFF",
       "#F9783B",
-      "#002843"
+      "#002843",
+      "#FFFFFF"
     ]
   },
   "Vanderbilt": {
@@ -1405,8 +1405,8 @@
     "mascot": "Commodores",
     "pic": "./src/db/teams/logos/vanderbilt.png",
     "colors": [
-      "#FFFFFF",
       "#BB8D09",
+      "#FFFFFF",
       "#000000"
     ]
   },
@@ -1416,9 +1416,9 @@
     "mascot": "Cavaliers",
     "pic": "./src/db/teams/logos/virginia.png",
     "colors": [
-      "#FFFFFF",
       "#EA4B0F",
-      "#00204E"
+      "#00204E",
+      "#FFFFFF"
     ]
   },
   "Virginia Tech": {
@@ -1427,9 +1427,9 @@
     "mascot": "Hokies",
     "pic": "./src/db/teams/logos/virginiaTech.png",
     "colors": [
-      "#FFFFFF",
       "#FBB088",
-      "#74232D"
+      "#74232D",
+      "#FFFFFF"
     ]
   },
   "Wake Forest": {
@@ -1438,8 +1438,8 @@
     "mascot": "Demon Deacons",
     "pic": "./src/db/teams/logos/wakeForest.png",
     "colors": [
-      "#FFFFFF",
       "#C49544",
+      "#FFFFFF",
       "#000000"
     ]
   },
@@ -1449,9 +1449,9 @@
     "mascot": "Huskies",
     "pic": "./src/db/teams/logos/washington.png",
     "colors": [
-      "#FFFFFF",
       "#E8D4A3",
-      "#2B2F64"
+      "#2B2F64",
+      "#FFFFFF"
     ]
   },
   "Washington State": {
@@ -1460,8 +1460,8 @@
     "mascot": "Cougars",
     "pic": "./src/db/teams/logos/washingtonState.png",
     "colors": [
-      "#FFFFFF",
-      "#97002F"
+      "#97002F",
+      "#FFFFFF"
     ]
   },
   "West Virginia": {
@@ -1470,9 +1470,9 @@
     "mascot": "Mountaineers",
     "pic": "./src/db/teams/logos/westVirginia.png",
     "colors": [
+      "#FFC600",
       "#FFFFFF",
-      "#000000",
-      "#FFC600"
+      "#000000"
     ]
   },
   "Western Kentucky": {
@@ -1481,9 +1481,9 @@
     "mascot": "Hilltoppers",
     "pic": "./src/db/teams/logos/westernKentucky.png",
     "colors": [
-      "#FFFFFF",
       "#010000",
-      "#F32026"
+      "#F32026",
+      "#FFFFFF"
     ]
   },
   "Western Michigan": {
@@ -1494,8 +1494,8 @@
     "colors": [
       "#1D1B1B",
       "#B59966",
-      "#FFFFFF",
-      "#7E3E09"
+      "#7E3E09",
+      "#FFFFFF"
     ]
   },
   "Wisconsin": {
@@ -1504,9 +1504,9 @@
     "mascot": "Badgers",
     "pic": "./src/db/teams/logos/wisconsin.png",
     "colors": [
+      "#A00000",
       "#FFFFFF",
-      "#000000",
-      "#A00000"
+      "#000000"
     ]
   },
   "Wyoming": {
@@ -1515,9 +1515,9 @@
     "mascot": "Cowboys",
     "pic": "./src/db/teams/logos/wyoming.png",
     "colors": [
+      "#533B22",
       "#FFFFFF",
-      "#000000",
-      "#533B22"
+      "#000000"
     ]
   }
 }

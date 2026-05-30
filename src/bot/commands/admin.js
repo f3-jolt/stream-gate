@@ -605,7 +605,10 @@ async function handleAnnounce(interaction) {
 
     await interaction.editReply({ content: `Posted **${platform.platform_username}**'s stream to <#${league.ppv_channel_id}>.` });
   } catch (err) {
-    logger.error('Announce error', { error: err.message });
+    logger.error('Announce error', {
+      error: err.message,
+      rawError: err.rawError ?? err.errors ?? undefined,
+    });
     await interaction.editReply({ content: `Failed: ${err.message}` });
   }
 }
