@@ -96,7 +96,7 @@ async function postStreamToChannel(league, user, platform, streamData) {
 
 async function sendDisambiguationDM(discordUserId, guildId, leagues, platform, streamData) {
   try {
-    savePendingRoute(discordUserId, guildId, platform, streamData.id, streamData.url, streamData.title);
+    savePendingRoute(discordUserId, guildId, platform, streamData.id, streamData.url, streamData.title, streamData.user_name || null);
 
     // Resolve guild name for the button labels so the user knows which server each button belongs to
     let guildName = guildId;

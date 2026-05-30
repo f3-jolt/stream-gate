@@ -214,13 +214,13 @@ function saveStreamPost(platform, platformStreamId, discordUserId, leagueId, str
 
 // ── Pending routes ────────────────────────────────────────────────────────────
 
-function savePendingRoute(discordUserId, guildId, platform, platformStreamId, streamUrl, streamTitle) {
+function savePendingRoute(discordUserId, guildId, platform, platformStreamId, streamUrl, streamTitle, userName = null) {
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
   db.prepare('DELETE FROM pending_routes WHERE discord_user_id = ? AND guild_id = ?').run(discordUserId, guildId);
   return db.prepare(`
-    INSERT INTO pending_routes (discord_user_id, guild_id, platform, platform_stream_id, stream_url, stream_title, expires_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(discordUserId, guildId, platform, platformStreamId, streamUrl, streamTitle, expiresAt);
+    INSERT INTO pending_routes (discord_user_id, guild_id, platform, platform_stream_id, stream_url, stream_title, user_name, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(discordUserId, guildId, platform, platformStreamId, streamUrl, streamTitle, userName, expiresAt);
 }
 
 function getPendingRoute(discordUserId, guildId) {

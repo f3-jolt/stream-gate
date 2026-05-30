@@ -1,5 +1,5 @@
 const logger = require('../../utils/logger');
-const { getPendingRoute, clearPendingRoute, checkStreamPost, getLeagueById } = require('../../db/queries');
+const { getPendingRoute, clearPendingRoute, checkStreamPost, getLeagueById, getUserLeagues } = require('../../db/queries');
 const { postStreamToChannel } = require('../../utils/channelRouter');
 
 module.exports = {
@@ -71,11 +71,14 @@ async function handleRouteButton(interaction) {
     return;
   }
 
-  const league = getLeagueById(leagueId);
-  if (!league) {
+  const baseLeague = getLeagueById(leagueId);
+  if (!baseLeague) {
     await interaction.editReply({ content: 'League not found.', components: [] });
     return;
   }
+  // Merge user's team_abbrev/team_name so the embed uses the correct team branding
+  const userLeagueMatch = getUserLeagues(interaction.user.id, guildId).find(l => l.id === leagueId);
+  const league = userLeagueMatch ?? baseLeague;
 
   if (checkStreamPost(pending.platform, pending.platform_stream_id, league.id)) {
     await interaction.editReply({ content: 'This stream has already been posted.', components: [] });
@@ -89,7 +92,7 @@ async function handleRouteButton(interaction) {
     title: pending.stream_title,
     url: pending.stream_url,
     user_login: pending.stream_url.split('twitch.tv/')[1] || '',
-    user_name: interaction.user.username,
+    user_name: pending.user_name || interaction.user.username,
     videoId: pending.stream_url.split('watch?v=')[1] || '',
   };
 
