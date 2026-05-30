@@ -127,4 +127,4 @@ async function getLiveStream(username) {
   };
 }
 
-module.exports = { getAppAccessToken, getTwitchUserByUsername, subscribeToStreamOnline, deleteSubscription, syncSubscriptions, getLiveStream };
+module.exports = { getAppAccessToken, getTwitchUserByUsername, subscribeToStreamOnline, deleteSubscription, syncSubscriptions, getLiveStream, twitchApiGet };
