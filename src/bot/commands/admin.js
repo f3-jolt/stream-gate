@@ -20,6 +20,8 @@ const {
   getUserPlatforms,
   getUsersInLeague,
   getHealthStats,
+  addCustomTeam,
+  updateCustomTeam,
 } = require('../../db/queries');
 const fs = require('fs');
 const path = require('path');
@@ -673,39 +675,18 @@ async function handleAddCustomTeam(interaction) {
     return interaction.editReply({ content: `A team with abbreviation **${abbrev}** already exists.` });
   }
 
-  // Save logo
-  const customLogoDir = path.join(process.cwd(), 'src/db/teams/logos/custom');
-  if (!fs.existsSync(customLogoDir)) fs.mkdirSync(customLogoDir, { recursive: true });
-
-  const ext = path.extname(attachment.name) || '.png';
-  const filename = `${abbrev.toLowerCase()}${ext}`;
-  const logoPath = path.join(customLogoDir, filename);
-
-  try {
-    const response = await axios.get(attachment.url, { responseType: 'arraybuffer' });
-    fs.writeFileSync(logoPath, response.data);
-  } catch (err) {
-    logger.error('Failed to download custom team logo', { error: err.message });
-    return interaction.editReply({ content: 'Failed to download the logo. Please try again.' });
+  let logoBuffer = null;
+  if (attachment) {
+    try {
+      const response = await axios.get(attachment.url, { responseType: 'arraybuffer' });
+      logoBuffer = Buffer.from(response.data);
+    } catch (err) {
+      logger.error('Failed to download custom team logo', { error: err.message });
+      return interaction.editReply({ content: 'Failed to download the logo. Please try again.' });
+    }
   }
 
-  // Update JSON
-  const teamsData = JSON.parse(fs.readFileSync(TEAMS_JSON_PATH, 'utf8'));
-
-  teamsData[name] = {
-    conference: 'Custom',
-    abbrev,
-    mascot,
-    pic: `./src/db/teams/logos/custom/${filename}`,
-    colors,
-  };
-
-  const sorted = Object.fromEntries(
-    Object.entries(teamsData).sort(([a], [b]) => a.localeCompare(b))
-  );
-
-  fs.writeFileSync(TEAMS_JSON_PATH, JSON.stringify(sorted, null, 2));
-  invalidateTeamsCache();
+  addCustomTeam(name, abbrev, mascot, colors, logoBuffer);
 
   logger.info('Custom team added', { name, abbrev, addedBy: interaction.user.id });
   await interaction.editReply({ content: `Custom team **${name}** (\`${abbrev}\`) added successfully and is now available in team selects.` });
@@ -952,46 +933,31 @@ async function handleEditCustomTeam(interaction) {
     return interaction.editReply({ content: 'No changes provided. Pass at least one option to update.' });
   }
 
-  const teamsData = JSON.parse(fs.readFileSync(TEAMS_JSON_PATH, 'utf8'));
-  const entry = teamsData[team.name];
-
-  if (newMascot) entry.mascot = newMascot;
-  if (newAbbrev) entry.abbrev = newAbbrev;
+  const normalize = h => h.startsWith('#') ? h : `#${h}`;
+  const updates = {};
+  if (newName)   updates.name   = newName;
+  if (newMascot) updates.mascot = newMascot;
+  if (newAbbrev) updates.abbrev = newAbbrev;
 
   if (primaryHex) {
-    const normalize = h => h.startsWith('#') ? h : `#${h}`;
-    entry.colors = [normalize(primaryHex)];
-    if (secondaryHex) entry.colors.push(normalize(secondaryHex));
+    updates.colors = [normalize(primaryHex)];
+    if (secondaryHex) updates.colors.push(normalize(secondaryHex));
   } else if (secondaryHex) {
-    const normalize = h => h.startsWith('#') ? h : `#${h}`;
-    entry.colors = [entry.colors?.[0] || '#000000', normalize(secondaryHex)];
+    updates.colors = [team.colors?.[0] || '#000000', normalize(secondaryHex)];
   }
 
   if (logoAttach) {
     try {
-      const customLogoDir = path.join(process.cwd(), 'src/db/teams/logos/custom');
-      if (!fs.existsSync(customLogoDir)) fs.mkdirSync(customLogoDir, { recursive: true });
-      const ext = path.extname(logoAttach.name) || '.png';
-      const filename = `${(newAbbrev || teamAbbrev).toLowerCase()}${ext}`;
-      const logoPath = path.join(customLogoDir, filename);
       const response = await axios.get(logoAttach.url, { responseType: 'arraybuffer' });
-      fs.writeFileSync(logoPath, response.data);
-      entry.pic = `./src/db/teams/logos/custom/${filename}`;
+      updates.logo = Buffer.from(response.data);
     } catch (err) {
       return interaction.editReply({ content: `Failed to download logo: ${err.message}` });
     }
   }
 
+  updateCustomTeam(teamAbbrev, updates);
+
   const finalName = newName || team.name;
-  if (newName && newName !== team.name) delete teamsData[team.name];
-  teamsData[finalName] = entry;
-
-  const sorted = Object.fromEntries(
-    Object.entries(teamsData).sort(([a], [b]) => a.localeCompare(b))
-  );
-  fs.writeFileSync(TEAMS_JSON_PATH, JSON.stringify(sorted, null, 2));
-  invalidateTeamsCache();
-
   logger.info('Custom team edited', { adminId: interaction.user.id, team: finalName });
   await interaction.editReply({ content: `Custom team **${finalName}** updated successfully.` });
 }

@@ -76,6 +76,17 @@ function initSchema() {
       UNIQUE(platform, platform_stream_id, league_id)
     );
 
+    -- Custom teams (survive deploys; logos stored as BLOBs)
+    CREATE TABLE IF NOT EXISTS custom_teams (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT UNIQUE NOT NULL,
+      abbrev     TEXT UNIQUE NOT NULL,
+      mascot     TEXT,
+      colors     TEXT NOT NULL DEFAULT '[]',
+      logo       BLOB,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     -- One pending disambiguation record per (user, guild)
     CREATE TABLE IF NOT EXISTS pending_routes (
       id                 INTEGER PRIMARY KEY AUTOINCREMENT,

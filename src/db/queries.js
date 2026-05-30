@@ -261,6 +261,28 @@ function getUserByDiscordUsername(username) {
   return db.prepare("SELECT * FROM users WHERE discord_username LIKE ?").get(`%${username}%`);
 }
 
+// ── Custom teams ──────────────────────────────────────────────────────────────
+
+function addCustomTeam(name, abbrev, mascot, colors, logoBuffer) {
+  return db.prepare(`
+    INSERT INTO custom_teams (name, abbrev, mascot, colors, logo)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(name, abbrev.toUpperCase(), mascot || null, JSON.stringify(colors), logoBuffer || null);
+}
+
+function updateCustomTeam(currentAbbrev, { name, abbrev, mascot, colors, logo } = {}) {
+  const sets = [];
+  const vals = [];
+  if (name !== undefined)   { sets.push('name = ?');   vals.push(name); }
+  if (abbrev !== undefined) { sets.push('abbrev = ?');  vals.push(abbrev.toUpperCase()); }
+  if (mascot !== undefined) { sets.push('mascot = ?');  vals.push(mascot); }
+  if (colors !== undefined) { sets.push('colors = ?');  vals.push(JSON.stringify(colors)); }
+  if (logo !== undefined)   { sets.push('logo = ?');    vals.push(logo); }
+  if (!sets.length) return;
+  vals.push(currentAbbrev.toUpperCase());
+  return db.prepare(`UPDATE custom_teams SET ${sets.join(', ')} WHERE abbrev = ? COLLATE NOCASE`).run(...vals);
+}
+
 // ── Health stats (per-guild) ──────────────────────────────────────────────────
 
 function getHealthStats(guildId) {
@@ -319,4 +341,6 @@ module.exports = {
   clearPendingRoute,
   clearExpiredPendingRoutes,
   getHealthStats,
+  addCustomTeam,
+  updateCustomTeam,
 };

@@ -168,7 +168,11 @@ function buildStreamEmbed(user, league, platform, streamData, team = null) {
     .setColor(embedColor)
     .setTimestamp();
 
-  if (team?.pic) {
+  if (team?.logoBuffer) {
+    const attachment = new AttachmentBuilder(team.logoBuffer, { name: 'team-logo.png' });
+    embed.setThumbnail('attachment://team-logo.png');
+    files.push(attachment);
+  } else if (team?.pic) {
     const logoPath = path.resolve(process.cwd(), team.pic.replace(/^\.\//, ''));
     const attachment = new AttachmentBuilder(logoPath, { name: 'team-logo.png' });
     embed.setThumbnail('attachment://team-logo.png');
