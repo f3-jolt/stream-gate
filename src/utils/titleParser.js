@@ -1,4 +1,5 @@
 function parseStreamTitle(title, keyword = 'GOI') {
+  if (!title) return { isMatch: false, abbr: null };
   const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const pattern = new RegExp(`\\b${escaped}\\b\\s*([A-Z0-9]+)?`, 'i');
   const match = title.match(pattern);

@@ -50,7 +50,7 @@ async function routeForGuild(guildId, leagues, user, platform, streamData, abbr)
 
   if (abbr) {
     // Match the abbreviation against leagues in THIS guild only
-    targetLeague = leagues.find(l => l.abbr === abbr.toUpperCase()) || null;
+    targetLeague = leagues.find(l => l.abbr.toUpperCase() === abbr.toUpperCase()) || null;
   }
 
   if (!targetLeague && leagues.length === 1) {

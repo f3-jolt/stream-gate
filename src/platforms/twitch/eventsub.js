@@ -74,12 +74,29 @@ async function handleStreamOnline(event) {
   const { twitchApiGet } = require('./api');
   let streamData;
   try {
-    const data = await twitchApiGet('/streams', { user_id: event.broadcaster_user_id });
-    const stream = data.data?.[0];
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY_MS = 30_000;
+
+    let data = await twitchApiGet('/streams', { user_id: event.broadcaster_user_id });
+    let stream = data.data?.[0];
+
     if (!stream) {
       logger.warn('Twitch stream not found after online event', { userId: event.broadcaster_user_id });
       return;
     }
+
+    for (let attempt = 1; !stream.title && attempt <= MAX_RETRIES; attempt++) {
+      logger.info('Twitch stream has no title yet, retrying', { userId: event.broadcaster_user_id, attempt });
+      await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+      const retry = await twitchApiGet('/streams', { user_id: event.broadcaster_user_id });
+      stream = retry.data?.[0] || stream;
+    }
+
+    if (!stream.title) {
+      logger.warn('Twitch stream still has no title after retries, skipping', { userId: event.broadcaster_user_id });
+      return;
+    }
+
     streamData = {
       id: stream.id,
       title: stream.title,
