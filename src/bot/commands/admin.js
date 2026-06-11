@@ -96,6 +96,8 @@ module.exports = {
         .addChannelOption(o => o.setName('channel').setDescription('PPV channel to post streams to').setRequired(true))
         .addChannelOption(o => o.setName('category').setDescription('Category that gates self-registration (optional)').setRequired(false))
         .addRoleOption(o => o.setName('ping_role').setDescription('Role to ping when a stream is posted (optional)').setRequired(false))
+        .addChannelOption(o => o.setName('advance_channel').setDescription('Channel to post week advancement messages').setRequired(false))
+        .addChannelOption(o => o.setName('user_channel').setDescription('Channel for user scheduling updates').setRequired(false))
     )
     // editleague
     .addSubcommand(sub =>
@@ -105,6 +107,8 @@ module.exports = {
         .addRoleOption(o => o.setName('ping_role').setDescription('Role to ping on stream post (set to @everyone to clear)').setRequired(false))
         .addChannelOption(o => o.setName('channel').setDescription('Change the PPV channel').setRequired(false))
         .addStringOption(o => o.setName('name').setDescription('Rename the league').setRequired(false))
+        .addChannelOption(o => o.setName('advance_channel').setDescription('Change the advance channel').setRequired(false))
+        .addChannelOption(o => o.setName('user_channel').setDescription('Channel for user scheduling updates').setRequired(false))
     )
     // users
     .addSubcommand(sub =>
@@ -194,6 +198,35 @@ module.exports = {
         .addStringOption(o => o.setName('primary_color').setDescription('Primary color hex (e.g. #500000)').setRequired(true))
         .addAttachmentOption(o => o.setName('logo').setDescription('Team logo image (PNG recommended)').setRequired(true))
         .addStringOption(o => o.setName('secondary_color').setDescription('Secondary color hex (e.g. #FFFFFF)').setRequired(false))
+    )
+    // advance
+    .addSubcommand(sub =>
+      sub.setName('advance')
+        .setDescription('Post the week advancement message to a league channel')
+        .addStringOption(o => o.setName('league').setDescription('League').setRequired(true).setAutocomplete(true))
+        .addIntegerOption(o => o.setName('week').setDescription('Week or stage to advance to').setRequired(true)
+          .addChoices(
+            { name: 'Week 0',               value: 0  },
+            { name: 'Week 1',               value: 1  },
+            { name: 'Week 2',               value: 2  },
+            { name: 'Week 3',               value: 3  },
+            { name: 'Week 4',               value: 4  },
+            { name: 'Week 5',               value: 5  },
+            { name: 'Week 6',               value: 6  },
+            { name: 'Week 7',               value: 7  },
+            { name: 'Week 8',               value: 8  },
+            { name: 'Week 9',               value: 9  },
+            { name: 'Week 10',              value: 10 },
+            { name: 'Week 11',              value: 11 },
+            { name: 'Week 12',              value: 12 },
+            { name: 'Week 13',              value: 13 },
+            { name: 'Week 14',              value: 14 },
+            { name: 'CCW',                  value: 15 },
+            { name: 'Bowl Week 1',          value: 16 },
+            { name: 'Bowl Week 2',          value: 17 },
+            { name: 'CFP Semi Finals',      value: 18 },
+            { name: 'National Championship', value: 19 },
+          ))
     ),
 
   async autocomplete(interaction) {
@@ -254,6 +287,7 @@ module.exports = {
       case 'last3streams':    return handleLast3Streams(interaction);
       case 'changeteam':      return handleAdminChangeTeam(interaction);
       case 'addcustomteam':   return handleAddCustomTeam(interaction);
+      case 'advance':         return handleAdvance(interaction);
       default:
         return interaction.reply({ content: 'Unknown subcommand.', flags: 64 });
     }
@@ -439,12 +473,14 @@ async function handleAddLeague(interaction) {
   const channel = interaction.options.getChannel('channel');
   const category = interaction.options.getChannel('category');
   const pingRole = interaction.options.getRole('ping_role');
+  const advanceChannel = interaction.options.getChannel('advance_channel');
+  const userChannel = interaction.options.getChannel('user_channel');
 
   const settings = getGuildSettings(interaction.guildId);
   const triggerKeyword = settings?.trigger_keyword || 'GOI';
 
   try {
-    addLeague(interaction.guildId, name, keyword, channel.id, category?.id || null, pingRole?.id || null);
+    addLeague(interaction.guildId, name, keyword, channel.id, category?.id || null, pingRole?.id || null, advanceChannel?.id || null, userChannel?.id || null);
     logger.info('League added', { adminId: interaction.user.id, guildId: interaction.guildId, name, keyword, channelId: channel.id });
     const pingNote = pingRole ? ` Role <@&${pingRole.id}> will be pinged on each stream.` : '';
     await interaction.editReply(
@@ -695,17 +731,19 @@ async function handleAddCustomTeam(interaction) {
 async function handleEditLeague(interaction) {
   await interaction.deferReply({ flags: 64 });
 
-  const leagueAbbr  = interaction.options.getString('league').toUpperCase();
-  const pingRole    = interaction.options.getRole('ping_role');
-  const newChannel  = interaction.options.getChannel('channel');
-  const newName     = interaction.options.getString('name');
+  const leagueAbbr     = interaction.options.getString('league').toUpperCase();
+  const pingRole       = interaction.options.getRole('ping_role');
+  const newChannel     = interaction.options.getChannel('channel');
+  const newName        = interaction.options.getString('name');
+  const advanceChannel = interaction.options.getChannel('advance_channel');
+  const userChannel    = interaction.options.getChannel('user_channel');
 
   const league = getLeagueByAbbr(interaction.guildId, leagueAbbr);
   if (!league) {
     return interaction.editReply({ content: `League **${leagueAbbr}** not found.` });
   }
 
-  if (!pingRole && !newChannel && !newName) {
+  if (!pingRole && !newChannel && !newName && !advanceChannel && !userChannel) {
     return interaction.editReply({ content: 'No changes provided. Pass at least one option to update.' });
   }
 
@@ -724,6 +762,14 @@ async function handleEditLeague(interaction) {
   if (newName) {
     updates.name = newName;
     notes.push(`Name changed to **${newName}**`);
+  }
+  if (advanceChannel) {
+    updates.advanceChannelId = advanceChannel.id;
+    notes.push(`Advance channel set to <#${advanceChannel.id}>`);
+  }
+  if (userChannel) {
+    updates.userChannelId = userChannel.id;
+    notes.push(`User channel set to <#${userChannel.id}>`);
   }
 
   updateLeague(league.id, updates);
@@ -960,4 +1006,106 @@ async function handleEditCustomTeam(interaction) {
   const finalName = newName || team.name;
   logger.info('Custom team edited', { adminId: interaction.user.id, team: finalName });
   await interaction.editReply({ content: `Custom team **${finalName}** updated successfully.` });
+}
+
+async function handleAdvance(interaction) {
+  await interaction.deferReply({ flags: 64 });
+
+  const leagueAbbr = interaction.options.getString('league').toUpperCase();
+  const weekValue  = interaction.options.getInteger('week');
+
+  const league = getLeagueByAbbr(interaction.guildId, leagueAbbr);
+  if (!league) {
+    return interaction.editReply({ content: `League **${leagueAbbr}** not found.` });
+  }
+  if (!league.advance_channel_id) {
+    return interaction.editReply({
+      content: `No advance channel set for **${league.name}**. Use \`/admin editleague advance_channel:#channel\` to configure one.`,
+    });
+  }
+
+  const scheduleUrl = process.env[`SCHEDULE_URL_${leagueAbbr}`];
+  if (!scheduleUrl) {
+    return interaction.editReply({
+      content: `No schedule URL configured for **${leagueAbbr}**. Set \`SCHEDULE_URL_${leagueAbbr}\` in your environment.`,
+    });
+  }
+
+  // Column index: week 0 = col 1, week 1 = col 2, ..., CCW(15) = col 16, etc.
+  const colIndex = weekValue + 1;
+
+  try {
+    const response = await axios.get(scheduleUrl, { responseType: 'text' });
+    const message = parseScheduleCell(response.data, 6, colIndex);
+
+    if (!message) {
+      return interaction.editReply({ content: `No data found for that week in the schedule sheet.` });
+    }
+
+    const channel = await interaction.client.channels.fetch(league.advance_channel_id);
+    await channel.send(message);
+
+    logger.info('Advance message posted', {
+      adminId: interaction.user.id,
+      league: leagueAbbr,
+      week: weekValue,
+      channelId: league.advance_channel_id,
+    });
+
+    await interaction.editReply({ content: `Week advancement posted to <#${league.advance_channel_id}>.` });
+  } catch (err) {
+    logger.error('Advance error', { error: err.message, league: leagueAbbr, week: weekValue });
+    await interaction.editReply({ content: `Failed to post advancement: ${err.message}` });
+  }
+}
+
+// Parse a specific row/column from a CSV that may contain quoted multi-line fields.
+// row and col are 1-indexed.
+function parseScheduleCell(csvText, row, col) {
+  let r = 0, c = 0;
+  let i = 0;
+  let inQuote = false;
+  let cell = '';
+
+  while (i < csvText.length) {
+    const ch = csvText[i];
+
+    if (inQuote) {
+      if (ch === '"') {
+        if (csvText[i + 1] === '"') {
+          cell += '"';
+          i += 2;
+        } else {
+          inQuote = false;
+          i++;
+        }
+      } else {
+        cell += ch;
+        i++;
+      }
+    } else {
+      if (ch === '"') {
+        inQuote = true;
+        i++;
+      } else if (ch === ',') {
+        if (r === row && c === col) return cell;
+        c++;
+        cell = '';
+        i++;
+      } else if (ch === '\n' || (ch === '\r' && csvText[i + 1] === '\n')) {
+        if (r === row && c === col) return cell;
+        r++;
+        c = 0;
+        cell = '';
+        i += ch === '\r' ? 2 : 1;
+      } else {
+        cell += ch;
+        i++;
+      }
+    }
+  }
+
+  // Last cell in file
+  if (r === row && c === col) return cell;
+  return null;
 }
