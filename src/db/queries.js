@@ -161,13 +161,13 @@ function getLeagueById(id) {
   return db.prepare('SELECT * FROM leagues WHERE id = ?').get(id);
 }
 
-function addLeague(guildId, name, abbr, ppvChannelId, categoryId = null, pingRoleId = null, advanceChannelId = null, userChannelId = null, scheduleUrl = null) {
+function addLeague(guildId, name, abbr, ppvChannelId, categoryId = null, pingRoleId = null, advanceChannelId = null, userChannelId = null, scheduleUrl = null, staffRoleId = null) {
   return db.prepare(
-    'INSERT INTO leagues (guild_id, name, abbr, ppv_channel_id, category_id, ping_role_id, advance_channel_id, user_channel_id, schedule_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(guildId, name, abbr.toUpperCase(), ppvChannelId, categoryId, pingRoleId, advanceChannelId, userChannelId, scheduleUrl);
+    'INSERT INTO leagues (guild_id, name, abbr, ppv_channel_id, category_id, ping_role_id, advance_channel_id, user_channel_id, schedule_url, staff_role_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(guildId, name, abbr.toUpperCase(), ppvChannelId, categoryId, pingRoleId, advanceChannelId, userChannelId, scheduleUrl, staffRoleId);
 }
 
-function updateLeague(leagueId, { pingRoleId, ppvChannelId, name, advanceChannelId, userChannelId, scheduleUrl } = {}) {
+function updateLeague(leagueId, { pingRoleId, ppvChannelId, name, advanceChannelId, userChannelId, scheduleUrl, staffRoleId } = {}) {
   if (pingRoleId !== undefined) {
     db.prepare('UPDATE leagues SET ping_role_id = ? WHERE id = ?').run(pingRoleId, leagueId);
   }
@@ -185,6 +185,9 @@ function updateLeague(leagueId, { pingRoleId, ppvChannelId, name, advanceChannel
   }
   if (scheduleUrl !== undefined) {
     db.prepare('UPDATE leagues SET schedule_url = ? WHERE id = ?').run(scheduleUrl, leagueId);
+  }
+  if (staffRoleId !== undefined) {
+    db.prepare('UPDATE leagues SET staff_role_id = ? WHERE id = ?').run(staffRoleId, leagueId);
   }
 }
 

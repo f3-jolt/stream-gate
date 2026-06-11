@@ -99,6 +99,7 @@ module.exports = {
         .addChannelOption(o => o.setName('advance_channel').setDescription('Channel to post week advancement messages').setRequired(false))
         .addChannelOption(o => o.setName('user_channel').setDescription('Channel for user scheduling updates').setRequired(false))
         .addStringOption(o => o.setName('schedule_url').setDescription('Published CSV URL for the week schedule sheet').setRequired(false))
+        .addRoleOption(o => o.setName('staff_role').setDescription('Staff role for this league').setRequired(false))
     )
     // editleague
     .addSubcommand(sub =>
@@ -111,6 +112,7 @@ module.exports = {
         .addChannelOption(o => o.setName('advance_channel').setDescription('Change the advance channel').setRequired(false))
         .addChannelOption(o => o.setName('user_channel').setDescription('Channel for user scheduling updates').setRequired(false))
         .addStringOption(o => o.setName('schedule_url').setDescription('Update the schedule sheet CSV URL').setRequired(false))
+        .addRoleOption(o => o.setName('staff_role').setDescription('Staff role for this league').setRequired(false))
     )
     // users
     .addSubcommand(sub =>
@@ -478,12 +480,13 @@ async function handleAddLeague(interaction) {
   const advanceChannel = interaction.options.getChannel('advance_channel');
   const userChannel = interaction.options.getChannel('user_channel');
   const scheduleUrl = interaction.options.getString('schedule_url') || null;
+  const staffRole = interaction.options.getRole('staff_role');
 
   const settings = getGuildSettings(interaction.guildId);
   const triggerKeyword = settings?.trigger_keyword || 'GOI';
 
   try {
-    addLeague(interaction.guildId, name, keyword, channel.id, category?.id || null, pingRole?.id || null, advanceChannel?.id || null, userChannel?.id || null, scheduleUrl);
+    addLeague(interaction.guildId, name, keyword, channel.id, category?.id || null, pingRole?.id || null, advanceChannel?.id || null, userChannel?.id || null, scheduleUrl, staffRole?.id || null);
     logger.info('League added', { adminId: interaction.user.id, guildId: interaction.guildId, name, keyword, channelId: channel.id });
     const pingNote = pingRole ? ` Role <@&${pingRole.id}> will be pinged on each stream.` : '';
     await interaction.editReply(
@@ -741,13 +744,14 @@ async function handleEditLeague(interaction) {
   const advanceChannel = interaction.options.getChannel('advance_channel');
   const userChannel    = interaction.options.getChannel('user_channel');
   const newScheduleUrl = interaction.options.getString('schedule_url');
+  const staffRole      = interaction.options.getRole('staff_role');
 
   const league = getLeagueByAbbr(interaction.guildId, leagueAbbr);
   if (!league) {
     return interaction.editReply({ content: `League **${leagueAbbr}** not found.` });
   }
 
-  if (!pingRole && !newChannel && !newName && !advanceChannel && !userChannel && !newScheduleUrl) {
+  if (!pingRole && !newChannel && !newName && !advanceChannel && !userChannel && !newScheduleUrl && !staffRole) {
     return interaction.editReply({ content: 'No changes provided. Pass at least one option to update.' });
   }
 
@@ -778,6 +782,10 @@ async function handleEditLeague(interaction) {
   if (newScheduleUrl) {
     updates.scheduleUrl = newScheduleUrl;
     notes.push(`Schedule URL updated`);
+  }
+  if (staffRole) {
+    updates.staffRoleId = staffRole.id;
+    notes.push(`Staff role set to <@&${staffRole.id}>`);
   }
 
   updateLeague(league.id, updates);
@@ -1075,8 +1083,9 @@ async function handleAdvance(interaction) {
             name: `${weekLabel} : ${team1} vs ${team2}`,
             autoArchiveDuration: 10080,
           });
+          const staffMention = league.staff_role_id ? `<@&${league.staff_role_id}>` : 'Staff';
           await thread.send(
-            `<@${id1}> vs <@${id2}>! Make sure to schedule your game here, you have 24 hours to make initial contact with each other before risk of AP.`
+            `It's game time!  Time to get sweaty and get those sticks ready!\n\n# <@${id1}> versus <@${id2}>\n\nMake sure to schedule your game in this thread.  You have 24 hours to make initial contact with each other before risking being put on Auto Pilot!\n\n~ ${staffMention}`
           );
           threadCount++;
         }
