@@ -1039,13 +1039,11 @@ async function handleAdvance(interaction) {
     });
   }
 
-  // Column index: week 0 = col 1, week 1 = col 2, ..., CCW(15) = col 16, etc.
-  const colIndex = weekValue + 1;
-
   try {
     const decodedUrl = scheduleUrl.replace(/&amp;/g, '&');
     const response = await axios.get(decodedUrl, { responseType: 'text' });
-    const message = parseScheduleCell(response.data, 6, colIndex);
+    // parseScheduleCell uses 0-based row/col: message row is index 5, week col is weekValue directly
+    const message = parseScheduleCell(response.data, 5, weekValue);
 
     if (!message) {
       return interaction.editReply({ content: `No data found for that week in the schedule sheet.` });
