@@ -3,7 +3,7 @@ const { getUserLeagues, getUserPlatforms } = require('../../db/queries');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('status')
+    .setName('audit')
     .setDescription('View your StreamGate registration for this server'),
 
   async execute(interaction) {
@@ -24,7 +24,7 @@ module.exports = {
     embed.addFields({
       name: 'Linked Platforms',
       value: platforms.length
-        ? platforms.map(p => `**${p.platform}**: ${p.platform_username}`).join('\n')
+        ? platforms.map(p => `**${p.platform}**: ${p.platform_username}${p.subscription_id ? ' ✓' : ' (no sub)'}`).join('\n')
         : 'None',
     });
 

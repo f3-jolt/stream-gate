@@ -76,11 +76,17 @@ module.exports = {
         .addUserOption(o => o.setName('user').setDescription('Discord user').setRequired(true))
         .addStringOption(o => o.setName('league').setDescription('League abbreviation').setRequired(true).setAutocomplete(true))
     )
-    // status
+    // audituser
     .addSubcommand(sub =>
-      sub.setName('status')
+      sub.setName('audituser')
         .setDescription('Show full registration details for any user')
         .addUserOption(o => o.setName('user').setDescription('Discord user').setRequired(true))
+    )
+    // auditleague
+    .addSubcommand(sub =>
+      sub.setName('auditleague')
+        .setDescription('Show full configuration and roster for a league')
+        .addStringOption(o => o.setName('league').setDescription('League abbreviation').setRequired(true).setAutocomplete(true))
     )
     // leagues
     .addSubcommand(sub =>
@@ -277,7 +283,8 @@ module.exports = {
       case 'register':     return handleRegister(interaction);
       case 'unregister':   return handleUnregister(interaction);
       case 'removeleague': return handleRemoveLeague(interaction);
-      case 'status':       return handleStatus(interaction);
+      case 'audituser':    return handleAuditUser(interaction);
+      case 'auditleague':  return handleAuditLeague(interaction);
       case 'leagues':      return handleLeagues(interaction);
       case 'addleague':    return handleAddLeague(interaction);
       case 'editleague':   return handleEditLeague(interaction);
@@ -416,13 +423,13 @@ async function handleRemoveLeague(interaction) {
   await interaction.reply({ content: `Removed <@${target.id}> from **${league.name}**.`, flags: 64 });
 }
 
-async function handleStatus(interaction) {
+async function handleAuditUser(interaction) {
   const target = interaction.options.getUser('user');
   const platforms = getUserPlatforms(target.id);
   const leagues = getUserLeagues(target.id, interaction.guildId);
 
   const embed = new EmbedBuilder()
-    .setTitle(`Registration: ${target.username}`)
+    .setTitle(`User Audit: ${target.username}`)
     .setColor(0x5865F2)
     .setTimestamp();
 
@@ -441,6 +448,49 @@ async function handleStatus(interaction) {
           return `**${l.name}** \`${l.abbr}\`${team}`;
         }).join('\n')
       : 'None',
+  });
+
+  await interaction.reply({ embeds: [embed], flags: 64 });
+}
+
+async function handleAuditLeague(interaction) {
+  const leagueAbbr = interaction.options.getString('league').toUpperCase();
+  const league = getLeagueByAbbr(interaction.guildId, leagueAbbr);
+
+  if (!league) {
+    return interaction.reply({ content: `League **${leagueAbbr}** not found.`, flags: 64 });
+  }
+
+  const users = getUsersInLeague(league.id);
+
+  const embed = new EmbedBuilder()
+    .setTitle(`League Audit: ${league.name} (${league.abbr})`)
+    .setColor(0x5865F2)
+    .setTimestamp();
+
+  embed.addFields(
+    { name: 'PPV Channel',      value: league.ppv_channel_id      ? `<#${league.ppv_channel_id}>`      : 'Not set', inline: true },
+    { name: 'Advance Channel',  value: league.advance_channel_id  ? `<#${league.advance_channel_id}>`  : 'Not set', inline: true },
+    { name: 'User Channel',     value: league.user_channel_id     ? `<#${league.user_channel_id}>`     : 'Not set', inline: true },
+    { name: 'Ping Role',        value: league.ping_role_id        ? `<@&${league.ping_role_id}>`       : 'Not set', inline: true },
+    { name: 'Staff Role',       value: league.staff_role_id       ? `<@&${league.staff_role_id}>`      : 'Not set', inline: true },
+    { name: 'Access Gate',      value: league.category_id         ? `<#${league.category_id}>`         : 'Not set', inline: true },
+    { name: 'Schedule URL',     value: league.schedule_url        ? '✓ Configured'                     : 'Not set', inline: true },
+  );
+
+  const seen = new Set();
+  const rosterLines = [];
+  for (const u of users) {
+    if (!seen.has(u.discord_id)) {
+      seen.add(u.discord_id);
+      const team = u.team_name ? ` — ${u.team_name}` : '';
+      rosterLines.push(`<@${u.discord_id}>${team}`);
+    }
+  }
+
+  embed.addFields({
+    name: `Roster (${seen.size})`,
+    value: rosterLines.length ? rosterLines.join('\n') : 'No users registered',
   });
 
   await interaction.reply({ embeds: [embed], flags: 64 });
@@ -1085,7 +1135,7 @@ async function handleAdvance(interaction) {
           });
           const staffMention = league.staff_role_id ? `<@&${league.staff_role_id}>` : 'Staff';
           await thread.send(
-            `It's game time!  Time to get sweaty and get those sticks ready!\n\n# <@${id1}> versus <@${id2}>\n\nMake sure to schedule your game in this thread.  You have 24 hours to make initial contact with each other before risking being put on Auto Pilot!\n\n~ ${staffMention}`
+            `It's game time!  Time to get sweaty and get those sticks ready!\n\n<@${id1}> versus <@${id2}>\n\nMake sure to schedule your game in this thread.  You have 24 hours to make initial contact with each other before risking being put on Auto Pilot!\n\n~ ${staffMention}`
           );
           threadCount++;
         }
