@@ -1043,7 +1043,8 @@ async function handleAdvance(interaction) {
   const colIndex = weekValue + 1;
 
   try {
-    const response = await axios.get(scheduleUrl, { responseType: 'text' });
+    const decodedUrl = scheduleUrl.replace(/&amp;/g, '&');
+    const response = await axios.get(decodedUrl, { responseType: 'text' });
     const message = parseScheduleCell(response.data, 6, colIndex);
 
     if (!message) {
