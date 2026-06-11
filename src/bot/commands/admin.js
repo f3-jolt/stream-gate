@@ -98,6 +98,7 @@ module.exports = {
         .addRoleOption(o => o.setName('ping_role').setDescription('Role to ping when a stream is posted (optional)').setRequired(false))
         .addChannelOption(o => o.setName('advance_channel').setDescription('Channel to post week advancement messages').setRequired(false))
         .addChannelOption(o => o.setName('user_channel').setDescription('Channel for user scheduling updates').setRequired(false))
+        .addStringOption(o => o.setName('schedule_url').setDescription('Published CSV URL for the week schedule sheet').setRequired(false))
     )
     // editleague
     .addSubcommand(sub =>
@@ -109,6 +110,7 @@ module.exports = {
         .addStringOption(o => o.setName('name').setDescription('Rename the league').setRequired(false))
         .addChannelOption(o => o.setName('advance_channel').setDescription('Change the advance channel').setRequired(false))
         .addChannelOption(o => o.setName('user_channel').setDescription('Channel for user scheduling updates').setRequired(false))
+        .addStringOption(o => o.setName('schedule_url').setDescription('Update the schedule sheet CSV URL').setRequired(false))
     )
     // users
     .addSubcommand(sub =>
@@ -475,12 +477,13 @@ async function handleAddLeague(interaction) {
   const pingRole = interaction.options.getRole('ping_role');
   const advanceChannel = interaction.options.getChannel('advance_channel');
   const userChannel = interaction.options.getChannel('user_channel');
+  const scheduleUrl = interaction.options.getString('schedule_url') || null;
 
   const settings = getGuildSettings(interaction.guildId);
   const triggerKeyword = settings?.trigger_keyword || 'GOI';
 
   try {
-    addLeague(interaction.guildId, name, keyword, channel.id, category?.id || null, pingRole?.id || null, advanceChannel?.id || null, userChannel?.id || null);
+    addLeague(interaction.guildId, name, keyword, channel.id, category?.id || null, pingRole?.id || null, advanceChannel?.id || null, userChannel?.id || null, scheduleUrl);
     logger.info('League added', { adminId: interaction.user.id, guildId: interaction.guildId, name, keyword, channelId: channel.id });
     const pingNote = pingRole ? ` Role <@&${pingRole.id}> will be pinged on each stream.` : '';
     await interaction.editReply(
@@ -737,13 +740,14 @@ async function handleEditLeague(interaction) {
   const newName        = interaction.options.getString('name');
   const advanceChannel = interaction.options.getChannel('advance_channel');
   const userChannel    = interaction.options.getChannel('user_channel');
+  const newScheduleUrl = interaction.options.getString('schedule_url');
 
   const league = getLeagueByAbbr(interaction.guildId, leagueAbbr);
   if (!league) {
     return interaction.editReply({ content: `League **${leagueAbbr}** not found.` });
   }
 
-  if (!pingRole && !newChannel && !newName && !advanceChannel && !userChannel) {
+  if (!pingRole && !newChannel && !newName && !advanceChannel && !userChannel && !newScheduleUrl) {
     return interaction.editReply({ content: 'No changes provided. Pass at least one option to update.' });
   }
 
@@ -770,6 +774,10 @@ async function handleEditLeague(interaction) {
   if (userChannel) {
     updates.userChannelId = userChannel.id;
     notes.push(`User channel set to <#${userChannel.id}>`);
+  }
+  if (newScheduleUrl) {
+    updates.scheduleUrl = newScheduleUrl;
+    notes.push(`Schedule URL updated`);
   }
 
   updateLeague(league.id, updates);
@@ -1024,10 +1032,10 @@ async function handleAdvance(interaction) {
     });
   }
 
-  const scheduleUrl = process.env[`SCHEDULE_URL_${leagueAbbr}`];
+  const scheduleUrl = league.schedule_url;
   if (!scheduleUrl) {
     return interaction.editReply({
-      content: `No schedule URL configured for **${leagueAbbr}**. Set \`SCHEDULE_URL_${leagueAbbr}\` in your environment.`,
+      content: `No schedule URL set for **${league.name}**. Use \`/admin editleague schedule_url:...\` to configure one.`,
     });
   }
 
