@@ -1059,11 +1059,60 @@ async function handleAdvance(interaction) {
       channelId: league.advance_channel_id,
     });
 
-    await interaction.editReply({ content: `Week advancement posted to <#${league.advance_channel_id}>.` });
+    let threadCount = 0;
+    if (league.user_channel_id) {
+      const matchups = parseMatchups(message);
+      if (matchups.length > 0) {
+        const leagueUsers = getUsersInLeague(league.id);
+        const teamMap = new Map(leagueUsers.map(u => [u.discord_id, u.team_name || u.discord_username]));
+        const weekLabel = WEEK_LABELS[weekValue] ?? `Week ${weekValue}`;
+        const userChannel = await interaction.client.channels.fetch(league.user_channel_id);
+
+        for (const [id1, id2] of matchups) {
+          const team1 = teamMap.get(id1) ?? `<@${id1}>`;
+          const team2 = teamMap.get(id2) ?? `<@${id2}>`;
+          const thread = await userChannel.threads.create({
+            name: `${weekLabel} : ${team1} vs ${team2}`,
+            autoArchiveDuration: 10080,
+          });
+          await thread.send(
+            `<@${id1}> vs <@${id2}>! Make sure to schedule your game here, you have 24 hours to make initial contact with each other before risk of AP.`
+          );
+          threadCount++;
+        }
+
+        logger.info('Scheduling threads created', {
+          adminId: interaction.user.id,
+          league: leagueAbbr,
+          week: weekValue,
+          threadCount,
+          channelId: league.user_channel_id,
+        });
+      }
+    }
+
+    const threadNote = threadCount > 0 ? ` ${threadCount} scheduling thread${threadCount > 1 ? 's' : ''} created in <#${league.user_channel_id}>.` : '';
+    await interaction.editReply({ content: `Week advancement posted to <#${league.advance_channel_id}>.${threadNote}` });
   } catch (err) {
     logger.error('Advance error', { error: err.message, league: leagueAbbr, week: weekValue });
     await interaction.editReply({ content: `Failed to post advancement: ${err.message}` });
   }
+}
+
+const WEEK_LABELS = {
+  0: 'Week 0', 1: 'Week 1', 2: 'Week 2', 3: 'Week 3', 4: 'Week 4',
+  5: 'Week 5', 6: 'Week 6', 7: 'Week 7', 8: 'Week 8', 9: 'Week 9',
+  10: 'Week 10', 11: 'Week 11', 12: 'Week 12', 13: 'Week 13', 14: 'Week 14',
+  15: 'CCW', 16: 'Bowl Week 1', 17: 'Bowl Week 2',
+  18: 'CFP Semi Finals', 19: 'National Championship',
+};
+
+function parseMatchups(message) {
+  const re = /<@(\d+)>\s+vs\s+<@(\d+)>/g;
+  const matchups = [];
+  let m;
+  while ((m = re.exec(message)) !== null) matchups.push([m[1], m[2]]);
+  return matchups;
 }
 
 // Parse a specific row/column from a CSV that may contain quoted multi-line fields.
