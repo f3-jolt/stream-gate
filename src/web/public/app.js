@@ -4,6 +4,9 @@ let currentUser = null;
 let currentGuildId = null;
 let allUsers = [];
 let allLeagues = [];
+let allStreams = [];
+let userSort = { col: 'discord_username', dir: 1 };
+let streamSort = { col: 'posted_at', dir: -1 };
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────────
 
@@ -39,7 +42,6 @@ function showPortal(guilds) {
   document.getElementById('login-page').style.display = 'none';
   document.getElementById('portal').style.display = 'flex';
 
-  // Populate user chip from session (fetch /auth/me separately)
   fetchMe();
 
   const sel = document.getElementById('guild-select');
@@ -101,7 +103,39 @@ function flash(msg, type = 'success', targetId = 'flash') {
 async function loadUsers() {
   const res = await fetch(`/api/guilds/${currentGuildId}/users`);
   allUsers = await res.json();
-  renderUsers(allUsers);
+  applyUserFilters();
+}
+
+function applyUserFilters() {
+  const q = (document.getElementById('user-search').value || '').toLowerCase();
+  const leagueFilter = document.getElementById('user-league-filter').value;
+
+  let filtered = allUsers.filter(u => {
+    const matchesText = !q ||
+      u.discord_username.toLowerCase().includes(q) ||
+      u.discord_id.includes(q) ||
+      u.league_name.toLowerCase().includes(q) ||
+      (u.team_name || '').toLowerCase().includes(q);
+    const matchesLeague = !leagueFilter || String(u.league_id) === leagueFilter;
+    return matchesText && matchesLeague;
+  });
+
+  filtered = sortData(filtered, userSort.col, userSort.dir);
+  renderUsers(filtered);
+  updateSortHeaders('users-table', userSort);
+}
+
+// Keep filterUsers as alias so existing callers (if any) still work
+function filterUsers() { applyUserFilters(); }
+
+function sortUsers(col) {
+  if (userSort.col === col) {
+    userSort.dir *= -1;
+  } else {
+    userSort.col = col;
+    userSort.dir = 1;
+  }
+  applyUserFilters();
 }
 
 function renderUsers(users) {
@@ -135,16 +169,6 @@ function renderUsers(users) {
   }
 }
 
-function filterUsers() {
-  const q = document.getElementById('user-search').value.toLowerCase();
-  renderUsers(allUsers.filter(u =>
-    u.discord_username.toLowerCase().includes(q) ||
-    u.discord_id.includes(q) ||
-    u.league_name.toLowerCase().includes(q) ||
-    (u.team_name || '').toLowerCase().includes(q)
-  ));
-}
-
 async function removeFromLeague(discordId, leagueId, username, leagueName) {
   if (!confirm(`Remove ${username} from ${leagueName}?`)) return;
   const res = await fetch(`/api/guilds/${currentGuildId}/users/${discordId}/league/${leagueId}`, { method: 'DELETE' });
@@ -156,7 +180,6 @@ async function removeFromLeague(discordId, leagueId, username, leagueName) {
 // ── Register modal ─────────────────────────────────────────────────────────────
 
 function openRegisterModal() {
-  // Populate league dropdown
   const sel = document.getElementById('reg-league');
   sel.innerHTML = allLeagues.map(l => `<option value="${l.id}">${l.name} (${l.abbr})</option>`).join('');
   document.getElementById('register-modal').classList.add('open');
@@ -202,6 +225,7 @@ async function loadLeagues() {
   allLeagues = await res.json();
   renderLeagues(allLeagues);
   populateAdvanceLeagues(allLeagues);
+  populateLeagueFilters(allLeagues);
 }
 
 function renderLeagues(leagues) {
@@ -227,11 +251,49 @@ function populateAdvanceLeagues(leagues) {
   sel.innerHTML = leagues.map(l => `<option value="${esc(l.abbr)}">${esc(l.name)} (${esc(l.abbr)})</option>`).join('');
 }
 
+function populateLeagueFilters(leagues) {
+  const opts = leagues.map(l => `<option value="${l.id}">${esc(l.name)} (${esc(l.abbr)})</option>`).join('');
+  document.getElementById('user-league-filter').innerHTML = `<option value="">All Leagues</option>${opts}`;
+  document.getElementById('stream-league-filter').innerHTML = `<option value="">All Leagues</option>${opts}`;
+}
+
 // ── Streams ────────────────────────────────────────────────────────────────────
 
 async function loadStreams() {
   const res = await fetch(`/api/guilds/${currentGuildId}/streams`);
-  const streams = await res.json();
+  allStreams = await res.json();
+  applyStreamFilters();
+}
+
+function applyStreamFilters() {
+  const q = (document.getElementById('stream-search').value || '').toLowerCase();
+  const leagueFilter = document.getElementById('stream-league-filter').value;
+
+  let filtered = allStreams.filter(s => {
+    const matchesText = !q ||
+      (s.discord_username || s.discord_user_id).toLowerCase().includes(q) ||
+      (s.stream_title || '').toLowerCase().includes(q) ||
+      s.platform.toLowerCase().includes(q);
+    const matchesLeague = !leagueFilter || String(s.league_id) === leagueFilter;
+    return matchesText && matchesLeague;
+  });
+
+  filtered = sortData(filtered, streamSort.col, streamSort.dir);
+  renderStreams(filtered);
+  updateSortHeaders('streams-tbody', streamSort, true);
+}
+
+function sortStreams(col) {
+  if (streamSort.col === col) {
+    streamSort.dir *= -1;
+  } else {
+    streamSort.col = col;
+    streamSort.dir = col === 'posted_at' ? -1 : 1;
+  }
+  applyStreamFilters();
+}
+
+function renderStreams(streams) {
   const tbody = document.getElementById('streams-tbody');
   if (!streams.length) {
     tbody.innerHTML = '<tr><td colspan="5" class="text-muted" style="text-align:center;padding:24px;">No streams recorded</td></tr>';
@@ -341,6 +403,30 @@ async function postAdvance() {
   } else {
     flash(data.error || 'Failed', 'error', 'advance-result');
   }
+}
+
+// ── Sort / filter helpers ──────────────────────────────────────────────────────
+
+function sortData(arr, col, dir) {
+  if (!col) return arr;
+  return [...arr].sort((a, b) => {
+    const av = (a[col] ?? '').toString().toLowerCase();
+    const bv = (b[col] ?? '').toString().toLowerCase();
+    return av < bv ? -dir : av > bv ? dir : 0;
+  });
+}
+
+function updateSortHeaders(tableOrTbodyId, sort, isTbody = false) {
+  const root = isTbody
+    ? document.getElementById(tableOrTbodyId)?.closest('table')
+    : document.getElementById(tableOrTbodyId);
+  if (!root) return;
+  root.querySelectorAll('th.sortable').forEach(th => {
+    th.classList.remove('sort-asc', 'sort-desc');
+    if (th.dataset.col === sort.col) {
+      th.classList.add(sort.dir === 1 ? 'sort-asc' : 'sort-desc');
+    }
+  });
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────

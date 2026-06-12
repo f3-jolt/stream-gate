@@ -84,13 +84,13 @@ router.get('/guilds/:guildId/streams', requireGuildAccess, (req, res) => {
     SELECT sp.id, sp.platform, sp.platform_stream_id, sp.discord_user_id,
            sp.stream_title, sp.posted_at,
            u.discord_username,
-           l.name AS league_name, l.abbr AS league_abbr
+           l.id AS league_id, l.name AS league_name, l.abbr AS league_abbr
     FROM stream_posts sp
     JOIN leagues l ON l.id = sp.league_id
     LEFT JOIN users u ON u.discord_id = sp.discord_user_id
     WHERE l.guild_id = ?
     ORDER BY sp.posted_at DESC
-    LIMIT 20
+    LIMIT 200
   `).all(req.params.guildId);
 
   res.json(rows);

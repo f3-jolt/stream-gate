@@ -1,10 +1,11 @@
 const logger = require('../../utils/logger');
-const { getAllPlatformUsers, getUserLeaguesByGuild, checkRecentStreamPostByTitle, getGuildSettings } = require('../../db/queries');
+const { getAllPlatformUsers, getUserLeaguesByGuild, checkRecentStreamPostByTitle, getGuildSettings, getAllLeaguesWithUserChannel } = require('../../db/queries');
 const { getActiveLiveStream, getChannelIdByHandle } = require('../../platforms/youtube/api');
 const { getLiveStream } = require('../../platforms/twitch/api');
 const { updateSubscriptionId, updatePlatformUserId } = require('../../db/queries');
 const { postStreamToChannel } = require('../../utils/channelRouter');
 const { parseStreamTitle } = require('../../utils/titleParser');
+const { handleStreamLinkMessage } = require('../../utils/linkStreamHandler');
 
 module.exports = {
   name: 'clientReady',
@@ -13,6 +14,9 @@ module.exports = {
     logger.info(`Bot online as ${client.user.tag}`);
     checkLiveAtStartup().catch(err =>
       logger.error('Startup live check failed', { error: err.message })
+    );
+    scanUserChannelsForLinks(client).catch(err =>
+      logger.error('Startup user channel scan failed', { error: err.message })
     );
   },
 };
@@ -71,6 +75,32 @@ async function checkLiveAtStartup() {
   }
 
   logger.info('Startup live stream check complete');
+}
+
+async function scanUserChannelsForLinks(client) {
+  const leagues = getAllLeaguesWithUserChannel();
+  if (!leagues.length) return;
+
+  logger.info('Startup: scanning user channels for recent stream links', { count: leagues.length });
+  const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
+
+  for (const league of leagues) {
+    try {
+      const channel = await client.channels.fetch(league.user_channel_id);
+      if (!channel) continue;
+
+      const messages = await channel.messages.fetch({ limit: 50 });
+      const recent = messages.filter(m => !m.author.bot && m.createdTimestamp >= twoHoursAgo);
+
+      for (const message of recent.values()) {
+        await handleStreamLinkMessage(message, league);
+      }
+    } catch (err) {
+      logger.warn('Startup: error scanning user channel', { leagueId: league.id, channelId: league.user_channel_id, error: err.message });
+    }
+  }
+
+  logger.info('Startup: user channel scan complete');
 }
 
 // Posts to leagues for the user on startup, applying the same keyword check as the normal

@@ -295,6 +295,20 @@ function updateCustomTeam(currentAbbrev, { name, abbrev, mascot, colors, logo } 
   return db.prepare(`UPDATE custom_teams SET ${sets.join(', ')} WHERE abbrev = ? COLLATE NOCASE`).run(...vals);
 }
 
+// ── League channel lookups ────────────────────────────────────────────────────
+
+function getLeagueByUserChannel(guildId, channelId) {
+  return db.prepare(
+    'SELECT * FROM leagues WHERE guild_id = ? AND user_channel_id = ?'
+  ).get(guildId, channelId);
+}
+
+function getAllLeaguesWithUserChannel() {
+  return db.prepare(
+    "SELECT * FROM leagues WHERE user_channel_id IS NOT NULL AND user_channel_id != ''"
+  ).all();
+}
+
 // ── Health stats (per-guild) ──────────────────────────────────────────────────
 
 function getHealthStats(guildId) {
@@ -355,4 +369,6 @@ module.exports = {
   getHealthStats,
   addCustomTeam,
   updateCustomTeam,
+  getLeagueByUserChannel,
+  getAllLeaguesWithUserChannel,
 };

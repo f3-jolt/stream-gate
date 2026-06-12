@@ -54,16 +54,19 @@
         <!-- USERS TAB -->
         <div id="tab-users" class="tab-panel active">
           <div class="search-row">
-            <input id="user-search" type="text" placeholder="Search users..." oninput="filterUsers()">
+            <input id="user-search" type="text" placeholder="Search users..." oninput="applyUserFilters()">
+            <select id="user-league-filter" onchange="applyUserFilters()">
+              <option value="">All Leagues</option>
+            </select>
             <button class="btn btn-primary" onclick="openRegisterModal()">+ Register User</button>
           </div>
           <div class="table-wrap">
             <table id="users-table">
               <thead>
                 <tr>
-                  <th>Discord User</th>
-                  <th>League</th>
-                  <th>Team</th>
+                  <th class="sortable" data-col="discord_username" onclick="sortUsers('discord_username')">Discord User</th>
+                  <th class="sortable" data-col="league_abbr" onclick="sortUsers('league_abbr')">League</th>
+                  <th class="sortable" data-col="team_name" onclick="sortUsers('team_name')">Team</th>
                   <th>Platforms</th>
                   <th></th>
                 </tr>
@@ -80,14 +83,20 @@
 
         <!-- STREAMS TAB -->
         <div id="tab-streams" class="tab-panel">
+          <div class="search-row">
+            <input id="stream-search" type="text" placeholder="Search streams..." oninput="applyStreamFilters()">
+            <select id="stream-league-filter" onchange="applyStreamFilters()">
+              <option value="">All Leagues</option>
+            </select>
+          </div>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Time</th>
-                  <th>User</th>
-                  <th>League</th>
-                  <th>Platform</th>
+                  <th class="sortable sort-desc" data-col="posted_at" onclick="sortStreams('posted_at')">Time</th>
+                  <th class="sortable" data-col="discord_username" onclick="sortStreams('discord_username')">User</th>
+                  <th class="sortable" data-col="league_abbr" onclick="sortStreams('league_abbr')">League</th>
+                  <th class="sortable" data-col="platform" onclick="sortStreams('platform')">Platform</th>
                   <th>Title</th>
                 </tr>
               </thead>
