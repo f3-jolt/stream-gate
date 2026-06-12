@@ -113,6 +113,20 @@ async function syncSubscriptions() {
   }
 }
 
+async function getTwitchVideo(videoId) {
+  const data = await twitchApiGet('/videos', { id: videoId });
+  const v = data.data?.[0];
+  if (!v) return null;
+  return {
+    id: `vod-${v.id}`,
+    title: v.title,
+    url: v.url,
+    user_login: v.user_login,
+    user_name: v.user_name,
+    videoId: null,
+  };
+}
+
 async function getLiveStream(username) {
   const data = await twitchApiGet('/streams', { user_login: username.toLowerCase() });
   const stream = data.data?.[0];
@@ -127,4 +141,4 @@ async function getLiveStream(username) {
   };
 }
 
-module.exports = { getAppAccessToken, getTwitchUserByUsername, subscribeToStreamOnline, deleteSubscription, syncSubscriptions, getLiveStream, twitchApiGet };
+module.exports = { getAppAccessToken, getTwitchUserByUsername, getTwitchVideo, subscribeToStreamOnline, deleteSubscription, syncSubscriptions, getLiveStream, twitchApiGet };

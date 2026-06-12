@@ -151,9 +151,9 @@ async function sendDisambiguationDM(discordUserId, guildId, leagues, platform, s
 
 function buildStreamEmbed(user, league, platform, streamData, team = null) {
   const userLogin = streamData.user_login || user.discord_username;
-  const streamUrl = platform === 'twitch'
+  const streamUrl = streamData.url || (platform === 'twitch'
     ? `https://twitch.tv/${userLogin}`
-    : `https://youtube.com/watch?v=${streamData.videoId}`;
+    : `https://youtube.com/watch?v=${streamData.videoId}`);
 
   const platformColor = platform === 'twitch' ? 0x6441a5 : 0xFF0000;
   const platformLabel = platform === 'twitch' ? 'Twitch' : 'YouTube';
