@@ -64,7 +64,7 @@ async function renewSubscriptions() {
   const users = getAllPlatformUsers('youtube');
   if (!users.length) return;
 
-  logger.info('Renewing YouTube WebSub subscriptions', { count: users.length });
+  // logger.info('Renewing YouTube WebSub subscriptions', { count: users.length });
 
   for (const user of users) {
     try {
@@ -81,7 +81,7 @@ async function renewSubscriptions() {
       await subscribeToChannel(channelId);
       updateSubscriptionId('youtube', user.platform_username, channelId);
       updatePlatformUserId('youtube', user.platform_username, channelId);
-      logger.info('YouTube subscription renewed', { handle: user.platform_username, channelId });
+      // logger.info('YouTube subscription renewed', { handle: user.platform_username, channelId });
     } catch (err) {
       logger.error('YouTube renewal error', { handle: user.platform_username, error: err.message });
     }

@@ -79,7 +79,7 @@ async function syncSubscriptions() {
   const users = getAllPlatformUsers('twitch');
   if (!users.length) return;
 
-  logger.info('Syncing Twitch subscriptions', { count: users.length });
+  // logger.info('Syncing Twitch subscriptions', { count: users.length });
 
   const existing = await getExistingSubscriptions();
   const existingByUserId = new Map(existing.map(s => [s.condition.broadcaster_user_id, s]));
@@ -101,11 +101,11 @@ async function syncSubscriptions() {
       if (existingByUserId.has(platformUserId)) {
         const sub = existingByUserId.get(platformUserId);
         updateSubscriptionId('twitch', user.platform_username, sub.id);
-        logger.info('Twitch sub already active', { username: user.platform_username, subId: sub.id });
+        // logger.info('Twitch sub already active', { username: user.platform_username, subId: sub.id });
       } else {
         const sub = await subscribeToStreamOnline(platformUserId);
         updateSubscriptionId('twitch', user.platform_username, sub.id);
-        logger.info('Twitch sub created', { username: user.platform_username, subId: sub.id });
+        // logger.info('Twitch sub created', { username: user.platform_username, subId: sub.id });
       }
     } catch (err) {
       logger.error('Twitch sync error', { username: user.platform_username, error: err.message });

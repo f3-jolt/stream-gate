@@ -24,7 +24,7 @@ function registerYouTubeWebhook(app) {
     const { 'hub.mode': mode, 'hub.topic': topic, 'hub.challenge': challenge } = req.query;
 
     if (mode === 'subscribe' && challenge) {
-      logger.info('YouTube WebSub verification', { topic });
+      // logger.info('YouTube WebSub verification', { topic });
       return res.status(200).type('text/plain').send(challenge);
     }
 

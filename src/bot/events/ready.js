@@ -22,17 +22,17 @@ module.exports = {
 };
 
 async function checkLiveAtStartup() {
-  logger.info('Running startup live stream check');
+  // logger.info('Running startup live stream check');
 
   const youtubeUsers = getAllPlatformUsers('youtube');
-  logger.info('Startup: checking YouTube users', { count: youtubeUsers.length });
+  // logger.info('Startup: checking YouTube users', { count: youtubeUsers.length });
 
   for (const user of youtubeUsers) {
     try {
       let channelId = user.platform_user_id;
 
       if (!channelId) {
-        logger.info('Startup: resolving channelId for user', { username: user.platform_username });
+        // logger.info('Startup: resolving channelId for user', { username: user.platform_username });
         channelId = await getChannelIdByHandle(user.platform_username);
         if (!channelId) {
           logger.warn('Startup: could not resolve YouTube channelId', { username: user.platform_username });
@@ -40,17 +40,17 @@ async function checkLiveAtStartup() {
         }
         updateSubscriptionId('youtube', user.platform_username, channelId);
         updatePlatformUserId('youtube', user.platform_username, channelId);
-        logger.info('Startup: resolved YouTube channelId', { username: user.platform_username, channelId });
+        // logger.info('Startup: resolved YouTube channelId', { username: user.platform_username, channelId });
       }
 
-      logger.info('Startup: checking for live stream', { username: user.platform_username, channelId });
+      // logger.info('Startup: checking for live stream', { username: user.platform_username, channelId });
       const streamData = await getActiveLiveStream(channelId);
       if (!streamData) {
-        logger.info('Startup: no live stream found', { username: user.platform_username });
+        // logger.info('Startup: no live stream found', { username: user.platform_username });
         continue;
       }
 
-      logger.info('Startup: found live YouTube stream', { username: user.platform_username, title: streamData.title });
+      // logger.info('Startup: found live YouTube stream', { username: user.platform_username, title: streamData.title });
       await postToAllLeagues('youtube', user, streamData);
     } catch (err) {
       logger.error('Startup YouTube check error', { username: user.platform_username, error: err.message });
@@ -58,23 +58,23 @@ async function checkLiveAtStartup() {
   }
 
   const twitchUsers = getAllPlatformUsers('twitch');
-  logger.info('Startup: checking Twitch users', { count: twitchUsers.length });
+  // logger.info('Startup: checking Twitch users', { count: twitchUsers.length });
 
   for (const user of twitchUsers) {
     try {
       const streamData = await getLiveStream(user.platform_username);
       if (!streamData) {
-        logger.info('Startup: no live Twitch stream', { username: user.platform_username });
+        // logger.info('Startup: no live Twitch stream', { username: user.platform_username });
         continue;
       }
-      logger.info('Startup: found live Twitch stream', { username: user.platform_username, title: streamData.title });
+      // logger.info('Startup: found live Twitch stream', { username: user.platform_username, title: streamData.title });
       await postToAllLeagues('twitch', user, streamData);
     } catch (err) {
       logger.error('Startup Twitch check error', { username: user.platform_username, error: err.message });
     }
   }
 
-  logger.info('Startup live stream check complete');
+  // logger.info('Startup live stream check complete');
 }
 
 async function scanUserChannelsForLinks(client) {
@@ -94,7 +94,7 @@ async function scanUserChannelsForLinks(client) {
 
   if (!channelLeaguePairs.size) return;
 
-  logger.info('Startup: scanning channels for recent stream links', { count: channelLeaguePairs.size });
+  // logger.info('Startup: scanning channels for recent stream links', { count: channelLeaguePairs.size });
 
   for (const [channelId, league] of channelLeaguePairs) {
     try {
@@ -112,7 +112,7 @@ async function scanUserChannelsForLinks(client) {
     }
   }
 
-  logger.info('Startup: channel scan complete');
+  // logger.info('Startup: channel scan complete');
 }
 
 // Posts to leagues for the user on startup using the same keyword and abbr routing as the
@@ -130,9 +130,9 @@ async function postToAllLeagues(platform, platformUser, streamData) {
     const keyword = settings?.trigger_keyword || 'GOI';
     const { isMatch, abbr } = parseStreamTitle(streamData.title, keyword);
     if (!isMatch) {
-      logger.info('Startup: title does not match keyword, skipping guild', {
-        username: platformUser.platform_username, guildId, keyword, title: streamData.title,
-      });
+      // logger.info('Startup: title does not match keyword, skipping guild', {
+      //   username: platformUser.platform_username, guildId, keyword, title: streamData.title,
+      // });
       continue;
     }
 
@@ -146,7 +146,7 @@ async function postToAllLeagues(platform, platformUser, streamData) {
       continue;
     }
 
-    logger.info('Startup: routing stream for guild', { username: platformUser.platform_username, guildId, abbr });
+    // logger.info('Startup: routing stream for guild', { username: platformUser.platform_username, guildId, abbr });
     await routeForGuild(guildId, leagues, platformUser, platform, streamData, abbr);
   }
 }
