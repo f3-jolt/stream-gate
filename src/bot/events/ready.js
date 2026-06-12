@@ -1,9 +1,10 @@
 const logger = require('../../utils/logger');
-const { getAllPlatformUsers, getUserLeaguesByGuild, checkRecentStreamPostByTitle } = require('../../db/queries');
+const { getAllPlatformUsers, getUserLeaguesByGuild, checkRecentStreamPostByTitle, getGuildSettings } = require('../../db/queries');
 const { getActiveLiveStream, getChannelIdByHandle } = require('../../platforms/youtube/api');
 const { getLiveStream } = require('../../platforms/twitch/api');
 const { updateSubscriptionId, updatePlatformUserId } = require('../../db/queries');
 const { postStreamToChannel } = require('../../utils/channelRouter');
+const { parseStreamTitle } = require('../../utils/titleParser');
 
 module.exports = {
   name: 'clientReady',
@@ -72,9 +73,9 @@ async function checkLiveAtStartup() {
   logger.info('Startup live stream check complete');
 }
 
-// Posts directly to all leagues for the user, bypassing the title keyword requirement.
-// Uses title-based dedup only (not stream ID) so a restart always catches an ongoing stream
-// that was never posted.
+// Posts to leagues for the user on startup, applying the same keyword check as the normal
+// WebSub path. Uses title-based dedup (not stream ID) so a restart catches an ongoing stream
+// that was never posted, while still ignoring streams with no matching keyword.
 async function postToAllLeagues(platform, platformUser, streamData) {
   const guildGroups = getUserLeaguesByGuild(platformUser.discord_id);
   if (!guildGroups.length) {
@@ -83,6 +84,16 @@ async function postToAllLeagues(platform, platformUser, streamData) {
   }
 
   for (const { guildId, leagues } of guildGroups) {
+    const settings = getGuildSettings(guildId);
+    const keyword = settings?.trigger_keyword || 'GOI';
+    const { isMatch } = parseStreamTitle(streamData.title, keyword);
+    if (!isMatch) {
+      logger.info('Startup: title does not match keyword, skipping guild', {
+        username: platformUser.platform_username, guildId, keyword, title: streamData.title,
+      });
+      continue;
+    }
+
     for (const league of leagues) {
       if (checkRecentStreamPostByTitle(league.id, streamData.title)) {
         logger.info('Startup: stream already posted recently, skipping', {
