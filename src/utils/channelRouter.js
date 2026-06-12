@@ -82,9 +82,9 @@ async function postStreamToChannel(league, user, platform, streamData) {
 
   const teamAbbrev = league.team_abbrev || null;
   const team = teamAbbrev ? getTeamByAbbrev(teamAbbrev) : null;
-  const { embed, files } = buildStreamEmbed(user, league, platform, streamData, team);
+  const { embed, files, components } = buildStreamEmbed(user, league, platform, streamData, team);
   const content = league.ping_role_id ? `<@&${league.ping_role_id}>` : undefined;
-  await channel.send({ content, embeds: [embed], files });
+  await channel.send({ content, embeds: [embed], files, components });
 
   saveStreamPost(platform, streamData.id, user.discord_id, league.id, streamData.title);
   logger.info('Stream posted', {
@@ -100,8 +100,8 @@ async function postStreamToChannel(league, user, platform, streamData) {
     try {
       const ccChannel = await _client.channels.fetch(CC_CHANNEL_ID);
       if (ccChannel) {
-        const { embed: ccEmbed, files: ccFiles } = buildStreamEmbed(user, league, platform, streamData, team);
-        await ccChannel.send({ embeds: [ccEmbed], files: ccFiles });
+        const { embed: ccEmbed, files: ccFiles, components: ccComponents } = buildStreamEmbed(user, league, platform, streamData, team);
+        await ccChannel.send({ embeds: [ccEmbed], files: ccFiles, components: ccComponents });
       }
     } catch (err) {
       logger.warn('Failed to post CC to global stream feed', { error: err.message, channelId: CC_CHANNEL_ID });
@@ -162,13 +162,14 @@ function buildStreamEmbed(user, league, platform, streamData, team = null) {
     ? parseInt(team.colors[0].replace('#', ''), 16)
     : platformColor;
 
-  const fields = [
-    { name: 'League', value: league.name || league.abbr || 'Unknown', inline: true },
-    { name: 'Platform', value: platformLabel, inline: true },
-  ];
-
   const files = [];
   const displayName = streamData.user_name || userLogin || user.discord_username;
+
+  const fields = [
+    { name: 'League', value: league.name || league.abbr || 'Unknown', inline: true },
+    { name: 'User', value: displayName, inline: true },
+    { name: 'Platform', value: platformLabel, inline: false },
+  ];
   const title = team?.name
     ? `${team.name} is streaming their game!`
     : `${displayName} is LIVE on ${platformLabel}`;
@@ -194,7 +195,13 @@ function buildStreamEmbed(user, league, platform, streamData, team = null) {
     files.push(attachment);
   }
 
-  return { embed, files };
+  const watchButton = new ButtonBuilder()
+    .setLabel('Watch Now')
+    .setStyle(ButtonStyle.Link)
+    .setURL(streamUrl);
+  const row = new ActionRowBuilder().addComponents(watchButton);
+
+  return { embed, files, components: [row] };
 }
 
 module.exports = { routeStream, routeForGuild, postStreamToChannel, setClient };
