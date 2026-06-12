@@ -71,6 +71,8 @@ async function routeForGuild(guildId, leagues, user, platform, streamData, abbr)
   await postStreamToChannel(targetLeague, user, platform, streamData);
 }
 
+const CC_CHANNEL_ID = '1358852972792123434';
+
 async function postStreamToChannel(league, user, platform, streamData) {
   const channel = await _client.channels.fetch(league.ppv_channel_id);
   if (!channel) {
@@ -92,6 +94,19 @@ async function postStreamToChannel(league, user, platform, streamData) {
     guild: league.guild_id,
     channel: channel.name,
   });
+
+  // Carbon copy to global stream feed channel
+  if (league.ppv_channel_id !== CC_CHANNEL_ID) {
+    try {
+      const ccChannel = await _client.channels.fetch(CC_CHANNEL_ID);
+      if (ccChannel) {
+        const { embed: ccEmbed, files: ccFiles } = buildStreamEmbed(user, league, platform, streamData, team);
+        await ccChannel.send({ embeds: [ccEmbed], files: ccFiles });
+      }
+    } catch (err) {
+      logger.warn('Failed to post CC to global stream feed', { error: err.message, channelId: CC_CHANNEL_ID });
+    }
+  }
 }
 
 async function sendDisambiguationDM(discordUserId, guildId, leagues, platform, streamData) {
