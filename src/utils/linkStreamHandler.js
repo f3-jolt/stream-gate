@@ -26,19 +26,25 @@ async function handleStreamLinkMessage(message, league) {
       if (!registeredUser) return;
       if (registeredUser.discord_id !== message.author.id) return;
 
-      const { getLiveStream } = require('../platforms/twitch/api');
+      const { getLiveStream, getTwitchUserByUsername } = require('../platforms/twitch/api');
       streamData = await getLiveStream(platformUsername);
-      if (!streamData) return;
+      if (!streamData) {
+        const twitchUser = await getTwitchUserByUsername(platformUsername);
+        streamData = {
+          id: `manual-${platformUsername}`,
+          title: twitchUser ? `${twitchUser.display_name} is live!` : `${platformUsername} is live!`,
+          user_name: twitchUser?.display_name || platformUsername,
+          user_login: platformUsername,
+          videoId: null,
+        };
+      }
       platform = 'twitch';
 
     } else {
       const videoId = youtubeMatch[1] || youtubeMatch[2] || youtubeMatch[3];
       if (!videoId) return;
 
-      const { checkIfLiveStream, getLiveStreamDetails } = require('../platforms/youtube/api');
-      const isLive = await checkIfLiveStream(videoId);
-      if (!isLive) return;
-
+      const { getLiveStreamDetails } = require('../platforms/youtube/api');
       streamData = await getLiveStreamDetails(videoId);
       if (!streamData) return;
 

@@ -53,7 +53,7 @@ async function routeForGuild(guildId, leagues, user, platform, streamData, abbr)
     targetLeague = leagues.find(l => l.abbr.toUpperCase() === abbr.toUpperCase()) || null;
   }
 
-  if (!targetLeague && !abbr && leagues.length === 1) {
+  if (!targetLeague && leagues.length === 1) {
     targetLeague = leagues[0];
   }
 

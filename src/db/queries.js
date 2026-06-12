@@ -140,7 +140,7 @@ function updatePlatformUserId(platform, platformUsername, platformUserId) {
 
 function getAllPlatformUsers(platform) {
   return db.prepare(`
-    SELECT u.discord_id, up.platform_username, up.platform_user_id, up.subscription_id
+    SELECT u.discord_id, u.discord_username, up.platform_username, up.platform_user_id, up.subscription_id
     FROM user_platforms up
     JOIN users u ON u.id = up.user_id
     WHERE up.platform = ? AND u.active = 1
@@ -303,9 +303,21 @@ function getLeagueByUserChannel(guildId, channelId) {
   ).get(guildId, channelId);
 }
 
+function getLeagueByPpvChannel(guildId, channelId) {
+  return db.prepare(
+    'SELECT * FROM leagues WHERE guild_id = ? AND ppv_channel_id = ?'
+  ).get(guildId, channelId) || null;
+}
+
 function getAllLeaguesWithUserChannel() {
   return db.prepare(
     "SELECT * FROM leagues WHERE user_channel_id IS NOT NULL AND user_channel_id != ''"
+  ).all();
+}
+
+function getAllLeaguesWithPpvChannel() {
+  return db.prepare(
+    "SELECT * FROM leagues WHERE ppv_channel_id IS NOT NULL AND ppv_channel_id != ''"
   ).all();
 }
 
@@ -370,5 +382,7 @@ module.exports = {
   addCustomTeam,
   updateCustomTeam,
   getLeagueByUserChannel,
+  getLeagueByPpvChannel,
   getAllLeaguesWithUserChannel,
+  getAllLeaguesWithPpvChannel,
 };

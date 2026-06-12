@@ -1,9 +1,9 @@
 const logger = require('../../utils/logger');
-const { getAllPlatformUsers, getUserLeaguesByGuild, checkRecentStreamPostByTitle, getGuildSettings, getAllLeaguesWithUserChannel } = require('../../db/queries');
+const { getAllPlatformUsers, getUserLeaguesByGuild, checkRecentStreamPostByTitle, getGuildSettings, getAllLeaguesWithUserChannel, getAllLeaguesWithPpvChannel } = require('../../db/queries');
 const { getActiveLiveStream, getChannelIdByHandle } = require('../../platforms/youtube/api');
 const { getLiveStream } = require('../../platforms/twitch/api');
 const { updateSubscriptionId, updatePlatformUserId } = require('../../db/queries');
-const { postStreamToChannel } = require('../../utils/channelRouter');
+const { routeForGuild } = require('../../utils/channelRouter');
 const { parseStreamTitle } = require('../../utils/titleParser');
 const { handleStreamLinkMessage } = require('../../utils/linkStreamHandler');
 
@@ -78,34 +78,46 @@ async function checkLiveAtStartup() {
 }
 
 async function scanUserChannelsForLinks(client) {
-  const leagues = getAllLeaguesWithUserChannel();
-  if (!leagues.length) return;
+  // Build a map of channelId → league, covering both user channels and PPV channels.
+  // A league may have both; we scan each distinct channel independently so manual links
+  // posted in either channel are picked up after a restart.
+  const channelLeaguePairs = new Map(); // channelId → league
 
-  logger.info('Startup: scanning user channels for recent stream links', { count: leagues.length });
-  const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
-
-  for (const league of leagues) {
-    try {
-      const channel = await client.channels.fetch(league.user_channel_id);
-      if (!channel) continue;
-
-      const messages = await channel.messages.fetch({ limit: 50 });
-      const recent = messages.filter(m => !m.author.bot && m.createdTimestamp >= twoHoursAgo);
-
-      for (const message of recent.values()) {
-        await handleStreamLinkMessage(message, league);
-      }
-    } catch (err) {
-      logger.warn('Startup: error scanning user channel', { leagueId: league.id, channelId: league.user_channel_id, error: err.message });
+  for (const l of getAllLeaguesWithUserChannel()) {
+    channelLeaguePairs.set(l.user_channel_id, l);
+  }
+  for (const l of getAllLeaguesWithPpvChannel()) {
+    if (!channelLeaguePairs.has(l.ppv_channel_id)) {
+      channelLeaguePairs.set(l.ppv_channel_id, l);
     }
   }
 
-  logger.info('Startup: user channel scan complete');
+  if (!channelLeaguePairs.size) return;
+
+  logger.info('Startup: scanning channels for recent stream links', { count: channelLeaguePairs.size });
+
+  for (const [channelId, league] of channelLeaguePairs) {
+    try {
+      const channel = await client.channels.fetch(channelId);
+      if (!channel) continue;
+
+      const messages = await channel.messages.fetch({ limit: 10 });
+      const nonBot = messages.filter(m => !m.author.bot);
+
+      for (const message of nonBot.values()) {
+        await handleStreamLinkMessage(message, league);
+      }
+    } catch (err) {
+      logger.warn('Startup: error scanning channel', { leagueId: league.id, channelId, error: err.message });
+    }
+  }
+
+  logger.info('Startup: channel scan complete');
 }
 
-// Posts to leagues for the user on startup, applying the same keyword check as the normal
-// WebSub path. Uses title-based dedup (not stream ID) so a restart catches an ongoing stream
-// that was never posted, while still ignoring streams with no matching keyword.
+// Posts to leagues for the user on startup using the same keyword and abbr routing as the
+// normal webhook path. Title-based dedup (not stream ID) is checked first so a restart catches
+// an ongoing stream never posted, while still ignoring already-handled streams.
 async function postToAllLeagues(platform, platformUser, streamData) {
   const guildGroups = getUserLeaguesByGuild(platformUser.discord_id);
   if (!guildGroups.length) {
@@ -116,7 +128,7 @@ async function postToAllLeagues(platform, platformUser, streamData) {
   for (const { guildId, leagues } of guildGroups) {
     const settings = getGuildSettings(guildId);
     const keyword = settings?.trigger_keyword || 'GOI';
-    const { isMatch } = parseStreamTitle(streamData.title, keyword);
+    const { isMatch, abbr } = parseStreamTitle(streamData.title, keyword);
     if (!isMatch) {
       logger.info('Startup: title does not match keyword, skipping guild', {
         username: platformUser.platform_username, guildId, keyword, title: streamData.title,
@@ -124,23 +136,17 @@ async function postToAllLeagues(platform, platformUser, streamData) {
       continue;
     }
 
-    for (const league of leagues) {
-      if (checkRecentStreamPostByTitle(league.id, streamData.title)) {
-        logger.info('Startup: stream already posted recently, skipping', {
-          username: platformUser.platform_username,
-          league: league.abbr,
-          title: streamData.title,
-        });
-        continue;
-      }
-
-      const discordUser = {
-        discord_id: platformUser.discord_id,
-        discord_username: platformUser.discord_username,
-      };
-
-      logger.info('Startup: posting stream to league', { username: platformUser.platform_username, league: league.abbr });
-      await postStreamToChannel(league, discordUser, platform, streamData);
+    // Title-based dedup: if any league in this guild already has this stream posted recently,
+    // skip the whole guild (stream ID may differ across restarts so we check by title).
+    const alreadyPosted = leagues.some(l => checkRecentStreamPostByTitle(l.id, streamData.title));
+    if (alreadyPosted) {
+      logger.info('Startup: stream already posted recently, skipping guild', {
+        username: platformUser.platform_username, guildId, title: streamData.title,
+      });
+      continue;
     }
+
+    logger.info('Startup: routing stream for guild', { username: platformUser.platform_username, guildId, abbr });
+    await routeForGuild(guildId, leagues, platformUser, platform, streamData, abbr);
   }
 }

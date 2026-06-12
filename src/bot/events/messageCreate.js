@@ -1,13 +1,17 @@
-const { getLeagueByUserChannel } = require('../../db/queries');
+const { getLeagueByUserChannel, getLeagueByPpvChannel } = require('../../db/queries');
 const { handleStreamLinkMessage } = require('../../utils/linkStreamHandler');
+const logger = require('../../utils/logger');
 
 module.exports = {
   name: 'messageCreate',
   once: false,
   async execute(message) {
     if (message.author.bot || !message.guild) return;
-    const league = getLeagueByUserChannel(message.guild.id, message.channelId);
+    const league = getLeagueByUserChannel(message.guild.id, message.channelId)
+      || getLeagueByPpvChannel(message.guild.id, message.channelId);
     if (!league) return;
-    handleStreamLinkMessage(message, league).catch(() => {});
+    handleStreamLinkMessage(message, league).catch(err =>
+      logger.warn('Link handler error', { error: err.message, channel: message.channelId, guild: message.guild.id })
+    );
   },
 };
