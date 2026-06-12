@@ -167,7 +167,7 @@ function buildStreamEmbed(user, league, platform, streamData, team = null) {
 
   const fields = [
     { name: 'League', value: league.name || league.abbr || 'Unknown', inline: true },
-    { name: 'User', value: displayName, inline: true },
+    { name: 'User', value: `<@${user.discord_id}>`, inline: true },
     { name: 'Platform', value: platformLabel, inline: false },
   ];
   const title = team?.name
