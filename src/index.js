@@ -1,6 +1,7 @@
 require('dotenv').config();
 require('dotenv').config({ path: '.env.local', override: true });
 const express = require('express');
+const session = require('express-session');
 const fs = require('fs');
 const path = require('path');
 const cron = require('node-cron');
@@ -11,10 +12,32 @@ const { registerTwitchWebhook } = require('./platforms/twitch/eventsub');
 const { registerYouTubeWebhook } = require('./platforms/youtube/websub');
 const { clearExpiredPendingRoutes } = require('./db/queries');
 const logger = require('./utils/logger');
+const authRouter = require('./web/auth');
+const apiRouter = require('./web/api');
 
 // ── Express + raw body capture (required for HMAC verification) ───────────────
 const app = express();
+
+// Trust Fly.io's proxy so req.secure and req.ip are correct behind TLS termination
+app.set('trust proxy', 1);
+
+// Session middleware (must come before any route that reads req.session)
+// MemoryStore is fine for this low-traffic admin tool; sessions reset on restart
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { httpOnly: true, secure: 'auto', maxAge: 7 * 24 * 60 * 60 * 1000 },
+}));
+
+// JSON body parser for API routes (must come before apiRouter)
+app.use('/api', express.json());
+
 app.use((req, res, next) => {
+  // Skip raw body capture for API/auth routes
+  if (req.path.startsWith('/api/') || req.path.startsWith('/auth/') || req.path.startsWith('/admin')) {
+    return next();
+  }
   let data = [];
   req.on('data', chunk => data.push(chunk));
   req.on('end', () => {
@@ -22,6 +45,14 @@ app.use((req, res, next) => {
     try { req.body = JSON.parse(req.rawBody.toString()); } catch { req.body = {}; }
     next();
   });
+});
+
+// ── Admin portal routes ───────────────────────────────────────────────────────
+app.use('/auth', authRouter);
+app.use('/api', apiRouter);
+app.use('/admin', express.static(path.join(__dirname, 'web', 'public')));
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'web', 'public', 'index.html'));
 });
 
 registerTwitchWebhook(app);

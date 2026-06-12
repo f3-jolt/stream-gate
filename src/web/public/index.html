@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StreamGate Admin</title>
+  <link rel="stylesheet" href="/admin/style.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- LOGIN PAGE -->
+    <div id="login-page" style="display:none; flex-direction:column; align-items:center; justify-content:center; flex:1; padding:48px;">
+      <div class="login-card">
+        <div class="discord-logo">🎮</div>
+        <h2 style="margin-bottom:8px;">StreamGate Admin</h2>
+        <p style="color:var(--text-muted); margin-bottom:24px;">Sign in with Discord to manage your leagues.</p>
+        <div id="login-error" class="error-msg" style="margin-bottom:12px; display:none;"></div>
+        <a href="/auth/login" class="btn btn-discord">Sign in with Discord</a>
+      </div>
+    </div>
+
+    <!-- PORTAL -->
+    <div id="portal" style="display:none; flex-direction:column; flex:1;">
+
+      <header>
+        <h1>⚡ StreamGate Admin</h1>
+        <div class="spacer"></div>
+        <div class="user-chip">
+          <img id="user-avatar" src="" alt="">
+          <span id="user-name"></span>
+        </div>
+        <button class="btn-link" onclick="logout()">Sign out</button>
+      </header>
+
+      <div class="guild-bar">
+        <label for="guild-select">Server:</label>
+        <select id="guild-select" onchange="onGuildChange()">
+          <option value="">— select a server —</option>
+        </select>
+      </div>
+
+      <main id="main-content" style="display:none;">
+        <div id="flash" class="flash"></div>
+
+        <div class="tabs">
+          <button class="tab-btn active" onclick="switchTab('users', this)">Users</button>
+          <button class="tab-btn" onclick="switchTab('leagues', this)">Leagues</button>
+          <button class="tab-btn" onclick="switchTab('streams', this)">Stream History</button>
+          <button class="tab-btn" onclick="switchTab('health', this)">Health</button>
+          <button class="tab-btn" onclick="switchTab('advance', this)">Advance Week</button>
+        </div>
+
+        <!-- USERS TAB -->
+        <div id="tab-users" class="tab-panel active">
+          <div class="search-row">
+            <input id="user-search" type="text" placeholder="Search users..." oninput="filterUsers()">
+            <button class="btn btn-primary" onclick="openRegisterModal()">+ Register User</button>
+          </div>
+          <div class="table-wrap">
+            <table id="users-table">
+              <thead>
+                <tr>
+                  <th>Discord User</th>
+                  <th>League</th>
+                  <th>Team</th>
+                  <th>Platforms</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="users-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- LEAGUES TAB -->
+        <div id="tab-leagues" class="tab-panel">
+          <div id="leagues-list"></div>
+        </div>
+
+        <!-- STREAMS TAB -->
+        <div id="tab-streams" class="tab-panel">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>User</th>
+                  <th>League</th>
+                  <th>Platform</th>
+                  <th>Title</th>
+                </tr>
+              </thead>
+              <tbody id="streams-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- HEALTH TAB -->
+        <div id="tab-health" class="tab-panel">
+          <div class="stats-row" id="health-stats"></div>
+        </div>
+
+        <!-- ADVANCE TAB -->
+        <div id="tab-advance" class="tab-panel">
+          <div class="card">
+            <div class="card-title">Post Week Advancement Message</div>
+            <p class="text-muted" style="margin-bottom:16px;">Fetches the schedule cell and posts to the league's advance channel. Creates scheduling threads if a user channel is configured.</p>
+            <div class="advance-row">
+              <div class="field-group">
+                <label>League</label>
+                <select id="advance-league"></select>
+              </div>
+              <div class="field-group">
+                <label>Week</label>
+                <select id="advance-week">
+                  <option value="0">Week 0</option>
+                  <option value="1">Week 1</option>
+                  <option value="2">Week 2</option>
+                  <option value="3">Week 3</option>
+                  <option value="4">Week 4</option>
+                  <option value="5">Week 5</option>
+                  <option value="6">Week 6</option>
+                  <option value="7">Week 7</option>
+                  <option value="8">Week 8</option>
+                  <option value="9">Week 9</option>
+                  <option value="10">Week 10</option>
+                  <option value="11">Week 11</option>
+                  <option value="12">Week 12</option>
+                  <option value="13">Week 13</option>
+                  <option value="14">Week 14</option>
+                  <option value="15">CCW</option>
+                  <option value="16">Bowl Week 1</option>
+                  <option value="17">Bowl Week 2</option>
+                  <option value="18">CFP Semi Finals</option>
+                  <option value="19">National Championship</option>
+                </select>
+              </div>
+              <button class="btn btn-primary" onclick="postAdvance()">Post Advancement</button>
+            </div>
+            <div id="advance-result" class="flash"></div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+  </div><!-- #app -->
+
+  <!-- REGISTER MODAL -->
+  <div id="register-modal" class="modal-backdrop">
+    <div class="modal">
+      <h3>Register User</h3>
+      <div class="form-grid">
+        <div class="form-field full">
+          <label>Discord ID</label>
+          <input id="reg-discord-id" type="text" placeholder="Discord user snowflake ID">
+        </div>
+        <div class="form-field full">
+          <label>Discord Username</label>
+          <input id="reg-discord-username" type="text" placeholder="username (for display)">
+        </div>
+        <div class="form-field">
+          <label>Platform</label>
+          <select id="reg-platform">
+            <option value="twitch">Twitch</option>
+            <option value="youtube">YouTube</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>Platform Username</label>
+          <input id="reg-platform-username" type="text" placeholder="e.g. streamerName">
+        </div>
+        <div class="form-field">
+          <label>League</label>
+          <select id="reg-league"></select>
+        </div>
+        <div class="form-field">
+          <label>Team Name (optional)</label>
+          <input id="reg-team-name" type="text" placeholder="e.g. Alabama Crimson Tide">
+        </div>
+        <div class="form-field">
+          <label>Team Abbrev (optional)</label>
+          <input id="reg-team-abbrev" type="text" placeholder="e.g. ALA">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeRegisterModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="submitRegister()">Register</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/admin/app.js"></script>
+</body>
+</html>
