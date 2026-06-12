@@ -137,6 +137,31 @@ tr:hover td { background: rgba(255,255,255,.03); }
   border-radius: var(--radius); padding: 7px 10px; font-size: 13px;
 }
 
+/* ── Advance date/time picker row ── */
+.advance-dt-row {
+  display: flex; align-items: center; gap: 4px;
+}
+.advance-dt-row input[type="datetime-local"] {
+  background: var(--surface); color: var(--text); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 7px 10px; font-size: 13px;
+  color-scheme: dark;
+}
+.advance-dt-row select {
+  background: var(--surface); color: var(--text); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 7px 8px; font-size: 13px; width: 58px;
+}
+
+/* ── Advance preview ── */
+.advance-preview-label {
+  font-size: 11px; color: var(--text-muted); text-transform: uppercase;
+  letter-spacing: .5px; margin-bottom: 8px;
+}
+.advance-preview {
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px 16px; font-family: inherit; font-size: 13px; color: var(--text);
+  white-space: pre-wrap; word-break: break-word; line-height: 1.6;
+}
+
 /* ── Modal ── */
 .modal-backdrop {
   position: fixed; inset: 0; background: rgba(0,0,0,.6);

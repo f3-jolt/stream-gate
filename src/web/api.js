@@ -15,7 +15,7 @@ const {
   getUsersInLeague,
 } = require('../db/queries');
 const { requireAuth, requireGuildAccess } = require('./middleware');
-const { parseScheduleCell, parseMatchups, WEEK_LABELS } = require('../utils/schedule');
+const { parseScheduleCell, parseMatchups, WEEK_LABELS, applyDateOverride } = require('../utils/schedule');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -163,11 +163,40 @@ router.delete('/guilds/:guildId/users/:discordId/league/:leagueId', requireGuild
   res.json({ ok: true });
 });
 
+// ── GET /api/guilds/:guildId/advance/preview ──────────────────────────────────
+
+router.get('/guilds/:guildId/advance/preview', requireGuildAccess, async (req, res) => {
+  const { guildId } = req.params;
+  const { leagueAbbr, week, dateOverride } = req.query;
+
+  if (!leagueAbbr || week === undefined) {
+    return res.status(400).json({ error: 'leagueAbbr and week are required' });
+  }
+
+  const league = getLeagueByAbbr(guildId, leagueAbbr.toUpperCase());
+  if (!league) return res.status(404).json({ error: 'League not found' });
+  if (!league.schedule_url) return res.status(400).json({ error: 'No schedule URL configured for this league' });
+
+  try {
+    const decodedUrl = league.schedule_url.replace(/&amp;/g, '&');
+    const response = await axios.get(decodedUrl, { responseType: 'text' });
+    const rawMessage = parseScheduleCell(response.data, 5, Number(week));
+
+    if (!rawMessage) return res.status(404).json({ error: 'No data found for that week in the schedule sheet' });
+
+    const message = applyDateOverride(rawMessage, dateOverride || null);
+    res.json({ ok: true, message });
+  } catch (err) {
+    logger.error('Web portal advance preview error', { error: err.message });
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── POST /api/guilds/:guildId/advance ─────────────────────────────────────────
 
 router.post('/guilds/:guildId/advance', requireGuildAccess, async (req, res) => {
   const { guildId } = req.params;
-  const { leagueAbbr, week } = req.body;
+  const { leagueAbbr, week, dateOverride } = req.body;
 
   if (!leagueAbbr || week === undefined) {
     return res.status(400).json({ error: 'leagueAbbr and week are required' });
@@ -181,9 +210,11 @@ router.post('/guilds/:guildId/advance', requireGuildAccess, async (req, res) => 
   try {
     const decodedUrl = league.schedule_url.replace(/&amp;/g, '&');
     const response = await axios.get(decodedUrl, { responseType: 'text' });
-    const message = parseScheduleCell(response.data, 5, Number(week));
+    const rawMessage = parseScheduleCell(response.data, 5, Number(week));
 
-    if (!message) return res.status(404).json({ error: 'No data found for that week in the schedule sheet' });
+    if (!rawMessage) return res.status(404).json({ error: 'No data found for that week in the schedule sheet' });
+
+    const message = applyDateOverride(rawMessage, dateOverride || null);
 
     const client = require('../bot/client');
     const channel = await client.channels.fetch(league.advance_channel_id);

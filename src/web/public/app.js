@@ -275,15 +275,64 @@ async function loadHealth() {
 
 // ── Advance ────────────────────────────────────────────────────────────────────
 
-async function postAdvance() {
-  const leagueAbbr = document.getElementById('advance-league').value;
-  const week = document.getElementById('advance-week').value;
+function formatDateOverride() {
+  const val = document.getElementById('advance-date-override').value;
+  const tz  = document.getElementById('advance-tz').value;
+  if (!val) return '';
+
+  const [datePart, timePart] = val.split('T');
+  const [year, month, day]   = datePart.split('-').map(Number);
+  const [hour, minute]       = timePart.split(':').map(Number);
+
+  const date     = new Date(year, month - 1, day, hour, minute);
+  const weekday  = date.toLocaleDateString('en-US', { weekday: 'long' });
+  const monthStr = date.toLocaleDateString('en-US', { month: 'long' });
+  const ones = day % 10, teens = day % 100;
+  const suffix = (teens >= 11 && teens <= 13) ? 'th' : (ones === 1 ? 'st' : ones === 2 ? 'nd' : ones === 3 ? 'rd' : 'th');
+  const h        = hour % 12 || 12;
+  const m        = minute.toString().padStart(2, '0');
+  const ampm     = hour < 12 ? 'AM' : 'PM';
+
+  return `${weekday}, ${monthStr} ${day}${suffix} at ${h}:${m} ${ampm} ${tz}`;
+}
+
+async function previewAdvance() {
+  const leagueAbbr   = document.getElementById('advance-league').value;
+  const week         = document.getElementById('advance-week').value;
+  const dateOverride = formatDateOverride();
   if (!leagueAbbr) return;
+
+  const params = new URLSearchParams({ leagueAbbr, week });
+  if (dateOverride) params.set('dateOverride', dateOverride);
+  const res = await fetch(`/api/guilds/${currentGuildId}/advance/preview?${params}`);
+  const data = await res.json();
+
+  const box = document.getElementById('advance-preview-box');
+  const content = document.getElementById('advance-preview-content');
+
+  if (data.ok) {
+    content.textContent = data.message;
+    box.style.display = 'block';
+    document.getElementById('advance-result').classList.remove('show');
+  } else {
+    box.style.display = 'none';
+    flash(data.error || 'Failed to load preview', 'error', 'advance-result');
+  }
+}
+
+async function postAdvance() {
+  const leagueAbbr   = document.getElementById('advance-league').value;
+  const week         = document.getElementById('advance-week').value;
+  const dateOverride = formatDateOverride();
+  if (!leagueAbbr) return;
+
+  const body = { leagueAbbr, week: Number(week) };
+  if (dateOverride) body.dateOverride = dateOverride;
 
   const res = await fetch(`/api/guilds/${currentGuildId}/advance`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ leagueAbbr, week: Number(week) }),
+    body: JSON.stringify(body),
   });
   const data = await res.json();
   if (data.ok) {

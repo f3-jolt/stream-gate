@@ -28,7 +28,7 @@ const path = require('path');
 const axios = require('axios');
 const { searchTeams, searchCustomTeams, getTeamByAbbrev, invalidateTeamsCache, TEAMS_JSON_PATH } = require('../../utils/teams');
 const logger = require('../../utils/logger');
-const { WEEK_LABELS, parseScheduleCell, parseMatchups } = require('../../utils/schedule');
+const { WEEK_LABELS, parseScheduleCell, parseMatchups, applyDateOverride } = require('../../utils/schedule');
 
 // Admin check: server owner, MANAGE_GUILD permission, or configured admin role
 function isAdmin(interaction) {
@@ -238,6 +238,7 @@ module.exports = {
             { name: 'CFP Semi Finals',      value: 18 },
             { name: 'National Championship', value: 19 },
           ))
+        .addStringOption(o => o.setName('date_override').setDescription('Override the date/time in the message (e.g. Monday, August 26th at 9 PM ET)').setRequired(false))
     ),
 
   async autocomplete(interaction) {
@@ -1078,8 +1079,9 @@ async function handleEditCustomTeam(interaction) {
 async function handleAdvance(interaction) {
   await interaction.deferReply({ flags: 64 });
 
-  const leagueAbbr = interaction.options.getString('league').toUpperCase();
-  const weekValue  = interaction.options.getInteger('week');
+  const leagueAbbr   = interaction.options.getString('league').toUpperCase();
+  const weekValue    = interaction.options.getInteger('week');
+  const dateOverride = interaction.options.getString('date_override') ?? null;
 
   const league = getLeagueByAbbr(interaction.guildId, leagueAbbr);
   if (!league) {
@@ -1102,11 +1104,13 @@ async function handleAdvance(interaction) {
     const decodedUrl = scheduleUrl.replace(/&amp;/g, '&');
     const response = await axios.get(decodedUrl, { responseType: 'text' });
     // parseScheduleCell uses 0-based row/col: message row is index 5, week col is weekValue directly
-    const message = parseScheduleCell(response.data, 5, weekValue);
+    const rawMessage = parseScheduleCell(response.data, 5, weekValue);
 
-    if (!message) {
+    if (!rawMessage) {
       return interaction.editReply({ content: `No data found for that week in the schedule sheet.` });
     }
+
+    const message = applyDateOverride(rawMessage, dateOverride);
 
     const channel = await interaction.client.channels.fetch(league.advance_channel_id);
     await channel.send(message);
