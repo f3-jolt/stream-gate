@@ -84,9 +84,9 @@ async function postStreamToChannel(league, user, platform, streamData) {
   const team = teamAbbrev ? getTeamByAbbrev(teamAbbrev) : null;
   const { embed, files, components } = buildStreamEmbed(user, league, platform, streamData, team);
   const content = league.ping_role_id ? `<@&${league.ping_role_id}>` : undefined;
-  await channel.send({ content, embeds: [embed], files, components });
+  const message = await channel.send({ content, embeds: [embed], files, components });
 
-  saveStreamPost(platform, streamData.id, user.discord_id, league.id, streamData.title);
+  saveStreamPost(platform, streamData.id, user.discord_id, league.id, streamData.title, message.id, message.channelId);
   logger.info('Stream posted', {
     platform,
     user: user.discord_username,

@@ -122,6 +122,8 @@ function runMigrations() {
     `ALTER TABLE leagues ADD COLUMN user_channel_id TEXT`,
     `ALTER TABLE leagues ADD COLUMN schedule_url TEXT`,
     `ALTER TABLE leagues ADD COLUMN staff_role_id TEXT`,
+    `ALTER TABLE stream_posts ADD COLUMN discord_message_id TEXT`,
+    `ALTER TABLE stream_posts ADD COLUMN discord_channel_id TEXT`,
   ];
 
   for (const sql of migrations) {

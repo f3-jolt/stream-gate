@@ -218,10 +218,16 @@ function checkRecentStreamPostByTitle(leagueId, title) {
   `).get(leagueId, title);
 }
 
-function saveStreamPost(platform, platformStreamId, discordUserId, leagueId, streamTitle = null) {
+function saveStreamPost(platform, platformStreamId, discordUserId, leagueId, streamTitle = null, discordMessageId = null, discordChannelId = null) {
   return db.prepare(
-    'INSERT OR IGNORE INTO stream_posts (platform, platform_stream_id, discord_user_id, league_id, stream_title) VALUES (?, ?, ?, ?, ?)'
-  ).run(platform, platformStreamId, discordUserId, leagueId, streamTitle);
+    'INSERT OR IGNORE INTO stream_posts (platform, platform_stream_id, discord_user_id, league_id, stream_title, discord_message_id, discord_channel_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run(platform, platformStreamId, discordUserId, leagueId, streamTitle, discordMessageId, discordChannelId);
+}
+
+function getStreamPostMessageIds(leagueId) {
+  return db.prepare(
+    'SELECT discord_message_id, discord_channel_id FROM stream_posts WHERE league_id = ? AND discord_message_id IS NOT NULL'
+  ).all(leagueId);
 }
 
 // ── Pending routes ────────────────────────────────────────────────────────────
@@ -374,6 +380,7 @@ module.exports = {
   checkStreamPost,
   checkRecentStreamPostByTitle,
   saveStreamPost,
+  getStreamPostMessageIds,
   savePendingRoute,
   getPendingRoute,
   clearPendingRoute,

@@ -22,6 +22,7 @@ const {
   getHealthStats,
   addCustomTeam,
   updateCustomTeam,
+  getStreamPostMessageIds,
 } = require('../../db/queries');
 const fs = require('fs');
 const path = require('path');
@@ -1153,6 +1154,35 @@ async function handleAdvance(interaction) {
           channelId: league.user_channel_id,
         });
       }
+    }
+
+    // Clean up stream embed posts from the league's stream channel
+    const streamPosts = getStreamPostMessageIds(league.id);
+    if (streamPosts.length) {
+      const byChannel = {};
+      for (const { discord_message_id, discord_channel_id } of streamPosts) {
+        (byChannel[discord_channel_id] ??= []).push(discord_message_id);
+      }
+      const cutoff = Date.now() - 13 * 24 * 60 * 60 * 1000;
+      let deleted = 0;
+      for (const [channelId, messageIds] of Object.entries(byChannel)) {
+        try {
+          const ch = await interaction.client.channels.fetch(channelId);
+          const fresh = messageIds.filter(id => Number(BigInt(id) >> 22n) + 1420070400000 > cutoff);
+          const stale = messageIds.filter(id => !fresh.includes(id));
+          if (fresh.length) {
+            await ch.messages.bulkDelete(fresh);
+            deleted += fresh.length;
+          }
+          for (const id of stale) {
+            await ch.messages.delete(id).catch(() => {});
+            deleted++;
+          }
+        } catch (err) {
+          logger.warn('Failed to delete stream posts on advance', { channelId, error: err.message });
+        }
+      }
+      logger.info('Stream posts cleaned up on advance', { league: leagueAbbr, deleted });
     }
 
     const threadNote = threadCount > 0 ? ` ${threadCount} scheduling thread${threadCount > 1 ? 's' : ''} created in <#${league.user_channel_id}>.` : '';
