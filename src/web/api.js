@@ -222,12 +222,24 @@ router.post('/guilds/:guildId/advance', requireGuildAccess, async (req, res) => 
 
     let threadCount = 0;
     if (league.user_channel_id) {
+      const userChannel = await client.channels.fetch(league.user_channel_id);
+
+      // Archive the previous week's active threads before creating this week's
+      try {
+        const active = await userChannel.threads.fetchActive();
+        for (const thread of active.threads.values()) {
+          await thread.setArchived(true).catch(() => {});
+        }
+        logger.info('Archived previous threads on advance', { league: leagueAbbr, count: active.threads.size });
+      } catch (err) {
+        logger.warn('Failed to archive previous threads on advance', { league: leagueAbbr, error: err.message });
+      }
+
       const matchups = parseMatchups(message);
       if (matchups.length > 0) {
         const leagueUsers = getUsersInLeague(league.id);
         const teamMap = new Map(leagueUsers.map(u => [u.discord_id, u.team_name || u.discord_username]));
         const weekLabel = WEEK_LABELS[Number(week)] ?? `Week ${week}`;
-        const userChannel = await client.channels.fetch(league.user_channel_id);
 
         for (const [id1, id2] of matchups) {
           const team1 = teamMap.get(id1) ?? `<@${id1}>`;
