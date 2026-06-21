@@ -30,6 +30,7 @@ const axios = require('axios');
 const { searchTeams, searchCustomTeams, getTeamByAbbrev, invalidateTeamsCache, TEAMS_JSON_PATH } = require('../../utils/teams');
 const logger = require('../../utils/logger');
 const { WEEK_LABELS, parseScheduleCell, parseMatchups, applyDateOverride } = require('../../utils/schedule');
+const { buildDbAdvanceMessage } = require('../../utils/advance');
 
 // Admin check: server owner, MANAGE_GUILD permission, or configured admin role
 function isAdmin(interaction) {
@@ -1094,21 +1095,24 @@ async function handleAdvance(interaction) {
     });
   }
 
-  const scheduleUrl = league.schedule_url;
-  if (!scheduleUrl) {
-    return interaction.editReply({
-      content: `No schedule URL set for **${league.name}**. Use \`/admin editleague schedule_url:...\` to configure one.`,
-    });
-  }
-
   try {
-    const decodedUrl = scheduleUrl.replace(/&amp;/g, '&');
-    const response = await axios.get(decodedUrl, { responseType: 'text' });
-    // parseScheduleCell uses 0-based row/col: message row is index 5, week col is weekValue directly
-    const rawMessage = parseScheduleCell(response.data, 5, weekValue);
+    // DB-first: build the message from this season's games. Falls back to the
+    // CSV schedule sheet when there are no DB games for the week (non-breaking).
+    let rawMessage = buildDbAdvanceMessage(league, weekValue);
 
     if (!rawMessage) {
-      return interaction.editReply({ content: `No data found for that week in the schedule sheet.` });
+      if (!league.schedule_url) {
+        return interaction.editReply({
+          content: `No games scheduled in the database for that week, and no schedule URL set for **${league.name}**. Build the week's schedule in the portal, or set \`/admin editleague schedule_url:...\`.`,
+        });
+      }
+      const decodedUrl = league.schedule_url.replace(/&amp;/g, '&');
+      const response = await axios.get(decodedUrl, { responseType: 'text' });
+      // parseScheduleCell uses 0-based row/col: message row is index 5, week col is weekValue directly
+      rawMessage = parseScheduleCell(response.data, 5, weekValue);
+      if (!rawMessage) {
+        return interaction.editReply({ content: `No data found for that week in the database or the schedule sheet.` });
+      }
     }
 
     const message = applyDateOverride(rawMessage, dateOverride);

@@ -100,6 +100,84 @@ function initSchema() {
       expires_at         DATETIME NOT NULL,
       UNIQUE(discord_user_id, guild_id)
     );
+
+    -- ── Dynasty tracking (schedule + results + summaries) ─────────────────────
+    -- A league runs multiple seasons (in-game year). One season is "current".
+    CREATE TABLE IF NOT EXISTS seasons (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      league_id   INTEGER NOT NULL REFERENCES leagues(id),
+      year        INTEGER NOT NULL,
+      label       TEXT,
+      is_current  INTEGER NOT NULL DEFAULT 0,
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(league_id, year)
+    );
+
+    -- Conference alignment is league-scoped (teams realign per season).
+    CREATE TABLE IF NOT EXISTS conferences (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      league_id   INTEGER NOT NULL REFERENCES leagues(id),
+      name        TEXT NOT NULL,
+      abbrev      TEXT,
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(league_id, name)
+    );
+
+    -- Which teams are in the league this season + their conference. Teams are
+    -- referenced by abbrev (resolved via utils/teams.js), not a FK.
+    CREATE TABLE IF NOT EXISTS season_teams (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      season_id     INTEGER NOT NULL REFERENCES seasons(id),
+      team_abbrev   TEXT NOT NULL,
+      conference_id INTEGER REFERENCES conferences(id),
+      created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(season_id, team_abbrev)
+    );
+
+    -- A coach is the primary entity. Usually a Discord user (user_id), but may
+    -- be a bare display name. League-scoped; persists across seasons.
+    CREATE TABLE IF NOT EXISTS coaches (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      league_id    INTEGER NOT NULL REFERENCES leagues(id),
+      user_id      INTEGER REFERENCES users(id),
+      display_name TEXT NOT NULL,
+      active       INTEGER NOT NULL DEFAULT 1,
+      created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(league_id, user_id)
+    );
+
+    -- The CURRENT controller of each team this season (editable). Mid-season
+    -- handover = update coach_id; per-game coach snapshots preserve history.
+    CREATE TABLE IF NOT EXISTS coach_team_assignments (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      season_id   INTEGER NOT NULL REFERENCES seasons(id),
+      coach_id    INTEGER NOT NULL REFERENCES coaches(id),
+      team_abbrev TEXT NOT NULL,
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(season_id, team_abbrev)
+    );
+
+    -- Schedule rows inserted upfront; result columns filled later. W/L is never
+    -- stored — derived from result_type/winner_side or score comparison.
+    CREATE TABLE IF NOT EXISTS games (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      season_id      INTEGER NOT NULL REFERENCES seasons(id),
+      week           INTEGER NOT NULL,
+      home_abbrev    TEXT NOT NULL,
+      away_abbrev    TEXT NOT NULL,
+      is_user_game   INTEGER NOT NULL DEFAULT 0,
+      is_postseason  INTEGER NOT NULL DEFAULT 0,
+      home_coach_id  INTEGER REFERENCES coaches(id),
+      away_coach_id  INTEGER REFERENCES coaches(id),
+      home_score     INTEGER,
+      away_score     INTEGER,
+      attempts_taken INTEGER,
+      result_type    TEXT NOT NULL DEFAULT 'normal',
+      winner_side    TEXT,
+      played_at      DATETIME,
+      created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(season_id, week, home_abbrev, away_abbrev)
+    );
   `);
 
   runMigrations();
@@ -124,6 +202,7 @@ function runMigrations() {
     `ALTER TABLE leagues ADD COLUMN staff_role_id TEXT`,
     `ALTER TABLE stream_posts ADD COLUMN discord_message_id TEXT`,
     `ALTER TABLE stream_posts ADD COLUMN discord_channel_id TEXT`,
+    `ALTER TABLE leagues ADD COLUMN advance_template TEXT`,
   ];
 
   for (const sql of migrations) {

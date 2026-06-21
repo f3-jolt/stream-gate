@@ -191,6 +191,10 @@ function updateLeague(leagueId, { pingRoleId, ppvChannelId, name, advanceChannel
   }
 }
 
+function setLeagueAdvanceTemplate(leagueId, template) {
+  return db.prepare('UPDATE leagues SET advance_template = ? WHERE id = ?').run(template, leagueId);
+}
+
 function getUsersInLeague(leagueId) {
   return db.prepare(`
     SELECT u.discord_id, u.discord_username, ul.team_name, ul.team_abbrev,
@@ -352,6 +356,347 @@ function getHealthStats(guildId) {
   return { totalUsers, twitchSubs, twitchTotal, youtubeSubs, youtubeTotal, stuckRoutes };
 }
 
+// ── Dynasty: seasons ──────────────────────────────────────────────────────────
+
+function createSeason(leagueId, year, label = null) {
+  const result = db.prepare(
+    'INSERT INTO seasons (league_id, year, label) VALUES (?, ?, ?)'
+  ).run(leagueId, year, label);
+  const season = db.prepare('SELECT * FROM seasons WHERE id = ?').get(result.lastInsertRowid);
+  // First season for a league becomes the current one automatically.
+  const count = db.prepare('SELECT COUNT(*) AS c FROM seasons WHERE league_id = ?').get(leagueId).c;
+  if (count === 1) db.prepare('UPDATE seasons SET is_current = 1 WHERE id = ?').run(season.id);
+  return db.prepare('SELECT * FROM seasons WHERE id = ?').get(season.id);
+}
+
+function getSeasonsByLeague(leagueId) {
+  return db.prepare('SELECT * FROM seasons WHERE league_id = ? ORDER BY year DESC').all(leagueId);
+}
+
+function getSeasonById(seasonId) {
+  return db.prepare('SELECT * FROM seasons WHERE id = ?').get(seasonId);
+}
+
+function getCurrentSeason(leagueId) {
+  return db.prepare('SELECT * FROM seasons WHERE league_id = ? AND is_current = 1').get(leagueId);
+}
+
+function getSeasonByYear(leagueId, year) {
+  return db.prepare('SELECT * FROM seasons WHERE league_id = ? AND year = ?').get(leagueId, year);
+}
+
+const setCurrentSeason = db.transaction((leagueId, seasonId) => {
+  db.prepare('UPDATE seasons SET is_current = 0 WHERE league_id = ?').run(leagueId);
+  db.prepare('UPDATE seasons SET is_current = 1 WHERE id = ? AND league_id = ?').run(seasonId, leagueId);
+});
+
+// ── Dynasty: conferences ──────────────────────────────────────────────────────
+
+function upsertConference(leagueId, name, abbrev = null) {
+  db.prepare(`
+    INSERT INTO conferences (league_id, name, abbrev) VALUES (?, ?, ?)
+    ON CONFLICT(league_id, name) DO UPDATE SET abbrev = excluded.abbrev
+  `).run(leagueId, name, abbrev);
+  return db.prepare('SELECT * FROM conferences WHERE league_id = ? AND name = ?').get(leagueId, name);
+}
+
+function getConferences(leagueId) {
+  return db.prepare('SELECT * FROM conferences WHERE league_id = ? ORDER BY name').all(leagueId);
+}
+
+// ── Dynasty: season teams ─────────────────────────────────────────────────────
+
+function upsertSeasonTeam(seasonId, teamAbbrev, conferenceId = null) {
+  return db.prepare(`
+    INSERT INTO season_teams (season_id, team_abbrev, conference_id) VALUES (?, ?, ?)
+    ON CONFLICT(season_id, team_abbrev) DO UPDATE SET conference_id = excluded.conference_id
+  `).run(seasonId, teamAbbrev.toUpperCase(), conferenceId);
+}
+
+function getSeasonTeams(seasonId) {
+  return db.prepare(`
+    SELECT st.team_abbrev, st.conference_id, c.name AS conference_name,
+           cta.coach_id, co.display_name AS coach_name, u.discord_id AS coach_discord_id
+    FROM season_teams st
+    LEFT JOIN conferences c ON c.id = st.conference_id
+    LEFT JOIN coach_team_assignments cta ON cta.season_id = st.season_id AND cta.team_abbrev = st.team_abbrev
+    LEFT JOIN coaches co ON co.id = cta.coach_id
+    LEFT JOIN users u ON u.id = co.user_id
+    WHERE st.season_id = ?
+    ORDER BY st.team_abbrev
+  `).all(seasonId);
+}
+
+function getSeasonTeam(seasonId, teamAbbrev) {
+  return db.prepare(
+    'SELECT * FROM season_teams WHERE season_id = ? AND team_abbrev = ?'
+  ).get(seasonId, teamAbbrev.toUpperCase());
+}
+
+function removeSeasonTeam(seasonId, teamAbbrev) {
+  return db.prepare(
+    'DELETE FROM season_teams WHERE season_id = ? AND team_abbrev = ?'
+  ).run(seasonId, teamAbbrev.toUpperCase());
+}
+
+// ── Dynasty: coaches ──────────────────────────────────────────────────────────
+
+function getOrCreateCoach(leagueId, userId, displayName) {
+  if (userId != null) {
+    const existing = db.prepare('SELECT * FROM coaches WHERE league_id = ? AND user_id = ?').get(leagueId, userId);
+    if (existing) return existing;
+  } else {
+    const existing = db.prepare(
+      'SELECT * FROM coaches WHERE league_id = ? AND user_id IS NULL AND display_name = ?'
+    ).get(leagueId, displayName);
+    if (existing) return existing;
+  }
+  const result = db.prepare(
+    'INSERT INTO coaches (league_id, user_id, display_name) VALUES (?, ?, ?)'
+  ).run(leagueId, userId, displayName);
+  return db.prepare('SELECT * FROM coaches WHERE id = ?').get(result.lastInsertRowid);
+}
+
+function getCoachesByLeague(leagueId) {
+  return db.prepare(`
+    SELECT co.*, u.discord_id, u.discord_username
+    FROM coaches co
+    LEFT JOIN users u ON u.id = co.user_id
+    WHERE co.league_id = ?
+    ORDER BY co.display_name
+  `).all(leagueId);
+}
+
+function getCoachById(coachId) {
+  return db.prepare(`
+    SELECT co.*, u.discord_id, u.discord_username
+    FROM coaches co LEFT JOIN users u ON u.id = co.user_id
+    WHERE co.id = ?
+  `).get(coachId);
+}
+
+function getCoachByUser(leagueId, userId) {
+  return db.prepare('SELECT * FROM coaches WHERE league_id = ? AND user_id = ?').get(leagueId, userId);
+}
+
+// ── Dynasty: assignments (coach ↔ team ↔ season) ──────────────────────────────
+
+function getAssignmentCoachId(seasonId, teamAbbrev) {
+  const row = db.prepare(
+    'SELECT coach_id FROM coach_team_assignments WHERE season_id = ? AND team_abbrev = ?'
+  ).get(seasonId, teamAbbrev.toUpperCase());
+  return row ? row.coach_id : null;
+}
+
+// Assign (or hand over) a team to a coach for a season. Re-snapshots the coach
+// onto that team's UNPLAYED games (played games keep their prior coach), and —
+// only on this explicit action — syncs the coach's stream-registration team.
+const assignCoachTeam = db.transaction((seasonId, coachId, teamAbbrev, teamName = null) => {
+  const abbr = teamAbbrev.toUpperCase();
+  db.prepare(`
+    INSERT INTO coach_team_assignments (season_id, coach_id, team_abbrev) VALUES (?, ?, ?)
+    ON CONFLICT(season_id, team_abbrev) DO UPDATE SET coach_id = excluded.coach_id
+  `).run(seasonId, coachId, abbr);
+
+  // Re-snapshot unplayed games for this team, then recompute is_user_game.
+  db.prepare('UPDATE games SET home_coach_id = ? WHERE season_id = ? AND home_abbrev = ? AND played_at IS NULL')
+    .run(coachId, seasonId, abbr);
+  db.prepare('UPDATE games SET away_coach_id = ? WHERE season_id = ? AND away_abbrev = ? AND played_at IS NULL')
+    .run(coachId, seasonId, abbr);
+  db.prepare(`
+    UPDATE games SET is_user_game = (home_coach_id IS NOT NULL AND away_coach_id IS NOT NULL)
+    WHERE season_id = ? AND played_at IS NULL AND (home_abbrev = ? OR away_abbrev = ?)
+  `).run(seasonId, abbr, abbr);
+
+  // Explicit-assign sync to stream registration (user_leagues).
+  const coach = db.prepare('SELECT co.user_id, u.discord_id FROM coaches co LEFT JOIN users u ON u.id = co.user_id WHERE co.id = ?').get(coachId);
+  const season = db.prepare('SELECT league_id FROM seasons WHERE id = ?').get(seasonId);
+  if (coach && coach.user_id && coach.discord_id && season) {
+    db.prepare(`
+      INSERT INTO user_leagues (user_id, league_id, added_by, team_name, team_abbrev)
+      VALUES (?, ?, 'dynasty-assign', ?, ?)
+      ON CONFLICT(user_id, league_id) DO UPDATE SET
+        team_name = excluded.team_name,
+        team_abbrev = excluded.team_abbrev
+    `).run(coach.user_id, season.league_id, teamName, abbr);
+  }
+});
+
+function getSeasonAssignments(seasonId) {
+  return db.prepare(`
+    SELECT cta.team_abbrev, cta.coach_id, co.display_name AS coach_name, u.discord_id AS coach_discord_id
+    FROM coach_team_assignments cta
+    JOIN coaches co ON co.id = cta.coach_id
+    LEFT JOIN users u ON u.id = co.user_id
+    WHERE cta.season_id = ?
+  `).all(seasonId);
+}
+
+function getCoachAssignment(seasonId, coachId) {
+  return db.prepare(
+    'SELECT * FROM coach_team_assignments WHERE season_id = ? AND coach_id = ?'
+  ).all(seasonId, coachId);
+}
+
+// ── Dynasty: games (schedule + results) ───────────────────────────────────────
+
+function insertGame(seasonId, week, homeAbbrev, awayAbbrev, isPostseason = 0) {
+  const home = homeAbbrev.toUpperCase();
+  const away = awayAbbrev.toUpperCase();
+  const homeCoach = getAssignmentCoachId(seasonId, home);
+  const awayCoach = getAssignmentCoachId(seasonId, away);
+  const isUserGame = homeCoach != null && awayCoach != null ? 1 : 0;
+  return db.prepare(`
+    INSERT INTO games (season_id, week, home_abbrev, away_abbrev, is_user_game, is_postseason, home_coach_id, away_coach_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(season_id, week, home_abbrev, away_abbrev) DO NOTHING
+  `).run(seasonId, week, home, away, isUserGame, isPostseason ? 1 : 0, homeCoach, awayCoach);
+}
+
+const bulkInsertGames = db.transaction((seasonId, rows) => {
+  for (const r of rows) {
+    insertGame(seasonId, r.week, r.homeAbbrev, r.awayAbbrev, r.isPostseason ? 1 : 0);
+  }
+});
+
+const GAME_JOINS = `
+  LEFT JOIN coaches hc ON hc.id = g.home_coach_id
+  LEFT JOIN users hu ON hu.id = hc.user_id
+  LEFT JOIN coaches ac ON ac.id = g.away_coach_id
+  LEFT JOIN users au ON au.id = ac.user_id
+`;
+const GAME_COLS = `
+  g.*,
+  hc.display_name AS home_coach_name, hu.discord_id AS home_discord_id,
+  ac.display_name AS away_coach_name, au.discord_id AS away_discord_id
+`;
+
+function getGamesByWeek(seasonId, week) {
+  return db.prepare(`
+    SELECT ${GAME_COLS} FROM games g ${GAME_JOINS}
+    WHERE g.season_id = ? AND g.week = ? ORDER BY g.id
+  `).all(seasonId, week);
+}
+
+function getScheduledGames(seasonId, { week = null, unplayedOnly = false } = {}) {
+  const clauses = ['g.season_id = ?'];
+  const params = [seasonId];
+  if (week != null) { clauses.push('g.week = ?'); params.push(week); }
+  if (unplayedOnly) clauses.push("g.played_at IS NULL");
+  return db.prepare(`
+    SELECT ${GAME_COLS} FROM games g ${GAME_JOINS}
+    WHERE ${clauses.join(' AND ')} ORDER BY g.week, g.id
+  `).all(...params);
+}
+
+function getGameById(gameId) {
+  return db.prepare(`SELECT ${GAME_COLS} FROM games g ${GAME_JOINS} WHERE g.id = ?`).get(gameId);
+}
+
+function deleteGame(gameId) {
+  return db.prepare('DELETE FROM games WHERE id = ?').run(gameId);
+}
+
+// Shared by the web portal and the Discord /results command. Re-snapshots the
+// current controllers (the coaches who actually played) and marks the game played.
+const recordGameResult = db.transaction((gameId, { homeScore = null, awayScore = null, attemptsTaken = null, resultType = 'normal', winnerSide = null }) => {
+  const g = db.prepare('SELECT season_id, home_abbrev, away_abbrev FROM games WHERE id = ?').get(gameId);
+  if (!g) throw new Error(`Game ${gameId} not found`);
+  const homeCoach = getAssignmentCoachId(g.season_id, g.home_abbrev);
+  const awayCoach = getAssignmentCoachId(g.season_id, g.away_abbrev);
+  const isUserGame = homeCoach != null && awayCoach != null ? 1 : 0;
+  const ws = (resultType === 'FR' || resultType === 'FS') ? winnerSide : null;
+  return db.prepare(`
+    UPDATE games SET
+      home_score = ?, away_score = ?, attempts_taken = ?,
+      result_type = ?, winner_side = ?,
+      home_coach_id = ?, away_coach_id = ?, is_user_game = ?,
+      played_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(homeScore, awayScore, attemptsTaken, resultType, ws, homeCoach, awayCoach, isUserGame, gameId);
+});
+
+// ── Dynasty: derived summaries (W/L never stored — computed here) ──────────────
+// A game counts once it's resolved: a forfeit/fair-sim with a winner, or a
+// normal game with both scores. winner is winner_side for FR/FS, else by score.
+
+const PLAYED_FILTER = "(g.result_type IN ('FR','FS') OR (g.home_score IS NOT NULL AND g.away_score IS NOT NULL))";
+
+// Per-side (one row per team per resolved game). `meSide` is 'home' | 'away'.
+function sideSelect(meSide) {
+  const me = meSide === 'home' ? 'home' : 'away';
+  const opp = meSide === 'home' ? 'away' : 'home';
+  return `
+    SELECT g.season_id AS season_id, g.week AS week,
+      g.${me}_abbrev AS team, g.${me}_coach_id AS coach_id,
+      COALESCE(g.${me}_score, 0) AS pf, COALESCE(g.${opp}_score, 0) AS pa,
+      CASE WHEN g.result_type IN ('FR','FS') THEN (CASE WHEN g.winner_side = '${me}' THEN 1 ELSE 0 END)
+           WHEN g.${me}_score > g.${opp}_score THEN 1 ELSE 0 END AS won,
+      CASE WHEN g.result_type IN ('FR','FS') THEN (CASE WHEN g.winner_side = '${opp}' THEN 1 ELSE 0 END)
+           WHEN g.${opp}_score > g.${me}_score THEN 1 ELSE 0 END AS lost,
+      CASE WHEN g.result_type = 'normal' AND g.${me}_score = g.${opp}_score THEN 1 ELSE 0 END AS tied
+    FROM games g WHERE __SCOPE__ AND ${PLAYED_FILTER}
+  `;
+}
+
+function sidesCTE(scope) {
+  return `WITH sides AS (
+    ${sideSelect('home').replace('__SCOPE__', scope)}
+    UNION ALL
+    ${sideSelect('away').replace('__SCOPE__', scope)}
+  )`;
+}
+
+function getSeasonSummary(seasonId) {
+  return db.prepare(`
+    ${sidesCTE('g.season_id = @seasonId')}
+    SELECT s.team AS team_abbrev,
+      SUM(s.won) AS wins, SUM(s.lost) AS losses, SUM(s.tied) AS ties,
+      SUM(s.pf) AS points_for, SUM(s.pa) AS points_against,
+      SUM(s.pf) - SUM(s.pa) AS point_diff, COUNT(*) AS games_played,
+      c.name AS conference_name
+    FROM sides s
+    LEFT JOIN season_teams st ON st.season_id = @seasonId AND st.team_abbrev = s.team
+    LEFT JOIN conferences c ON c.id = st.conference_id
+    GROUP BY s.team
+    ORDER BY wins DESC, point_diff DESC
+  `).all({ seasonId });
+}
+
+function getCoachHistory(leagueId) {
+  return db.prepare(`
+    ${sidesCTE('g.season_id IN (SELECT id FROM seasons WHERE league_id = @leagueId)')}
+    SELECT co.id AS coach_id, co.display_name, co.user_id, u.discord_id,
+      SUM(s.won) AS wins, SUM(s.lost) AS losses, SUM(s.tied) AS ties,
+      SUM(s.pf) AS points_for, SUM(s.pa) AS points_against,
+      COUNT(*) AS games_played,
+      COUNT(DISTINCT s.season_id) AS seasons_count,
+      COUNT(DISTINCT s.team) AS teams_count,
+      SUM(CASE WHEN s.week = 19 AND s.won = 1 THEN 1 ELSE 0 END) AS natl_titles,
+      SUM(CASE WHEN s.week = 15 AND s.won = 1 THEN 1 ELSE 0 END) AS conf_titles
+    FROM sides s
+    JOIN coaches co ON co.id = s.coach_id
+    LEFT JOIN users u ON u.id = co.user_id
+    GROUP BY co.id
+    ORDER BY wins DESC
+  `).all({ leagueId });
+}
+
+function getCoachSeasonBreakdown(coachId) {
+  return db.prepare(`
+    ${sidesCTE('(g.home_coach_id = @coachId OR g.away_coach_id = @coachId)')}
+    SELECT se.id AS season_id, se.year, se.label,
+      GROUP_CONCAT(DISTINCT s.team) AS teams,
+      SUM(s.won) AS wins, SUM(s.lost) AS losses, SUM(s.tied) AS ties,
+      SUM(s.pf) AS points_for, SUM(s.pa) AS points_against
+    FROM sides s
+    JOIN seasons se ON se.id = s.season_id
+    WHERE s.coach_id = @coachId
+    GROUP BY se.id
+    ORDER BY se.year DESC
+  `).all({ coachId });
+}
+
 module.exports = {
   getGuildSettings,
   setGuildAdminRole,
@@ -373,6 +718,7 @@ module.exports = {
   getLeagueById,
   addLeague,
   updateLeague,
+  setLeagueAdvanceTemplate,
   getUsersInLeague,
   updateUserPlatformUsername,
   getLastStreams,
@@ -392,4 +738,41 @@ module.exports = {
   getLeagueByPpvChannel,
   getAllLeaguesWithUserChannel,
   getAllLeaguesWithPpvChannel,
+  // Dynasty: seasons
+  createSeason,
+  getSeasonsByLeague,
+  getSeasonById,
+  getCurrentSeason,
+  getSeasonByYear,
+  setCurrentSeason,
+  // Dynasty: conferences
+  upsertConference,
+  getConferences,
+  // Dynasty: season teams
+  upsertSeasonTeam,
+  getSeasonTeams,
+  getSeasonTeam,
+  removeSeasonTeam,
+  // Dynasty: coaches
+  getOrCreateCoach,
+  getCoachesByLeague,
+  getCoachById,
+  getCoachByUser,
+  // Dynasty: assignments
+  getAssignmentCoachId,
+  assignCoachTeam,
+  getSeasonAssignments,
+  getCoachAssignment,
+  // Dynasty: games
+  insertGame,
+  bulkInsertGames,
+  getGamesByWeek,
+  getScheduledGames,
+  getGameById,
+  deleteGame,
+  recordGameResult,
+  // Dynasty: derived summaries
+  getSeasonSummary,
+  getCoachHistory,
+  getCoachSeasonBreakdown,
 };

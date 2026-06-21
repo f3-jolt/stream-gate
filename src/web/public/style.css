@@ -202,6 +202,35 @@ tr:hover td { background: rgba(255,255,255,.03); }
 .badge-blue   { background: rgba(88,101,242,.15); color: #8b9eff; }
 .badge-yellow { background: rgba(255,200,0,.12); color: #ffd700; }
 
+/* ── Dynasty selector bar ── */
+.dyn-bar {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 10px 16px; margin-bottom: 20px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.dyn-bar label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
+.dyn-bar select {
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 6px 10px; font-size: 13px;
+}
+
+/* ── Dynasty grid inputs / chips ── */
+.grid-input {
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 5px 8px; font-size: 13px; width: 70px;
+}
+.grid-input.wide { width: 90px; }
+.matchup-chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 6px 12px; margin: 4px 6px 4px 0; font-size: 13px;
+}
+.matchup-chip button {
+  background: none; border: none; color: var(--danger); cursor: pointer; font-size: 14px; line-height: 1;
+}
+.clickable { cursor: pointer; }
+.clickable:hover td { background: rgba(88,101,242,.08); }
+
 /* ── Misc ── */
 .text-muted { color: var(--text-muted); }
 .mt-4 { margin-top: 4px; }

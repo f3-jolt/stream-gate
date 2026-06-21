@@ -49,7 +49,24 @@
           <button class="tab-btn" onclick="switchTab('streams', this)">Stream History</button>
           <button class="tab-btn" onclick="switchTab('health', this)">Health</button>
           <button class="tab-btn" onclick="switchTab('advance', this)">Advance Week</button>
+          <button class="tab-btn" onclick="switchTab('season', this)">Season</button>
+          <button class="tab-btn" onclick="switchTab('schedule', this)">Schedule</button>
+          <button class="tab-btn" onclick="switchTab('results', this)">Results</button>
+          <button class="tab-btn" onclick="switchTab('summary', this)">Summary</button>
+          <button class="tab-btn" onclick="switchTab('coaches', this)">Coaches</button>
         </div>
+
+        <!-- SHARED DYNASTY SELECTOR BAR (visible only on dynasty tabs) -->
+        <div id="dynasty-bar" class="dyn-bar" style="display:none;">
+          <label>League</label>
+          <select id="dyn-league-select" onchange="onDynLeagueChange()"></select>
+          <label>Season</label>
+          <select id="dyn-season-select" onchange="onDynSeasonChange()"></select>
+          <button class="btn btn-ghost btn-sm" onclick="openSeasonModal()">+ Season</button>
+          <button class="btn btn-ghost btn-sm" onclick="setCurrentSeasonBtn()">Make Current</button>
+          <span id="dyn-current-badge"></span>
+        </div>
+        <datalist id="team-options"></datalist>
 
         <!-- USERS TAB -->
         <div id="tab-users" class="tab-panel active">
@@ -166,6 +183,146 @@
               <pre id="advance-preview-content" class="advance-preview"></pre>
             </div>
           </div>
+
+          <div class="card">
+            <div class="card-title">Advancement Message Template</div>
+            <p class="text-muted" style="margin-bottom:12px;">When this league has a current season with games scheduled, the message is built from the database using this template. Tokens: <code>{weekLabel}</code>, <code>{matchups}</code>. Leave blank to use the default.</p>
+            <div class="field-group" style="margin-bottom:12px;">
+              <label>League</label>
+              <select id="tmpl-league" onchange="loadAdvanceTemplate()"></select>
+            </div>
+            <textarea id="advance-template" class="advance-preview" style="width:100%; min-height:120px;" placeholder="**{weekLabel} Matchups**&#10;&#10;{matchups}"></textarea>
+            <div class="modal-actions" style="margin-top:12px;">
+              <button class="btn btn-ghost" onclick="loadAdvanceTemplate()">Reset</button>
+              <button class="btn btn-primary" onclick="saveAdvanceTemplate()">Save Template</button>
+            </div>
+            <div id="tmpl-result" class="flash"></div>
+          </div>
+        </div>
+
+        <!-- SEASON TAB -->
+        <div id="tab-season" class="tab-panel">
+          <div id="season-empty" class="text-muted" style="display:none; padding:24px;">Select or create a season above to manage its teams and coaches.</div>
+          <div id="season-content">
+            <div class="card">
+              <div class="card-title">Teams &amp; Conferences</div>
+              <div class="search-row">
+                <input id="season-team-input" list="team-options" type="text" placeholder="Team abbrev (e.g. BAMA)" oninput="teamSearch(this.value)">
+                <select id="season-team-conf"><option value="">— conference —</option></select>
+                <button class="btn btn-primary" onclick="addSeasonTeam()">+ Add Team</button>
+                <button class="btn btn-ghost" onclick="addConferencePrompt()">+ Conference</button>
+              </div>
+              <div class="table-wrap">
+                <table id="teams-table">
+                  <thead><tr><th>Team</th><th>Conference</th><th>Coach</th><th></th></tr></thead>
+                  <tbody id="teams-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-title">Coaches &amp; Assignments</div>
+              <div class="search-row">
+                <input id="coach-name" type="text" placeholder="Coach display name">
+                <input id="coach-discord-id" type="text" placeholder="Discord ID (optional)">
+                <input id="coach-discord-username" type="text" placeholder="Discord username (optional)">
+                <button class="btn btn-primary" onclick="addCoach()">+ Add Coach</button>
+              </div>
+              <div class="table-wrap">
+                <table id="coaches-table">
+                  <thead><tr><th>Coach</th><th>Discord</th><th>Assign to team (this season)</th></tr></thead>
+                  <tbody id="coaches-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SCHEDULE TAB -->
+        <div id="tab-schedule" class="tab-panel">
+          <div class="card">
+            <div class="card-title">Build Schedule</div>
+            <div class="search-row">
+              <div class="field-group"><label>Week</label><select id="sched-week" onchange="loadSchedule()"></select></div>
+              <div class="field-group"><label>Home</label><select id="sched-home"></select></div>
+              <div class="field-group"><label>Away</label><select id="sched-away"></select></div>
+              <button class="btn btn-ghost" onclick="stageMatchup()">Add Matchup</button>
+            </div>
+            <div id="sched-pending"></div>
+            <div class="modal-actions" style="margin-top:8px;">
+              <button class="btn btn-primary" onclick="saveSchedule()" id="sched-save-btn" disabled>Save Week Schedule</button>
+            </div>
+            <div id="sched-result" class="flash"></div>
+          </div>
+          <div class="card">
+            <div class="card-title">Scheduled Games — <span id="sched-week-label"></span></div>
+            <div class="table-wrap">
+              <table><thead><tr><th>Home</th><th>Away</th><th>Type</th><th>Status</th><th></th></tr></thead>
+                <tbody id="schedule-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- RESULTS TAB -->
+        <div id="tab-results" class="tab-panel">
+          <div class="card">
+            <div class="card-title">Enter Results</div>
+            <div class="search-row">
+              <div class="field-group"><label>Week</label><select id="results-week" onchange="loadResults()"></select></div>
+              <button class="btn btn-primary" onclick="saveAllResults()">Save All Results</button>
+            </div>
+            <div class="table-wrap">
+              <table id="results-table">
+                <thead><tr><th>Home</th><th>Score</th><th>Away</th><th>Score</th><th>Attempts</th><th>Type</th><th>Winner</th><th></th></tr></thead>
+                <tbody id="results-tbody"></tbody>
+              </table>
+            </div>
+            <div id="results-result" class="flash"></div>
+          </div>
+        </div>
+
+        <!-- SUMMARY TAB -->
+        <div id="tab-summary" class="tab-panel">
+          <div class="card">
+            <div class="card-title">Season Summary</div>
+            <div class="table-wrap">
+              <table id="summary-table">
+                <thead><tr>
+                  <th class="sortable" data-col="team_name" onclick="sortSummary('team_name')">Team</th>
+                  <th class="sortable" data-col="conference_name" onclick="sortSummary('conference_name')">Conf</th>
+                  <th class="sortable" data-col="wins" onclick="sortSummary('wins')">W</th>
+                  <th class="sortable" data-col="losses" onclick="sortSummary('losses')">L</th>
+                  <th class="sortable" data-col="ties" onclick="sortSummary('ties')">T</th>
+                  <th class="sortable" data-col="points_for" onclick="sortSummary('points_for')">PF</th>
+                  <th class="sortable" data-col="points_against" onclick="sortSummary('points_against')">PA</th>
+                  <th class="sortable" data-col="point_diff" onclick="sortSummary('point_diff')">Diff</th>
+                </tr></thead>
+                <tbody id="summary-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- COACHES TAB -->
+        <div id="tab-coaches" class="tab-panel">
+          <div class="card">
+            <div class="card-title">Coach History (all seasons)</div>
+            <div class="table-wrap">
+              <table id="coach-history-table">
+                <thead><tr>
+                  <th class="sortable" data-col="display_name" onclick="sortCoaches('display_name')">Coach</th>
+                  <th class="sortable" data-col="seasons_count" onclick="sortCoaches('seasons_count')">Seasons</th>
+                  <th class="sortable" data-col="wins" onclick="sortCoaches('wins')">W</th>
+                  <th class="sortable" data-col="losses" onclick="sortCoaches('losses')">L</th>
+                  <th class="sortable" data-col="win_pct" onclick="sortCoaches('win_pct')">Win%</th>
+                  <th class="sortable" data-col="natl_titles" onclick="sortCoaches('natl_titles')">Titles</th>
+                  <th class="sortable" data-col="conf_titles" onclick="sortCoaches('conf_titles')">Conf</th>
+                  <th class="sortable" data-col="teams_count" onclick="sortCoaches('teams_count')">Teams</th>
+                </tr></thead>
+                <tbody id="coach-history-tbody"></tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </main>
     </div>
@@ -212,6 +369,43 @@
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="closeRegisterModal()">Cancel</button>
         <button class="btn btn-primary" onclick="submitRegister()">Register</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SEASON MODAL -->
+  <div id="season-modal" class="modal-backdrop">
+    <div class="modal">
+      <h3>New Season</h3>
+      <div class="form-grid">
+        <div class="form-field">
+          <label>Year</label>
+          <input id="season-year" type="number" placeholder="e.g. 2033">
+        </div>
+        <div class="form-field">
+          <label>Label (optional)</label>
+          <input id="season-label" type="text" placeholder="e.g. Year 7">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeSeasonModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="submitSeason()">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- COACH DETAIL MODAL -->
+  <div id="coach-detail-modal" class="modal-backdrop">
+    <div class="modal" style="width:560px;">
+      <h3 id="coach-detail-title">Coach History</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Season</th><th>Team(s)</th><th>W</th><th>L</th><th>T</th><th>PF</th><th>PA</th></tr></thead>
+          <tbody id="coach-detail-tbody"></tbody>
+        </table>
+      </div>
+      <div class="modal-actions" style="margin-top:16px;">
+        <button class="btn btn-ghost" onclick="closeCoachDetail()">Close</button>
       </div>
     </div>
   </div>
