@@ -186,7 +186,7 @@
 
           <div class="card">
             <div class="card-title">Advancement Message Template</div>
-            <p class="text-muted" style="margin-bottom:12px;">When this league has a current season with games scheduled, the message is built from the database using this template. Tokens: <code>{weekLabel}</code>, <code>{matchups}</code>. Leave blank to use the default.</p>
+            <p class="text-muted" style="margin-bottom:12px;">When this league has a current season with games scheduled, the message is built from the database using this template. Tokens: <code>{pingRole}</code>, <code>{weekLabel}</code>, <code>{season}</code>, <code>{userGames}</code>, <code>{cpuGames}</code>, <code>{advanceDate}</code>. The advance deadline auto-fills to 36h out (48h when there are user games). Leave blank to use the default format.</p>
             <div class="field-group" style="margin-bottom:12px;">
               <label>League</label>
               <select id="tmpl-league" onchange="loadAdvanceTemplate()"></select>

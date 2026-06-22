@@ -210,20 +210,20 @@ router.get('/guilds/:guildId/advance/preview', requireGuildAccess, async (req, r
 
   try {
     // DB-first, CSV fallback (non-breaking).
-    let rawMessage = buildDbAdvanceMessage(league, Number(week));
+    let message = buildDbAdvanceMessage(league, Number(week), { dateOverride: dateOverride || null });
     let source = 'database';
-    if (!rawMessage) {
+    if (!message) {
       if (!league.schedule_url) {
         return res.status(400).json({ error: 'No games scheduled in the database for this week, and no schedule URL configured for this league' });
       }
       const decodedUrl = league.schedule_url.replace(/&amp;/g, '&');
       const response = await axios.get(decodedUrl, { responseType: 'text' });
-      rawMessage = parseScheduleCell(response.data, 5, Number(week));
+      const csvRaw = parseScheduleCell(response.data, 5, Number(week));
+      if (!csvRaw) return res.status(404).json({ error: 'No data found for that week in the database or schedule sheet' });
+      message = applyDateOverride(csvRaw, dateOverride || null);
       source = 'sheet';
-      if (!rawMessage) return res.status(404).json({ error: 'No data found for that week in the database or schedule sheet' });
     }
 
-    const message = applyDateOverride(rawMessage, dateOverride || null);
     res.json({ ok: true, message, source });
   } catch (err) {
     logger.error('Web portal advance preview error', { error: err.message });
@@ -247,18 +247,17 @@ router.post('/guilds/:guildId/advance', requireGuildAccess, async (req, res) => 
 
   try {
     // DB-first, CSV fallback (non-breaking).
-    let rawMessage = buildDbAdvanceMessage(league, Number(week));
-    if (!rawMessage) {
+    let message = buildDbAdvanceMessage(league, Number(week), { dateOverride: dateOverride || null });
+    if (!message) {
       if (!league.schedule_url) {
         return res.status(400).json({ error: 'No games scheduled in the database for this week, and no schedule URL configured for this league' });
       }
       const decodedUrl = league.schedule_url.replace(/&amp;/g, '&');
       const response = await axios.get(decodedUrl, { responseType: 'text' });
-      rawMessage = parseScheduleCell(response.data, 5, Number(week));
-      if (!rawMessage) return res.status(404).json({ error: 'No data found for that week in the database or schedule sheet' });
+      const csvRaw = parseScheduleCell(response.data, 5, Number(week));
+      if (!csvRaw) return res.status(404).json({ error: 'No data found for that week in the database or schedule sheet' });
+      message = applyDateOverride(csvRaw, dateOverride || null);
     }
-
-    const message = applyDateOverride(rawMessage, dateOverride || null);
 
     const client = require('../bot/client');
     const channel = await client.channels.fetch(league.advance_channel_id);

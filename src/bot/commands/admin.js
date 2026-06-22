@@ -1098,9 +1098,9 @@ async function handleAdvance(interaction) {
   try {
     // DB-first: build the message from this season's games. Falls back to the
     // CSV schedule sheet when there are no DB games for the week (non-breaking).
-    let rawMessage = buildDbAdvanceMessage(league, weekValue);
+    let message = buildDbAdvanceMessage(league, weekValue, { dateOverride });
 
-    if (!rawMessage) {
+    if (!message) {
       if (!league.schedule_url) {
         return interaction.editReply({
           content: `No games scheduled in the database for that week, and no schedule URL set for **${league.name}**. Build the week's schedule in the portal, or set \`/admin editleague schedule_url:...\`.`,
@@ -1109,13 +1109,12 @@ async function handleAdvance(interaction) {
       const decodedUrl = league.schedule_url.replace(/&amp;/g, '&');
       const response = await axios.get(decodedUrl, { responseType: 'text' });
       // parseScheduleCell uses 0-based row/col: message row is index 5, week col is weekValue directly
-      rawMessage = parseScheduleCell(response.data, 5, weekValue);
-      if (!rawMessage) {
+      const csvRaw = parseScheduleCell(response.data, 5, weekValue);
+      if (!csvRaw) {
         return interaction.editReply({ content: `No data found for that week in the database or the schedule sheet.` });
       }
+      message = applyDateOverride(csvRaw, dateOverride);
     }
-
-    const message = applyDateOverride(rawMessage, dateOverride);
 
     const channel = await interaction.client.channels.fetch(league.advance_channel_id);
     await channel.send(message);
