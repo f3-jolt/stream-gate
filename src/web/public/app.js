@@ -619,6 +619,13 @@ async function loadCoaches() {
   const assignments = await aRes.json();
   const assignMap = new Map(assignments.map(a => [a.coach_id, a.team_abbrev]));
   renderCoaches(assignMap);
+  populateCoachTeamSelect();
+}
+function populateCoachTeamSelect() {
+  const sel = document.getElementById('coach-team');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— assign team —</option>' +
+    allTeams.map(t => `<option value="${esc(t.team_abbrev)}">${esc(t.team_abbrev)} — ${esc(t.team_name)}</option>`).join('');
 }
 function renderCoaches(assignMap) {
   const tb = document.getElementById('coaches-tbody');
@@ -638,24 +645,75 @@ function renderCoaches(assignMap) {
     if (sel) sel.value = assignMap.get(c.id) || '';
   }
 }
+// ── Add coach via Discord user lookup (+ optional team in one step) ──
+let selectedCoachUser = null;
+let coachSearchResults = [];
+let coachSearchTimer = null;
+
+function onCoachSearchInput(q) {
+  selectedCoachUser = null; // typing invalidates any prior selection
+  clearTimeout(coachSearchTimer);
+  if (!q || q.trim().length < 2) { hideCoachResults(); return; }
+  coachSearchTimer = setTimeout(async () => {
+    const res = await fetch(`/api/guilds/${currentGuildId}/discord-members?q=${encodeURIComponent(q.trim())}`);
+    if (!res.ok) { hideCoachResults(); return; }
+    coachSearchResults = await res.json();
+    renderCoachResults();
+  }, 250);
+}
+function renderCoachResults() {
+  const box = document.getElementById('coach-search-results');
+  if (!coachSearchResults.length) {
+    box.innerHTML = '<div class="typeahead-empty">No matching members</div>';
+  } else {
+    box.innerHTML = coachSearchResults.map((u, i) =>
+      `<div class="typeahead-item" onclick="pickCoachUser(${i})">${esc(u.display)} <span class="text-muted">@${esc(u.username)}</span></div>`
+    ).join('');
+  }
+  box.style.display = 'block';
+}
+function pickCoachUser(i) {
+  selectedCoachUser = coachSearchResults[i];
+  document.getElementById('coach-search').value = `${selectedCoachUser.display} (@${selectedCoachUser.username})`;
+  hideCoachResults();
+}
+function hideCoachResults() {
+  const box = document.getElementById('coach-search-results');
+  if (box) box.style.display = 'none';
+}
+
 async function addCoach() {
-  const displayName = document.getElementById('coach-name').value.trim();
-  const discordId = document.getElementById('coach-discord-id').value.trim();
-  const discordUsername = document.getElementById('coach-discord-username').value.trim();
-  if (!displayName && !discordId) { alert('Provide a coach name or Discord ID.'); return; }
+  if (!selectedCoachUser) { alert('Search for and select a Discord user first.'); return; }
+  const teamAbbrev = document.getElementById('coach-team').value;
+
   const res = await fetch(`/api/guilds/${currentGuildId}/leagues/${currentDynLeagueId}/coaches`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ displayName, discordId, discordUsername }),
+    body: JSON.stringify({
+      discordId: selectedCoachUser.id,
+      discordUsername: selectedCoachUser.username,
+      displayName: selectedCoachUser.display,
+    }),
   });
-  if (res.ok) {
-    document.getElementById('coach-name').value = '';
-    document.getElementById('coach-discord-id').value = '';
-    document.getElementById('coach-discord-username').value = '';
-    await loadCoaches();
+  if (!res.ok) { const d = await res.json(); flash(d.error || 'Failed to add coach', 'error'); return; }
+  const coach = await res.json();
+
+  if (teamAbbrev) {
+    const ar = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/assignments`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ coachId: coach.id, teamAbbrev }),
+    });
+    const ad = await ar.json();
+    if (!ad.ok) { flash(ad.error || 'Coach added, but team assignment failed', 'error'); }
+    else flash(`Added ${selectedCoachUser.display} → ${teamAbbrev}`);
   } else {
-    const d = await res.json();
-    flash(d.error || 'Failed', 'error');
+    flash(`Added ${selectedCoachUser.display}`);
   }
+
+  selectedCoachUser = null;
+  document.getElementById('coach-search').value = '';
+  document.getElementById('coach-team').value = '';
+  await loadSeasonTeams();
+  await loadCoaches();
 }
 async function assignCoach(coachId) {
   const teamAbbrev = document.getElementById(`assign-${coachId}`).value;
@@ -958,6 +1016,10 @@ document.getElementById('season-modal').addEventListener('click', e => {
 });
 document.getElementById('coach-detail-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeCoachDetail();
+});
+// Dismiss the Discord-user typeahead when clicking elsewhere
+document.addEventListener('click', e => {
+  if (e.target.id !== 'coach-search' && !e.target.closest('#coach-search-results')) hideCoachResults();
 });
 
 init();

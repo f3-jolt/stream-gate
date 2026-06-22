@@ -222,9 +222,11 @@
             <div class="card">
               <div class="card-title">Coaches &amp; Assignments</div>
               <div class="search-row">
-                <input id="coach-name" type="text" placeholder="Coach display name">
-                <input id="coach-discord-id" type="text" placeholder="Discord ID (optional)">
-                <input id="coach-discord-username" type="text" placeholder="Discord username (optional)">
+                <div class="typeahead">
+                  <input id="coach-search" type="text" autocomplete="off" placeholder="Search Discord user…" oninput="onCoachSearchInput(this.value)">
+                  <div id="coach-search-results" class="typeahead-results" style="display:none;"></div>
+                </div>
+                <select id="coach-team"><option value="">— assign team —</option></select>
                 <button class="btn btn-primary" onclick="addCoach()">+ Add Coach</button>
               </div>
               <div class="table-wrap">

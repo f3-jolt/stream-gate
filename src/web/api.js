@@ -346,6 +346,28 @@ router.get('/guilds/:guildId/team-search', requireGuildAccess, (req, res) => {
   res.json(searchTeams(req.query.q || ''));
 });
 
+// Discord member lookup (username/nickname prefix). Uses the REST member search —
+// no privileged GuildMembers intent required.
+router.get('/guilds/:guildId/discord-members', requireGuildAccess, async (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (q.length < 2) return res.json([]);
+  try {
+    const client = require('../bot/client');
+    const guild = client.guilds.cache.get(req.params.guildId)
+      || await client.guilds.fetch(req.params.guildId).catch(() => null);
+    if (!guild) return res.status(404).json({ error: 'Bot is not in this server' });
+    const members = await guild.members.search({ query: q, limit: 10 });
+    res.json([...members.values()].map(m => ({
+      id: m.id,
+      username: m.user.username,
+      display: m.displayName,
+    })));
+  } catch (err) {
+    logger.error('discord-members search error', { error: err.message });
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Seasons ───────────────────────────────────────────────────────────────────
 
 router.get('/guilds/:guildId/leagues/:leagueId/seasons', requireGuildAccess, (req, res) => {

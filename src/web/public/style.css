@@ -231,6 +231,18 @@ tr:hover td { background: rgba(255,255,255,.03); }
 .clickable { cursor: pointer; }
 .clickable:hover td { background: rgba(88,101,242,.08); }
 
+/* ── Typeahead (Discord user search) ── */
+.typeahead { position: relative; }
+.typeahead-results {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 60;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  margin-top: 4px; max-height: 240px; overflow-y: auto;
+  box-shadow: 0 6px 20px rgba(0,0,0,.35);
+}
+.typeahead-item { padding: 8px 12px; cursor: pointer; font-size: 13px; }
+.typeahead-item:hover { background: var(--surface2); }
+.typeahead-empty { padding: 8px 12px; color: var(--text-muted); font-size: 13px; }
+
 /* ── Misc ── */
 .text-muted { color: var(--text-muted); }
 .mt-4 { margin-top: 4px; }
