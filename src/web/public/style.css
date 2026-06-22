@@ -262,6 +262,7 @@ tr:hover td { background: rgba(255,255,255,.03); }
   padding: 2px 9px 2px 4px; border-radius: 12px; border: 1px solid var(--border);
 }
 .team-chip-logo { width: 18px; height: 18px; object-fit: contain; flex: none; }
+.user-badge { font-size: 11px; margin-left: 2px; line-height: 1; }
 
 /* ── Schedule card board ── */
 .sched-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }

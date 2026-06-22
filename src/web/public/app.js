@@ -978,15 +978,25 @@ async function loadResults() {
   const res = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/games?week=${week}`);
   renderResults(await res.json());
 }
+// Team cell for the results grid: logo + abbrev on the team's color shade, with a
+// 👤 icon when the team is user-controlled (has a coach this season).
+function resultTeamCell(abbrev, colors, isUser) {
+  return `<span class="team-chip" style="background:${shadeFor(colors || [])}">`
+    + `<img class="team-chip-logo" src="${logoUrl(abbrev)}" alt="" onerror="this.style.display='none'">`
+    + `<strong>${esc(abbrev)}</strong>`
+    + (isUser ? '<span class="user-badge" title="User-controlled team">👤</span>' : '')
+    + `</span>`;
+}
+
 function renderResults(games) {
   const tb = document.getElementById('results-tbody');
   if (!games.length) { tb.innerHTML = '<tr><td colspan="8" class="text-muted" style="text-align:center;padding:16px;">No games scheduled for this week</td></tr>'; return; }
   tb.innerHTML = games.map(g => {
     const rt = g.result_type || 'normal';
     return `<tr data-game="${g.id}">
-      <td><strong>${esc(g.home_abbrev)}</strong></td>
+      <td>${resultTeamCell(g.home_abbrev, g.home_colors, g.home_coach_id != null)}</td>
       <td><input class="grid-input" type="number" id="hs-${g.id}" value="${g.home_score ?? ''}"></td>
-      <td><strong>${esc(g.away_abbrev)}</strong></td>
+      <td>${resultTeamCell(g.away_abbrev, g.away_colors, g.away_coach_id != null)}</td>
       <td><input class="grid-input" type="number" id="as-${g.id}" value="${g.away_score ?? ''}"></td>
       <td><input class="grid-input" type="number" id="at-${g.id}" value="${g.attempts_taken ?? ''}"></td>
       <td><select class="grid-input wide" id="rt-${g.id}" onchange="toggleWinner(${g.id})">
