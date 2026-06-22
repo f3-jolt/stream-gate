@@ -730,6 +730,24 @@ async function assignCoach(coachId) {
 // ── Schedule (team-centric, full-week grid) ──
 let scheduleCoachedSet = new Set();
 let scheduleSubjectCoached = false;
+let oppMetaTimers = {};
+
+function logoUrl(abbrev) { return `/api/guilds/${currentGuildId}/team-logo/${encodeURIComponent(abbrev)}`; }
+
+function hexToRgba(hex, a) {
+  if (!hex || typeof hex !== 'string') return `rgba(88,101,242,${a})`;
+  let h = hex.replace('#', '');
+  if (h.length === 3) h = h.split('').map(c => c + c).join('');
+  if (h.length !== 6 || /[^0-9a-f]/i.test(h)) return `rgba(88,101,242,${a})`;
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+function shadeFor(colors) {
+  if (!colors || !colors.length) return 'transparent';
+  const c1 = hexToRgba(colors[0], 0.34);
+  const c2 = colors[1] ? hexToRgba(colors[1], 0.14) : hexToRgba(colors[0], 0.08);
+  return `linear-gradient(90deg, ${c1}, ${c2})`;
+}
 
 async function loadScheduleTab() {
   if (!currentSeasonId) { document.getElementById('team-sched-tbody').innerHTML = ''; return; }
@@ -747,9 +765,26 @@ async function loadScheduleTab() {
 async function loadTeamSchedule() {
   const team = document.getElementById('sched-team').value;
   const tb = document.getElementById('team-sched-tbody');
+  updateScheduleBanner(team);
   if (!team || !currentSeasonId) { tb.innerHTML = ''; return; }
   const res = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/team-schedule?team=${encodeURIComponent(team)}`);
   renderTeamScheduleGrid(team, await res.json());
+}
+
+// Header banner: selected team's logo + name over its color scheme.
+function updateScheduleBanner(team) {
+  const banner = document.getElementById('sched-team-banner');
+  const meta = allTeams.find(t => t.team_abbrev === team);
+  if (!team || !meta) { banner.style.display = 'none'; return; }
+  const colors = meta.colors || [];
+  banner.style.display = 'flex';
+  banner.style.background = colors.length
+    ? `linear-gradient(90deg, ${hexToRgba(colors[0], 0.9)}, ${hexToRgba(colors[1] || colors[0], 0.55)})`
+    : 'var(--surface2)';
+  const logo = document.getElementById('sched-team-logo');
+  logo.style.display = '';
+  logo.src = logoUrl(team);
+  document.getElementById('sched-team-banner-name').textContent = `${meta.team_name} (${team})`;
 }
 
 function renderTeamScheduleGrid(team, games) {
@@ -760,24 +795,64 @@ function renderTeamScheduleGrid(team, games) {
   for (let w = 0; w <= 14; w++) {
     const g = byWeek.get(w);
     const opp = g ? g.opponent_abbrev : '';
+    const colors = g ? (g.opponent_colors || []) : [];
     const isHome = g ? g.is_home === 1 : true;
     const user = g ? g.is_user_game === 1 : false;
+    const has = !!opp;
     const played = g && (g.result_type !== 'normal' || (g.home_score != null && g.away_score != null));
     const status = played ? '<span class="badge badge-green">played</span>'
       : g ? '<span class="text-muted">scheduled</span>' : '<span class="text-muted">—</span>';
     html += `<tr data-week="${w}">
       <td style="white-space:nowrap;">${WEEK_LABELS[w]}</td>
-      <td><input class="grid-input wide" list="team-options" id="opp-${w}" value="${esc(opp || '')}" placeholder="BYE"
-            oninput="teamSearch(this.value); markUserDefault(${w})"></td>
-      <td><select class="grid-input" id="side-${w}">
-        <option value="home" ${isHome ? 'selected' : ''}>Home</option>
-        <option value="away" ${!isHome ? 'selected' : ''}>Away</option>
-      </select></td>
-      <td style="text-align:center;"><input type="checkbox" id="user-${w}" ${user ? 'checked' : ''} onchange="this.dataset.touched='1'"></td>
+      <td>
+        <div class="opp-cell" id="oppcell-${w}" style="background:${has ? shadeFor(colors) : 'transparent'};">
+          <img class="opp-logo" id="opplogo-${w}" alt="" ${has ? `src="${logoUrl(opp)}"` : ''}
+               onerror="this.style.visibility='hidden'" style="${has ? '' : 'visibility:hidden;'}">
+          <input class="grid-input wide opp-input" list="team-options" id="opp-${w}" value="${esc(opp || '')}"
+                 placeholder="BYE" oninput="onOpponentChange(${w})">
+        </div>
+      </td>
+      <td>
+        <div class="side-toggle" id="sidewrap-${w}" style="${has ? '' : 'display:none;'}">
+          <span class="side-label ${isHome ? 'active' : ''}" id="sidehome-${w}">Home</span>
+          <label class="switch"><input type="checkbox" id="side-${w}" ${!isHome ? 'checked' : ''} onchange="onSideToggle(${w})"><span class="slider"></span></label>
+          <span class="side-label ${!isHome ? 'active' : ''}" id="sideaway-${w}">Away</span>
+        </div>
+      </td>
+      <td style="text-align:center;">
+        <input type="checkbox" id="user-${w}" ${user ? 'checked' : ''} onchange="this.dataset.touched='1'" style="${has ? '' : 'display:none;'}">
+      </td>
       <td>${status}</td>
     </tr>`;
   }
   document.getElementById('team-sched-tbody').innerHTML = html;
+}
+
+// Opponent changed: refill the catalog datalist, show/hide the side+user controls
+// (hidden for a BYE), refresh the logo, and shade the cell with the opponent colors.
+function onOpponentChange(w) {
+  const val = (document.getElementById(`opp-${w}`).value || '').trim();
+  teamSearch(val);
+  markUserDefault(w);
+  const has = !!val;
+  document.getElementById(`sidewrap-${w}`).style.display = has ? '' : 'none';
+  document.getElementById(`user-${w}`).style.display = has ? '' : 'none';
+  const img = document.getElementById(`opplogo-${w}`);
+  const cell = document.getElementById(`oppcell-${w}`);
+  if (!has) { img.style.visibility = 'hidden'; cell.style.background = 'transparent'; return; }
+  img.src = logoUrl(val.toUpperCase());
+  img.style.visibility = 'visible';
+  clearTimeout(oppMetaTimers[w]);
+  oppMetaTimers[w] = setTimeout(async () => {
+    const r = await fetch(`/api/guilds/${currentGuildId}/team-meta/${encodeURIComponent(val.toUpperCase())}`);
+    cell.style.background = r.ok ? shadeFor((await r.json()).colors) : 'transparent';
+  }, 300);
+}
+
+function onSideToggle(w) {
+  const away = document.getElementById(`side-${w}`).checked;
+  document.getElementById(`sidehome-${w}`).classList.toggle('active', !away);
+  document.getElementById(`sideaway-${w}`).classList.toggle('active', away);
 }
 
 // Default the user-game checkbox when an opponent is entered, unless the admin
@@ -798,7 +873,7 @@ async function saveTeamSchedule() {
     weeks.push({
       week: w,
       opponent: opp || null,
-      isHome: document.getElementById(`side-${w}`).value === 'home',
+      isHome: !document.getElementById(`side-${w}`).checked, // toggle checked = Away
       isUserGame: document.getElementById(`user-${w}`).checked,
     });
   }

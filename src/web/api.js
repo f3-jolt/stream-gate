@@ -47,6 +47,8 @@ const { parseScheduleCell, parseMatchups, WEEK_LABELS, applyDateOverride } = req
 const { buildDbAdvanceMessage } = require('../utils/advance');
 const { searchTeams, getTeamByAbbrev } = require('../utils/teams');
 const logger = require('../utils/logger');
+const fs = require('fs');
+const path = require('path');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -336,6 +338,10 @@ function teamName(abbrev) {
   return getTeamByAbbrev(abbrev)?.name || abbrev;
 }
 
+function teamColors(abbrev) {
+  return getTeamByAbbrev(abbrev)?.colors || [];
+}
+
 function enrichGame(g) {
   return { ...g, home_name: teamName(g.home_abbrev), away_name: teamName(g.away_abbrev) };
 }
@@ -344,6 +350,27 @@ function enrichGame(g) {
 
 router.get('/guilds/:guildId/team-search', requireGuildAccess, (req, res) => {
   res.json(searchTeams(req.query.q || ''));
+});
+
+// Team colors/name for the schedule visuals.
+router.get('/guilds/:guildId/team-meta/:abbrev', requireGuildAccess, (req, res) => {
+  const team = getTeamByAbbrev(req.params.abbrev);
+  if (!team) return res.status(404).json({ error: 'Team not found' });
+  res.json({ name: team.name, abbrev: team.abbrev, colors: team.colors || [] });
+});
+
+// Serve a team's logo (custom-team BLOB or the bundled PNG by `pic` path).
+router.get('/guilds/:guildId/team-logo/:abbrev', requireGuildAccess, (req, res) => {
+  const team = getTeamByAbbrev(req.params.abbrev);
+  if (!team) return res.status(404).end();
+  res.set('Cache-Control', 'public, max-age=86400');
+  if (team.logoBuffer) { res.type('png'); return res.send(team.logoBuffer); }
+  if (team.pic) {
+    const p = path.resolve(process.cwd(), team.pic.replace(/^\.\//, ''));
+    if (!fs.existsSync(p)) return res.status(404).end();
+    return res.sendFile(p);
+  }
+  return res.status(404).end();
 });
 
 // Discord member lookup (username/nickname prefix). Uses the REST member search —
@@ -425,6 +452,7 @@ router.get('/guilds/:guildId/seasons/:seasonId/teams', requireGuildAccess, (req,
   const teams = getSeasonTeams(info.season.id).map(t => ({
     ...t,
     team_name: teamName(t.team_abbrev),
+    colors: teamColors(t.team_abbrev),
     is_user_team: t.coach_id != null,
   }));
   res.json(teams);
@@ -521,7 +549,9 @@ router.get('/guilds/:guildId/seasons/:seasonId/team-schedule', requireGuildAcces
   const team = (req.query.team || '').toUpperCase();
   if (!team) return res.status(400).json({ error: 'team is required' });
   const rows = getTeamSchedule(info.season.id, team).map(g => ({
-    ...g, opponent_name: g.opponent_abbrev ? teamName(g.opponent_abbrev) : null,
+    ...g,
+    opponent_name: g.opponent_abbrev ? teamName(g.opponent_abbrev) : null,
+    opponent_colors: g.opponent_abbrev ? teamColors(g.opponent_abbrev) : [],
   }));
   res.json(rows);
 });

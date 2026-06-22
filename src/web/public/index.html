@@ -248,6 +248,10 @@
               <div class="field-group"><label>Team</label><select id="sched-team" onchange="loadTeamSchedule()"></select></div>
               <button class="btn btn-primary" onclick="saveTeamSchedule()">Save Schedule</button>
             </div>
+            <div id="sched-team-banner" class="team-banner" style="display:none;">
+              <img id="sched-team-logo" class="team-banner-logo" alt="" onerror="this.style.display='none'">
+              <span id="sched-team-banner-name"></span>
+            </div>
             <div class="table-wrap">
               <table id="team-sched-table">
                 <thead><tr><th>Week</th><th>Opponent (blank = BYE)</th><th>Side</th><th>User?</th><th>Status</th></tr></thead>
