@@ -15,7 +15,6 @@ let currentDynLeagueId = null;
 let allTeams = [];
 let allCoaches = [];
 let allConferences = [];
-let pendingMatchups = [];
 let summaryData = [];
 let coachData = [];
 let summarySort = { col: 'wins', dir: -1 };
@@ -497,7 +496,7 @@ function refreshActiveDynastyTab() {
 
 function onDynastyTabShown(name) {
   if (name === 'season') { loadSeasonTeams(); loadCoaches(); }
-  else if (name === 'schedule') { populateScheduleSelects(); loadSchedule(); }
+  else if (name === 'schedule') loadScheduleTab();
   else if (name === 'results') loadResults();
   else if (name === 'summary') loadSummary();
   else if (name === 'coaches') loadCoachHistory();
@@ -670,68 +669,88 @@ async function assignCoach(coachId) {
   else flash(data.error || 'Failed', 'error');
 }
 
-// ── Schedule ──
-function populateScheduleSelects() {
-  buildWeekOptions('sched-week');
-  const fill = () => {
-    const opts = allTeams.map(t => `<option value="${esc(t.team_abbrev)}">${esc(t.team_abbrev)} — ${esc(t.team_name)}</option>`).join('');
-    document.getElementById('sched-home').innerHTML = opts;
-    document.getElementById('sched-away').innerHTML = opts;
-  };
-  if (!allTeams.length && currentSeasonId) {
-    fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/teams`).then(r => r.json()).then(t => { allTeams = t; fill(); });
-  } else fill();
+// ── Schedule (team-centric, full-week grid) ──
+let scheduleCoachedSet = new Set();
+let scheduleSubjectCoached = false;
+
+async function loadScheduleTab() {
+  if (!currentSeasonId) { document.getElementById('team-sched-tbody').innerHTML = ''; return; }
+  if (!allTeams.length) {
+    const r = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/teams`);
+    allTeams = await r.json();
+  }
+  const sel = document.getElementById('sched-team');
+  const prev = sel.value;
+  sel.innerHTML = allTeams.map(t => `<option value="${esc(t.team_abbrev)}">${esc(t.team_abbrev)} — ${esc(t.team_name)}</option>`).join('');
+  if (prev && allTeams.some(t => t.team_abbrev === prev)) sel.value = prev;
+  await loadTeamSchedule();
 }
-async function loadSchedule() {
-  if (!currentSeasonId) return;
-  const week = document.getElementById('sched-week').value;
-  document.getElementById('sched-week-label').textContent = weekLabelFor(week);
-  const res = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/games?week=${week}`);
-  renderScheduleTable(await res.json());
+
+async function loadTeamSchedule() {
+  const team = document.getElementById('sched-team').value;
+  const tb = document.getElementById('team-sched-tbody');
+  if (!team || !currentSeasonId) { tb.innerHTML = ''; return; }
+  const res = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/team-schedule?team=${encodeURIComponent(team)}`);
+  renderTeamScheduleGrid(team, await res.json());
 }
-function renderScheduleTable(games) {
-  const tb = document.getElementById('schedule-tbody');
-  if (!games.length) { tb.innerHTML = '<tr><td colspan="5" class="text-muted" style="text-align:center;padding:16px;">No games scheduled</td></tr>'; return; }
-  tb.innerHTML = games.map(g => {
-    const played = g.result_type !== 'normal' || (g.home_score != null && g.away_score != null);
-    return `<tr>
-      <td>${esc(g.home_name)} <span class="text-muted">(${esc(g.home_abbrev)})</span></td>
-      <td>${esc(g.away_name)} <span class="text-muted">(${esc(g.away_abbrev)})</span></td>
-      <td>${g.is_user_game ? '<span class="badge badge-yellow">user</span>' : '<span class="text-muted">CPU</span>'}</td>
-      <td>${played ? '<span class="badge badge-green">played</span>' : '<span class="text-muted">scheduled</span>'}</td>
-      <td><button class="btn btn-danger btn-sm" onclick="deleteGame(${g.id})">Delete</button></td>
+
+function renderTeamScheduleGrid(team, games) {
+  scheduleCoachedSet = new Set(allTeams.filter(t => t.is_user_team).map(t => t.team_abbrev));
+  scheduleSubjectCoached = scheduleCoachedSet.has(team);
+  const byWeek = new Map(games.map(g => [g.week, g]));
+  let html = '';
+  for (let w = 0; w <= 14; w++) {
+    const g = byWeek.get(w);
+    const opp = g ? g.opponent_abbrev : '';
+    const isHome = g ? g.is_home === 1 : true;
+    const user = g ? g.is_user_game === 1 : false;
+    const played = g && (g.result_type !== 'normal' || (g.home_score != null && g.away_score != null));
+    const status = played ? '<span class="badge badge-green">played</span>'
+      : g ? '<span class="text-muted">scheduled</span>' : '<span class="text-muted">—</span>';
+    html += `<tr data-week="${w}">
+      <td style="white-space:nowrap;">${WEEK_LABELS[w]}</td>
+      <td><input class="grid-input wide" list="team-options" id="opp-${w}" value="${esc(opp || '')}" placeholder="BYE"
+            oninput="teamSearch(this.value); markUserDefault(${w})"></td>
+      <td><select class="grid-input" id="side-${w}">
+        <option value="home" ${isHome ? 'selected' : ''}>Home</option>
+        <option value="away" ${!isHome ? 'selected' : ''}>Away</option>
+      </select></td>
+      <td style="text-align:center;"><input type="checkbox" id="user-${w}" ${user ? 'checked' : ''} onchange="this.dataset.touched='1'"></td>
+      <td>${status}</td>
     </tr>`;
-  }).join('');
+  }
+  document.getElementById('team-sched-tbody').innerHTML = html;
 }
-function stageMatchup() {
-  const home = document.getElementById('sched-home').value;
-  const away = document.getElementById('sched-away').value;
-  if (!home || !away || home === away) { flash('Pick two different teams', 'error', 'sched-result'); return; }
-  pendingMatchups.push({ homeAbbrev: home, awayAbbrev: away });
-  renderPending();
+
+// Default the user-game checkbox when an opponent is entered, unless the admin
+// has manually toggled it. User game = both the team and opponent are coached.
+function markUserDefault(w) {
+  const cb = document.getElementById(`user-${w}`);
+  if (cb.dataset.touched) return;
+  const opp = (document.getElementById(`opp-${w}`).value || '').trim().toUpperCase();
+  cb.checked = scheduleSubjectCoached && scheduleCoachedSet.has(opp);
 }
-function renderPending() {
-  document.getElementById('sched-pending').innerHTML = pendingMatchups.map((m, i) =>
-    `<span class="matchup-chip">${esc(m.awayAbbrev)} @ ${esc(m.homeAbbrev)} <button onclick="unstage(${i})">✕</button></span>`
-  ).join('');
-  document.getElementById('sched-save-btn').disabled = pendingMatchups.length === 0;
-}
-function unstage(i) { pendingMatchups.splice(i, 1); renderPending(); }
-async function saveSchedule() {
-  if (!pendingMatchups.length) return;
-  const week = Number(document.getElementById('sched-week').value);
-  const res = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/games`, {
+
+async function saveTeamSchedule() {
+  const team = document.getElementById('sched-team').value;
+  if (!team) return;
+  const weeks = [];
+  for (let w = 0; w <= 14; w++) {
+    const opp = (document.getElementById(`opp-${w}`).value || '').trim().toUpperCase();
+    weeks.push({
+      week: w,
+      opponent: opp || null,
+      isHome: document.getElementById(`side-${w}`).value === 'home',
+      isUserGame: document.getElementById(`user-${w}`).checked,
+    });
+  }
+  const res = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/team-schedule`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ week, isPostseason: week >= 15, matchups: pendingMatchups }),
+    body: JSON.stringify({ team, weeks }),
   });
   const data = await res.json();
-  if (data.ok) { flash(`Saved ${data.count} game(s)`, 'success', 'sched-result'); pendingMatchups = []; renderPending(); await loadSchedule(); }
+  if (data.ok) { flash('Schedule saved', 'success', 'sched-result'); await loadTeamSchedule(); }
   else flash(data.error || 'Failed', 'error', 'sched-result');
-}
-async function deleteGame(id) {
-  if (!confirm('Delete this game?')) return;
-  await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/games/${id}`, { method: 'DELETE' });
-  await loadSchedule();
 }
 
 // ── Results ──

@@ -540,18 +540,68 @@ function getCoachAssignment(seasonId, coachId) {
 
 // ── Dynasty: games (schedule + results) ───────────────────────────────────────
 
-function insertGame(seasonId, week, homeAbbrev, awayAbbrev, isPostseason = 0) {
+// isUserGame: pass null to auto-derive (both teams currently coached); pass a
+// boolean/0/1 to set it explicitly (manual toggle from the schedule builder).
+function insertGame(seasonId, week, homeAbbrev, awayAbbrev, isPostseason = 0, isUserGame = null) {
   const home = homeAbbrev.toUpperCase();
   const away = awayAbbrev.toUpperCase();
   const homeCoach = getAssignmentCoachId(seasonId, home);
   const awayCoach = getAssignmentCoachId(seasonId, away);
-  const isUserGame = homeCoach != null && awayCoach != null ? 1 : 0;
+  const userGame = isUserGame == null
+    ? (homeCoach != null && awayCoach != null ? 1 : 0)
+    : (isUserGame ? 1 : 0);
   return db.prepare(`
     INSERT INTO games (season_id, week, home_abbrev, away_abbrev, is_user_game, is_postseason, home_coach_id, away_coach_id)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(season_id, week, home_abbrev, away_abbrev) DO NOTHING
-  `).run(seasonId, week, home, away, isUserGame, isPostseason ? 1 : 0, homeCoach, awayCoach);
+  `).run(seasonId, week, home, away, userGame, isPostseason ? 1 : 0, homeCoach, awayCoach);
 }
+
+// Team-centric schedule: one row per regular-season week for a team, showing the
+// opponent (from the single shared game row) and whether the team is home.
+function getTeamSchedule(seasonId, teamAbbrev) {
+  const t = teamAbbrev.toUpperCase();
+  return db.prepare(`
+    SELECT g.id, g.week, g.is_user_game, g.is_postseason, g.played_at, g.result_type,
+           g.home_score, g.away_score,
+           CASE WHEN g.home_abbrev = @t THEN 1 ELSE 0 END AS is_home,
+           CASE WHEN g.home_abbrev = @t THEN g.away_abbrev ELSE g.home_abbrev END AS opponent_abbrev
+    FROM games g
+    WHERE g.season_id = @seasonId AND (g.home_abbrev = @t OR g.away_abbrev = @t)
+    ORDER BY g.week
+  `).all({ seasonId, t });
+}
+
+// Set (or clear) a team's game for one week. BYE = no opponent. Enforces one game
+// per team per week by removing any existing game that week involving either team.
+const setTeamWeekGame = db.transaction((seasonId, week, teamAbbrev, { opponentAbbrev, isHome = true, isUserGame = null }) => {
+  const t = teamAbbrev.toUpperCase();
+  // Clear the subject team's existing game this week.
+  db.prepare('DELETE FROM games WHERE season_id = ? AND week = ? AND (home_abbrev = ? OR away_abbrev = ?)')
+    .run(seasonId, week, t, t);
+
+  if (!opponentAbbrev) return; // BYE — nothing more to do
+
+  const opp = opponentAbbrev.toUpperCase();
+  if (opp === t) throw new Error('A team cannot play itself');
+  // Clear the opponent's existing game this week too (no double-booking).
+  db.prepare('DELETE FROM games WHERE season_id = ? AND week = ? AND (home_abbrev = ? OR away_abbrev = ?)')
+    .run(seasonId, week, opp, opp);
+
+  const home = isHome ? t : opp;
+  const away = isHome ? opp : t;
+  insertGame(seasonId, week, home, away, week >= 15 ? 1 : 0, isUserGame);
+});
+
+const bulkSetTeamSchedule = db.transaction((seasonId, teamAbbrev, weeks) => {
+  for (const w of weeks) {
+    setTeamWeekGame(seasonId, w.week, teamAbbrev, {
+      opponentAbbrev: w.opponent || null,
+      isHome: w.isHome,
+      isUserGame: w.isUserGame,
+    });
+  }
+});
 
 const bulkInsertGames = db.transaction((seasonId, rows) => {
   for (const r of rows) {
@@ -602,18 +652,19 @@ function deleteGame(gameId) {
 const recordGameResult = db.transaction((gameId, { homeScore = null, awayScore = null, attemptsTaken = null, resultType = 'normal', winnerSide = null }) => {
   const g = db.prepare('SELECT season_id, home_abbrev, away_abbrev FROM games WHERE id = ?').get(gameId);
   if (!g) throw new Error(`Game ${gameId} not found`);
+  // Snapshot the coaches who actually played, but leave is_user_game alone — it's
+  // a manual flag set in the schedule builder.
   const homeCoach = getAssignmentCoachId(g.season_id, g.home_abbrev);
   const awayCoach = getAssignmentCoachId(g.season_id, g.away_abbrev);
-  const isUserGame = homeCoach != null && awayCoach != null ? 1 : 0;
   const ws = (resultType === 'FR' || resultType === 'FS') ? winnerSide : null;
   return db.prepare(`
     UPDATE games SET
       home_score = ?, away_score = ?, attempts_taken = ?,
       result_type = ?, winner_side = ?,
-      home_coach_id = ?, away_coach_id = ?, is_user_game = ?,
+      home_coach_id = ?, away_coach_id = ?,
       played_at = CURRENT_TIMESTAMP
     WHERE id = ?
-  `).run(homeScore, awayScore, attemptsTaken, resultType, ws, homeCoach, awayCoach, isUserGame, gameId);
+  `).run(homeScore, awayScore, attemptsTaken, resultType, ws, homeCoach, awayCoach, gameId);
 });
 
 // ── Dynasty: derived summaries (W/L never stored — computed here) ──────────────
@@ -766,6 +817,9 @@ module.exports = {
   // Dynasty: games
   insertGame,
   bulkInsertGames,
+  getTeamSchedule,
+  setTeamWeekGame,
+  bulkSetTeamSchedule,
   getGamesByWeek,
   getScheduledGames,
   getGameById,

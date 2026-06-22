@@ -240,26 +240,19 @@
         <!-- SCHEDULE TAB -->
         <div id="tab-schedule" class="tab-panel">
           <div class="card">
-            <div class="card-title">Build Schedule</div>
+            <div class="card-title">Build Schedule — by team</div>
+            <p class="text-muted" style="margin-bottom:12px;">Pick a team, then set each week's opponent (type to search any team — leave blank for a BYE), home/away, and whether it's a user game. Setting an opponent that's already booked that week moves them to this matchup, and reflects automatically on the opponent's schedule.</p>
             <div class="search-row">
-              <div class="field-group"><label>Week</label><select id="sched-week" onchange="loadSchedule()"></select></div>
-              <div class="field-group"><label>Home</label><select id="sched-home"></select></div>
-              <div class="field-group"><label>Away</label><select id="sched-away"></select></div>
-              <button class="btn btn-ghost" onclick="stageMatchup()">Add Matchup</button>
+              <div class="field-group"><label>Team</label><select id="sched-team" onchange="loadTeamSchedule()"></select></div>
+              <button class="btn btn-primary" onclick="saveTeamSchedule()">Save Schedule</button>
             </div>
-            <div id="sched-pending"></div>
-            <div class="modal-actions" style="margin-top:8px;">
-              <button class="btn btn-primary" onclick="saveSchedule()" id="sched-save-btn" disabled>Save Week Schedule</button>
-            </div>
-            <div id="sched-result" class="flash"></div>
-          </div>
-          <div class="card">
-            <div class="card-title">Scheduled Games — <span id="sched-week-label"></span></div>
             <div class="table-wrap">
-              <table><thead><tr><th>Home</th><th>Away</th><th>Type</th><th>Status</th><th></th></tr></thead>
-                <tbody id="schedule-tbody"></tbody>
+              <table id="team-sched-table">
+                <thead><tr><th>Week</th><th>Opponent (blank = BYE)</th><th>Side</th><th>User?</th><th>Status</th></tr></thead>
+                <tbody id="team-sched-tbody"></tbody>
               </table>
             </div>
+            <div id="sched-result" class="flash"></div>
           </div>
         </div>
 

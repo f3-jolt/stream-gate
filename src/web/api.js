@@ -32,6 +32,8 @@ const {
   getGamesByWeek,
   getScheduledGames,
   bulkInsertGames,
+  getTeamSchedule,
+  bulkSetTeamSchedule,
   deleteGame,
   getGameById,
   recordGameResult,
@@ -488,6 +490,40 @@ router.post('/guilds/:guildId/seasons/:seasonId/games', requireGuildAccess, (req
   bulkInsertGames(info.season.id, rows);
   logger.info('Schedule saved', { adminId: req.session.user.id, seasonId: info.season.id, week, count: rows.length });
   res.json({ ok: true, count: rows.length });
+});
+
+// Team-centric schedule (the full-week grid)
+router.get('/guilds/:guildId/seasons/:seasonId/team-schedule', requireGuildAccess, (req, res) => {
+  const info = seasonInGuild(req.params.seasonId, req.params.guildId);
+  if (!info) return res.status(404).json({ error: 'Season not found' });
+  const team = (req.query.team || '').toUpperCase();
+  if (!team) return res.status(400).json({ error: 'team is required' });
+  const rows = getTeamSchedule(info.season.id, team).map(g => ({
+    ...g, opponent_name: g.opponent_abbrev ? teamName(g.opponent_abbrev) : null,
+  }));
+  res.json(rows);
+});
+
+router.post('/guilds/:guildId/seasons/:seasonId/team-schedule', requireGuildAccess, (req, res) => {
+  const info = seasonInGuild(req.params.seasonId, req.params.guildId);
+  if (!info) return res.status(404).json({ error: 'Season not found' });
+  const { team, weeks } = req.body;
+  if (!team || !Array.isArray(weeks)) return res.status(400).json({ error: 'team and a weeks array are required' });
+
+  const roster = new Set(getSeasonTeams(info.season.id).map(t => t.team_abbrev));
+  if (!roster.has(team.toUpperCase())) return res.status(400).json({ error: `${team} is not on this season's roster` });
+
+  for (const w of weeks) {
+    if (w.week === undefined) return res.status(400).json({ error: 'each week needs a week number' });
+    if (w.opponent) {
+      if (!getTeamByAbbrev(w.opponent)) return res.status(400).json({ error: `Opponent ${w.opponent} not found` });
+      if (w.opponent.toUpperCase() === team.toUpperCase()) return res.status(400).json({ error: 'A team cannot play itself' });
+    }
+  }
+
+  bulkSetTeamSchedule(info.season.id, team, weeks);
+  logger.info('Team schedule saved', { adminId: req.session.user.id, seasonId: info.season.id, team, weeks: weeks.length });
+  res.json({ ok: true });
 });
 
 router.delete('/guilds/:guildId/seasons/:seasonId/games/:gameId', requireGuildAccess, (req, res) => {
