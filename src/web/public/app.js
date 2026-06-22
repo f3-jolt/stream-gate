@@ -582,7 +582,7 @@ function renderSeasonTeams() {
   if (!allTeams.length) { tb.innerHTML = '<tr><td colspan="4" class="text-muted" style="text-align:center;padding:16px;">No teams added</td></tr>'; return; }
   tb.innerHTML = allTeams.map(t => `
     <tr>
-      <td><strong>${esc(t.team_abbrev)}</strong> ${esc(t.team_name)} ${t.is_user_team ? '<span class="badge badge-yellow">user</span>' : ''}</td>
+      <td>${teamChip(t.team_abbrev, t.team_name, t.colors)} ${t.is_user_team ? '<span class="badge badge-yellow">user</span>' : ''}</td>
       <td>${t.conference_name ? esc(t.conference_name) : '<span class="text-muted">—</span>'}</td>
       <td>${t.coach_name ? esc(t.coach_name) : '<span class="text-muted">CPU</span>'}</td>
       <td><button class="btn btn-danger btn-sm" onclick="removeSeasonTeam('${esc(t.team_abbrev)}')">Remove</button></td>
@@ -631,15 +631,22 @@ function renderCoaches(assignMap) {
   const tb = document.getElementById('coaches-tbody');
   if (!allCoaches.length) { tb.innerHTML = '<tr><td colspan="3" class="text-muted" style="text-align:center;padding:16px;">No coaches added</td></tr>'; return; }
   const teamOpts = allTeams.map(t => `<option value="${esc(t.team_abbrev)}">${esc(t.team_abbrev)} — ${esc(t.team_name)}</option>`).join('');
-  tb.innerHTML = allCoaches.map(c => `
+  tb.innerHTML = allCoaches.map(c => {
+    const assigned = assignMap.get(c.id);
+    const chip = assigned
+      ? `<div style="margin-bottom:6px;">${teamChip(assigned, teamNameFor(assigned), colorsForTeam(assigned))}</div>`
+      : '';
+    return `
     <tr>
       <td><strong>${esc(c.display_name)}</strong></td>
       <td>${c.discord_id ? esc(c.discord_username || c.discord_id) : '<span class="text-muted">—</span>'}</td>
       <td>
+        ${chip}
         <select id="assign-${c.id}"><option value="">— none —</option>${teamOpts}</select>
         <button class="btn btn-primary btn-sm" onclick="assignCoach(${c.id})">Assign</button>
       </td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
   for (const c of allCoaches) {
     const sel = document.getElementById(`assign-${c.id}`);
     if (sel) sel.value = assignMap.get(c.id) || '';
@@ -727,12 +734,19 @@ async function assignCoach(coachId) {
   else flash(data.error || 'Failed', 'error');
 }
 
-// ── Schedule (team-centric, full-week grid) ──
-let scheduleCoachedSet = new Set();
-let scheduleSubjectCoached = false;
+// ── Schedule (all-teams card board) ──
 let oppMetaTimers = {};
-let seasonGames = [];      // all games in the season (for scheduling-rule checks)
-let weekBookedMap = {};    // week -> Set(abbrev) booked by non-subject matchups
+let seasonGames = [];       // all games in the season (for scheduling-rule checks)
+let scheduleFilter = '';
+
+// Reusable team chip (logo + shaded colors); also used by the Season tab.
+function teamChip(abbrev, name, colors) {
+  return `<span class="team-chip" style="background:${shadeFor(colors || [])}">`
+    + `<img class="team-chip-logo" src="${logoUrl(abbrev)}" alt="" onerror="this.style.display='none'">`
+    + `<strong>${esc(abbrev)}</strong>${name ? ' ' + esc(name) : ''}</span>`;
+}
+function colorsForTeam(abbrev) { const t = allTeams.find(x => x.team_abbrev === abbrev); return t ? t.colors : []; }
+function teamNameFor(abbrev) { const t = allTeams.find(x => x.team_abbrev === abbrev); return t ? t.team_name : abbrev; }
 
 function logoUrl(abbrev) { return `/api/guilds/${currentGuildId}/team-logo/${encodeURIComponent(abbrev)}`; }
 
@@ -752,209 +766,208 @@ function shadeFor(colors) {
 }
 
 async function loadScheduleTab() {
-  if (!currentSeasonId) { document.getElementById('team-sched-tbody').innerHTML = ''; return; }
-  if (!allTeams.length) {
-    const r = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/teams`);
-    allTeams = await r.json();
-  }
-  const sel = document.getElementById('sched-team');
-  const prev = sel.value;
-  sel.innerHTML = allTeams.map(t => `<option value="${esc(t.team_abbrev)}">${esc(t.team_abbrev)} — ${esc(t.team_name)}</option>`).join('');
-  if (prev && allTeams.some(t => t.team_abbrev === prev)) sel.value = prev;
-  await loadTeamSchedule();
-}
-
-async function loadTeamSchedule() {
-  const team = document.getElementById('sched-team').value;
-  const tb = document.getElementById('team-sched-tbody');
-  updateScheduleBanner(team);
-  if (!team || !currentSeasonId) { tb.innerHTML = ''; return; }
-  // Load this team's schedule + the whole season's games (for the rule checks).
-  const [schedRes, allRes] = await Promise.all([
-    fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/team-schedule?team=${encodeURIComponent(team)}`),
+  const wrap = document.getElementById('schedule-cards');
+  if (!currentSeasonId) { wrap.innerHTML = '<p class="text-muted" style="padding:16px;">Select a season to build schedules.</p>'; return; }
+  const [teamsRes, gamesRes] = await Promise.all([
+    fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/teams`),
     fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/games`),
   ]);
-  seasonGames = await allRes.json();
-  computeWeekBooked(team);
-  renderTeamScheduleGrid(team, await schedRes.json());
+  allTeams = await teamsRes.json();
+  seasonGames = await gamesRes.json();
+  renderScheduleCards();
 }
 
-// Teams already booked each week by matchups NOT involving the subject team —
-// those can't be picked as the subject's opponent that week (rule 2).
-function computeWeekBooked(team) {
-  const T = team.toUpperCase();
-  weekBookedMap = {};
+function filterScheduleCards(v) { scheduleFilter = (v || '').toLowerCase(); renderScheduleCards(); }
+
+function renderScheduleCards() {
+  const wrap = document.getElementById('schedule-cards');
+  if (!allTeams.length) { wrap.innerHTML = '<p class="text-muted" style="padding:16px;">No teams on the roster yet — add them in the Season tab.</p>'; return; }
+  const f = scheduleFilter;
+  const teams = allTeams.filter(t => !f || t.team_abbrev.toLowerCase().includes(f) || (t.team_name || '').toLowerCase().includes(f));
+  wrap.innerHTML = teams.length ? teams.map(scheduleCardHtml).join('') : '<p class="text-muted" style="padding:16px;">No teams match.</p>';
+}
+
+function scheduleCardHtml(t) {
+  const abbr = t.team_abbrev;
+  const byWeek = new Map();
   for (const g of seasonGames) {
-    if (g.home_abbrev === T || g.away_abbrev === T) continue;
-    (weekBookedMap[g.week] ||= new Set()).add(g.home_abbrev);
-    weekBookedMap[g.week].add(g.away_abbrev);
+    if (g.home_abbrev === abbr || g.away_abbrev === abbr) byWeek.set(g.week, g);
   }
+  const headerBg = (t.colors && t.colors.length)
+    ? `linear-gradient(90deg, ${hexToRgba(t.colors[0], 0.9)}, ${hexToRgba(t.colors[1] || t.colors[0], 0.55)})`
+    : 'var(--surface2)';
+  let rows = '';
+  for (let w = 0; w <= 14; w++) {
+    const g = byWeek.get(w);
+    const isHome = g ? g.home_abbrev === abbr : true;
+    const opp = g ? (isHome ? g.away_abbrev : g.home_abbrev) : '';
+    const colors = g ? ((isHome ? g.away_colors : g.home_colors) || []) : [];
+    const user = g ? g.is_user_game === 1 : false;
+    const has = !!opp;
+    rows += `<tr>
+      <td class="wk">W${w}</td>
+      <td>
+        <div class="opp-cell" id="oppcell-${abbr}-${w}" style="background:${has ? shadeFor(colors) : 'transparent'};">
+          <img class="opp-logo" id="opplogo-${abbr}-${w}" alt="" ${has ? `src="${logoUrl(opp)}"` : ''}
+               onerror="this.style.visibility='hidden'" style="${has ? '' : 'visibility:hidden;'}">
+          <input class="grid-input opp-input" list="team-options" id="opp-${abbr}-${w}" value="${esc(opp || '')}"
+                 placeholder="BYE" oninput="onOppChange('${abbr}',${w})">
+        </div>
+      </td>
+      <td>
+        <div class="side-toggle" id="sidewrap-${abbr}-${w}" style="${has ? '' : 'display:none;'}">
+          <span class="side-label ${isHome ? 'active' : ''}" id="sidehome-${abbr}-${w}">H</span>
+          <label class="switch"><input type="checkbox" id="side-${abbr}-${w}" ${!isHome ? 'checked' : ''} onchange="onSideToggle('${abbr}',${w})"><span class="slider"></span></label>
+          <span class="side-label ${!isHome ? 'active' : ''}" id="sideaway-${abbr}-${w}">A</span>
+        </div>
+      </td>
+      <td style="text-align:center;">
+        <input type="checkbox" id="user-${abbr}-${w}" ${user ? 'checked' : ''} onchange="this.dataset.touched='1'" style="${has ? '' : 'display:none;'}">
+      </td>
+    </tr>`;
+  }
+  return `<div class="sched-card">
+    <div class="sched-card-head" style="background:${headerBg};">
+      <img class="sched-card-logo" src="${logoUrl(abbr)}" alt="" onerror="this.style.display='none'">
+      <span>${esc(t.team_name)} <small>(${esc(abbr)})</small></span>
+      ${t.is_user_team ? '<span class="badge badge-yellow" style="margin-left:auto;">user</span>' : ''}
+    </div>
+    <table class="sched-card-table"><tbody>${rows}</tbody></table>
+    <div class="sched-card-foot">
+      <button class="btn btn-primary btn-sm" onclick="saveCard('${abbr}')">Save ${esc(abbr)}</button>
+      <span id="cardflash-${abbr}" class="card-flash"></span>
+    </div>
+  </div>`;
 }
 
-// Abbrevs that may NOT be picked for row `w`: the subject itself (rule 1),
-// teams busy that week (rule 2), and teams already on the subject's grid (rule 3).
-function excludedForRow(w) {
-  const T = (document.getElementById('sched-team').value || '').toUpperCase();
-  const set = new Set([T]);
-  (weekBookedMap[w] || []).forEach(a => set.add(a));
+const gid = (prefix, abbr, w) => document.getElementById(`${prefix}-${abbr}-${w}`);
+
+// Teams playing another matchup in week w — not selectable as this team's opponent (rule 2).
+function bookedThatWeek(abbr, w) {
+  const set = new Set();
+  for (const g of seasonGames) {
+    if (g.week !== w) continue;
+    if (g.home_abbrev === abbr || g.away_abbrev === abbr) continue;
+    set.add(g.home_abbrev); set.add(g.away_abbrev);
+  }
+  return set;
+}
+
+// Abbrevs not selectable for (abbr, w): self (rule 1), busy that week (rule 2),
+// already on this team's card (rule 3).
+function excludedForRow(abbr, w) {
+  const set = new Set([abbr]);
+  bookedThatWeek(abbr, w).forEach(a => set.add(a));
   for (let i = 0; i <= 14; i++) {
     if (i === w) continue;
-    const v = (document.getElementById(`opp-${i}`)?.value || '').trim().toUpperCase();
+    const v = (gid('opp', abbr, i)?.value || '').trim().toUpperCase();
     if (v) set.add(v);
   }
   return set;
 }
 
-// Opponent catalog search, filtered to only valid (selectable) teams for this row.
-function teamSearchForRow(q, w) {
+function teamSearchForRow(q, abbr, w) {
   clearTimeout(teamSearchTimer);
   teamSearchTimer = setTimeout(async () => {
     const res = await fetch(`/api/guilds/${currentGuildId}/team-search?q=${encodeURIComponent(q)}`);
-    const excl = excludedForRow(w);
+    const excl = excludedForRow(abbr, w);
     const teams = (await res.json()).filter(t => !excl.has(t.value.toUpperCase()));
     document.getElementById('team-options').innerHTML =
       teams.map(t => `<option value="${esc(t.value)}">${esc(t.name)}</option>`).join('');
   }, 150);
 }
 
-// Header banner: selected team's logo + name over its color scheme.
-function updateScheduleBanner(team) {
-  const banner = document.getElementById('sched-team-banner');
-  const meta = allTeams.find(t => t.team_abbrev === team);
-  if (!team || !meta) { banner.style.display = 'none'; return; }
-  const colors = meta.colors || [];
-  banner.style.display = 'flex';
-  banner.style.background = colors.length
-    ? `linear-gradient(90deg, ${hexToRgba(colors[0], 0.9)}, ${hexToRgba(colors[1] || colors[0], 0.55)})`
-    : 'var(--surface2)';
-  const logo = document.getElementById('sched-team-logo');
-  logo.style.display = '';
-  logo.src = logoUrl(team);
-  document.getElementById('sched-team-banner-name').textContent = `${meta.team_name} (${team})`;
-}
-
-function renderTeamScheduleGrid(team, games) {
-  scheduleCoachedSet = new Set(allTeams.filter(t => t.is_user_team).map(t => t.team_abbrev));
-  scheduleSubjectCoached = scheduleCoachedSet.has(team);
-  const byWeek = new Map(games.map(g => [g.week, g]));
-  let html = '';
-  for (let w = 0; w <= 14; w++) {
-    const g = byWeek.get(w);
-    const opp = g ? g.opponent_abbrev : '';
-    const colors = g ? (g.opponent_colors || []) : [];
-    const isHome = g ? g.is_home === 1 : true;
-    const user = g ? g.is_user_game === 1 : false;
-    const has = !!opp;
-    const played = g && (g.result_type !== 'normal' || (g.home_score != null && g.away_score != null));
-    const status = played ? '<span class="badge badge-green">played</span>'
-      : g ? '<span class="text-muted">scheduled</span>' : '<span class="text-muted">—</span>';
-    html += `<tr data-week="${w}">
-      <td style="white-space:nowrap;">${WEEK_LABELS[w]}</td>
-      <td>
-        <div class="opp-cell" id="oppcell-${w}" style="background:${has ? shadeFor(colors) : 'transparent'};">
-          <img class="opp-logo" id="opplogo-${w}" alt="" ${has ? `src="${logoUrl(opp)}"` : ''}
-               onerror="this.style.visibility='hidden'" style="${has ? '' : 'visibility:hidden;'}">
-          <input class="grid-input wide opp-input" list="team-options" id="opp-${w}" value="${esc(opp || '')}"
-                 placeholder="BYE" oninput="onOpponentChange(${w})">
-        </div>
-      </td>
-      <td>
-        <div class="side-toggle" id="sidewrap-${w}" style="${has ? '' : 'display:none;'}">
-          <span class="side-label ${isHome ? 'active' : ''}" id="sidehome-${w}">Home</span>
-          <label class="switch"><input type="checkbox" id="side-${w}" ${!isHome ? 'checked' : ''} onchange="onSideToggle(${w})"><span class="slider"></span></label>
-          <span class="side-label ${!isHome ? 'active' : ''}" id="sideaway-${w}">Away</span>
-        </div>
-      </td>
-      <td style="text-align:center;">
-        <input type="checkbox" id="user-${w}" ${user ? 'checked' : ''} onchange="this.dataset.touched='1'" style="${has ? '' : 'display:none;'}">
-      </td>
-      <td>${status}</td>
-    </tr>`;
-  }
-  document.getElementById('team-sched-tbody').innerHTML = html;
-}
-
-// Opponent changed: refill the catalog datalist, show/hide the side+user controls
-// (hidden for a BYE), refresh the logo, and shade the cell with the opponent colors.
-function onOpponentChange(w) {
-  const val = (document.getElementById(`opp-${w}`).value || '').trim();
-  teamSearchForRow(val, w);
-  markUserDefault(w);
+// Opponent changed: refill the (filtered) catalog list, toggle the side+user
+// controls (hidden for a BYE), refresh the logo and color shading.
+function onOppChange(abbr, w) {
+  const val = (gid('opp', abbr, w).value || '').trim();
+  teamSearchForRow(val, abbr, w);
+  markUserDefault(abbr, w);
   const has = !!val;
-  document.getElementById(`sidewrap-${w}`).style.display = has ? '' : 'none';
-  document.getElementById(`user-${w}`).style.display = has ? '' : 'none';
-  const img = document.getElementById(`opplogo-${w}`);
-  const cell = document.getElementById(`oppcell-${w}`);
+  gid('sidewrap', abbr, w).style.display = has ? '' : 'none';
+  gid('user', abbr, w).style.display = has ? '' : 'none';
+  const img = gid('opplogo', abbr, w);
+  const cell = gid('oppcell', abbr, w);
   if (!has) { img.style.visibility = 'hidden'; cell.style.background = 'transparent'; return; }
   img.src = logoUrl(val.toUpperCase());
   img.style.visibility = 'visible';
-  clearTimeout(oppMetaTimers[w]);
-  oppMetaTimers[w] = setTimeout(async () => {
+  const key = `${abbr}-${w}`;
+  clearTimeout(oppMetaTimers[key]);
+  oppMetaTimers[key] = setTimeout(async () => {
     const r = await fetch(`/api/guilds/${currentGuildId}/team-meta/${encodeURIComponent(val.toUpperCase())}`);
     cell.style.background = r.ok ? shadeFor((await r.json()).colors) : 'transparent';
   }, 300);
 }
 
-function onSideToggle(w) {
-  const away = document.getElementById(`side-${w}`).checked;
-  document.getElementById(`sidehome-${w}`).classList.toggle('active', !away);
-  document.getElementById(`sideaway-${w}`).classList.toggle('active', away);
+function onSideToggle(abbr, w) {
+  const away = gid('side', abbr, w).checked;
+  gid('sidehome', abbr, w).classList.toggle('active', !away);
+  gid('sideaway', abbr, w).classList.toggle('active', away);
 }
 
-// Default the user-game checkbox when an opponent is entered, unless the admin
-// has manually toggled it. User game = both the team and opponent are coached.
-function markUserDefault(w) {
-  const cb = document.getElementById(`user-${w}`);
+// Default the user-game checkbox when an opponent is entered (unless manually set).
+// User game = this team and the opponent are both coached.
+function markUserDefault(abbr, w) {
+  const cb = gid('user', abbr, w);
   if (cb.dataset.touched) return;
-  const opp = (document.getElementById(`opp-${w}`).value || '').trim().toUpperCase();
-  cb.checked = scheduleSubjectCoached && scheduleCoachedSet.has(opp);
+  const coached = new Set(allTeams.filter(t => t.is_user_team).map(t => t.team_abbrev));
+  const opp = (gid('opp', abbr, w).value || '').trim().toUpperCase();
+  cb.checked = coached.has(abbr) && coached.has(opp);
 }
 
-// Validate the grid against the scheduling rules before sending (the server also
+// Validate one card against the scheduling rules before sending (the server also
 // enforces them, but catching here keeps the in-progress edits from being lost).
-function validateSchedule(team) {
-  const T = team.toUpperCase();
+function validateCard(abbr) {
+  const T = abbr.toUpperCase();
   const seen = new Map(); // opponent abbrev -> week already scheduled
-  // Seed with the subject's postseason opponents (not editable in the 0–14 grid).
+  // Seed with this team's postseason opponents (not editable in the 0–14 grid).
   for (const g of seasonGames) {
     if (g.week > 14 && (g.home_abbrev === T || g.away_abbrev === T)) {
       seen.set(g.home_abbrev === T ? g.away_abbrev : g.home_abbrev, g.week);
     }
   }
   for (let w = 0; w <= 14; w++) {
-    const opp = (document.getElementById(`opp-${w}`).value || '').trim().toUpperCase();
+    const opp = (gid('opp', abbr, w).value || '').trim().toUpperCase();
     if (!opp) continue;
-    if (opp === T) return `Week ${w}: a team can't play itself.`;
-    if (seen.has(opp)) return `${opp} is scheduled more than once (weeks ${seen.get(opp)} and ${w}) — no rematches.`;
-    if ((weekBookedMap[w] || new Set()).has(opp)) return `${opp} is already booked in week ${w} by another matchup.`;
+    if (opp === T) return `W${w}: a team can't play itself.`;
+    if (seen.has(opp)) return `${opp} scheduled twice (W${seen.get(opp)} & W${w}) — no rematches.`;
+    if (bookedThatWeek(abbr, w).has(opp)) return `${opp} is already booked in W${w}.`;
     seen.set(opp, w);
   }
   return null;
 }
 
-async function saveTeamSchedule() {
-  const team = document.getElementById('sched-team').value;
-  if (!team) return;
-  const err = validateSchedule(team);
-  if (err) { flash(err, 'error', 'sched-result'); return; }
-
+async function saveCard(abbr) {
+  const err = validateCard(abbr);
+  if (err) { flashCard(abbr, err, 'error'); return; }
   const weeks = [];
   for (let w = 0; w <= 14; w++) {
-    const opp = (document.getElementById(`opp-${w}`).value || '').trim().toUpperCase();
+    const opp = (gid('opp', abbr, w).value || '').trim().toUpperCase();
     weeks.push({
       week: w,
       opponent: opp || null,
-      isHome: !document.getElementById(`side-${w}`).checked, // toggle checked = Away
-      isUserGame: document.getElementById(`user-${w}`).checked,
+      isHome: !gid('side', abbr, w).checked, // toggle checked = Away
+      isUserGame: gid('user', abbr, w).checked,
     });
   }
   const res = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/team-schedule`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ team, weeks }),
+    body: JSON.stringify({ team: abbr, weeks }),
   });
   const data = await res.json();
-  if (data.ok) { flash('Schedule saved', 'success', 'sched-result'); await loadTeamSchedule(); }
-  else flash(data.error || 'Failed', 'error', 'sched-result');
+  if (data.ok) { flashCard(abbr, 'Saved', 'success'); await loadScheduleTab(); }
+  else flashCard(abbr, data.error || 'Failed', 'error');
+}
+
+function flashCard(abbr, msg, type) {
+  const el = document.getElementById(`cardflash-${abbr}`);
+  if (!el) return;
+  el.textContent = msg;
+  el.className = `card-flash ${type}`;
+  setTimeout(() => {
+    const e = document.getElementById(`cardflash-${abbr}`);
+    if (e) { e.textContent = ''; e.className = 'card-flash'; }
+  }, 4000);
 }
 
 // ── Results ──

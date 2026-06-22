@@ -342,7 +342,11 @@ function teamColors(abbrev) {
 }
 
 function enrichGame(g) {
-  return { ...g, home_name: teamName(g.home_abbrev), away_name: teamName(g.away_abbrev) };
+  return {
+    ...g,
+    home_name: teamName(g.home_abbrev), away_name: teamName(g.away_abbrev),
+    home_colors: teamColors(g.home_abbrev), away_colors: teamColors(g.away_abbrev),
+  };
 }
 
 // ── Team catalog (for dropdowns) ──────────────────────────────────────────────

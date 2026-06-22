@@ -242,23 +242,12 @@
         <!-- SCHEDULE TAB -->
         <div id="tab-schedule" class="tab-panel">
           <div class="card">
-            <div class="card-title">Build Schedule — by team</div>
-            <p class="text-muted" style="margin-bottom:12px;">Pick a team, then set each week's opponent (type to search any team — leave blank for a BYE), home/away, and whether it's a user game. Setting an opponent that's already booked that week moves them to this matchup, and reflects automatically on the opponent's schedule.</p>
+            <div class="card-title">Build Schedule — all teams</div>
+            <p class="text-muted" style="margin-bottom:12px;">Every roster team is a card. For each week set the opponent (type to search — blank = BYE), home/away, and the user flag, then <strong>Save</strong> that team. Saving reloads the board so opponents reflect across teams — save a card before editing the next.</p>
             <div class="search-row">
-              <div class="field-group"><label>Team</label><select id="sched-team" onchange="loadTeamSchedule()"></select></div>
-              <button class="btn btn-primary" onclick="saveTeamSchedule()">Save Schedule</button>
+              <input id="sched-filter" type="text" placeholder="Filter teams…" oninput="filterScheduleCards(this.value)">
             </div>
-            <div id="sched-team-banner" class="team-banner" style="display:none;">
-              <img id="sched-team-logo" class="team-banner-logo" alt="" onerror="this.style.display='none'">
-              <span id="sched-team-banner-name"></span>
-            </div>
-            <div class="table-wrap">
-              <table id="team-sched-table">
-                <thead><tr><th>Week</th><th>Opponent (blank = BYE)</th><th>Side</th><th>User?</th><th>Status</th></tr></thead>
-                <tbody id="team-sched-tbody"></tbody>
-              </table>
-            </div>
-            <div id="sched-result" class="flash"></div>
+            <div id="schedule-cards" class="sched-cards"></div>
           </div>
         </div>
 

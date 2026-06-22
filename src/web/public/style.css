@@ -256,6 +256,33 @@ tr:hover td { background: rgba(255,255,255,.03); }
 .switch input:checked + .slider { background: var(--accent); }
 .switch input:checked + .slider::before { transform: translateX(18px); }
 
+/* ── Team chip (logo + color shade) ── */
+.team-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 9px 2px 4px; border-radius: 12px; border: 1px solid var(--border);
+}
+.team-chip-logo { width: 18px; height: 18px; object-fit: contain; flex: none; }
+
+/* ── Schedule card board ── */
+.sched-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.sched-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.sched-card-head {
+  display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  color: #fff; font-weight: 700; text-shadow: 0 1px 2px rgba(0,0,0,.65);
+}
+.sched-card-head small { font-weight: 400; opacity: .85; }
+.sched-card-logo { width: 26px; height: 26px; object-fit: contain; flex: none; }
+.sched-card-table { width: 100%; border-collapse: collapse; }
+.sched-card-table td { padding: 3px 8px; border-bottom: 1px solid var(--border); }
+.sched-card-table tr:last-child td { border-bottom: none; }
+.sched-card-table .wk { color: var(--text-muted); font-size: 11px; white-space: nowrap; width: 32px; }
+.sched-card .opp-cell { min-width: 0; padding: 2px 6px; }
+.sched-card .opp-input { width: 100%; }
+.sched-card-foot { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+.card-flash { font-size: 12px; }
+.card-flash.success { color: var(--success); }
+.card-flash.error { color: var(--danger); }
+
 /* ── Typeahead (Discord user search) ── */
 .typeahead { position: relative; }
 .typeahead-results {
