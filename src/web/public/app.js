@@ -993,18 +993,19 @@ function renderResults(games) {
   if (!games.length) { tb.innerHTML = '<tr><td colspan="8" class="text-muted" style="text-align:center;padding:16px;">No games scheduled for this week</td></tr>'; return; }
   tb.innerHTML = games.map(g => {
     const rt = g.result_type || 'normal';
+    const sim = rt === 'FR' || rt === 'FS'; // forfeit / fair sim → no attempts
     return `<tr data-game="${g.id}">
       <td>${resultTeamCell(g.home_abbrev, g.home_colors, g.home_coach_id != null)}</td>
       <td><input class="grid-input" type="number" id="hs-${g.id}" value="${g.home_score ?? ''}"></td>
       <td>${resultTeamCell(g.away_abbrev, g.away_colors, g.away_coach_id != null)}</td>
       <td><input class="grid-input" type="number" id="as-${g.id}" value="${g.away_score ?? ''}"></td>
-      <td><input class="grid-input" type="number" id="at-${g.id}" value="${g.attempts_taken ?? ''}"></td>
+      <td><input class="grid-input" type="number" id="at-${g.id}" value="${g.attempts_taken ?? ''}" ${sim ? 'disabled' : ''}></td>
       <td><select class="grid-input wide" id="rt-${g.id}" onchange="toggleWinner(${g.id})">
         <option value="normal" ${rt === 'normal' ? 'selected' : ''}>Normal</option>
         <option value="FR" ${rt === 'FR' ? 'selected' : ''}>FR</option>
         <option value="FS" ${rt === 'FS' ? 'selected' : ''}>FS</option>
       </select></td>
-      <td><select class="grid-input wide" id="wn-${g.id}" ${rt === 'normal' ? 'disabled' : ''}>
+      <td><select class="grid-input wide" id="wn-${g.id}" ${rt === 'FR' ? '' : 'disabled'}>
         <option value="">—</option>
         <option value="home" ${g.winner_side === 'home' ? 'selected' : ''}>${esc(g.home_abbrev)}</option>
         <option value="away" ${g.winner_side === 'away' ? 'selected' : ''}>${esc(g.away_abbrev)}</option>
@@ -1014,7 +1015,16 @@ function renderResults(games) {
   }).join('');
 }
 function toggleWinner(id) {
-  document.getElementById(`wn-${id}`).disabled = document.getElementById(`rt-${id}`).value === 'normal';
+  const rt = document.getElementById(`rt-${id}`).value;
+  const wn = document.getElementById(`wn-${id}`);
+  const at = document.getElementById(`at-${id}`);
+  // Only a forfeit (FR) forces a winner; FS/normal derive it from the score.
+  wn.disabled = rt !== 'FR';
+  if (rt !== 'FR') wn.value = '';
+  // Forfeits and fair sims have no play attempts.
+  const sim = rt === 'FR' || rt === 'FS';
+  at.disabled = sim;
+  if (sim) at.value = 0;
 }
 function readResultRow(id) {
   return {

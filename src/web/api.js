@@ -599,16 +599,22 @@ function applyResult(seasonId, gameId, body) {
   if (!game || game.season_id !== seasonId) throw new Error('Game not found');
   const resultType = body.resultType || 'normal';
   const winnerSide = body.winnerSide || null;
-  if ((resultType === 'FR' || resultType === 'FS') && !winnerSide) {
-    throw new Error('A winner is required for forfeit (FR) and fair-sim (FS) results');
+  const homeScore = body.homeScore != null && body.homeScore !== '' ? Number(body.homeScore) : null;
+  const awayScore = body.awayScore != null && body.awayScore !== '' ? Number(body.awayScore) : null;
+
+  // Only a forfeit forces a winner; normal and fair-sim are decided by the score.
+  if (resultType === 'FR' && !winnerSide) {
+    throw new Error('A winner is required for a forfeit (FR) result');
   }
-  recordGameResult(game.id, {
-    homeScore: body.homeScore != null && body.homeScore !== '' ? Number(body.homeScore) : null,
-    awayScore: body.awayScore != null && body.awayScore !== '' ? Number(body.awayScore) : null,
-    attemptsTaken: body.attempts != null && body.attempts !== '' ? Number(body.attempts) : null,
-    resultType,
-    winnerSide,
-  });
+  if ((resultType === 'normal' || resultType === 'FS') && (homeScore == null || awayScore == null)) {
+    throw new Error('Both scores are required for normal and fair-sim (FS) results');
+  }
+
+  // Forfeits and fair sims have no play attempts.
+  const sim = resultType === 'FR' || resultType === 'FS';
+  const attemptsTaken = sim ? 0 : (body.attempts != null && body.attempts !== '' ? Number(body.attempts) : null);
+
+  recordGameResult(game.id, { homeScore, awayScore, attemptsTaken, resultType, winnerSide });
 }
 
 router.post('/guilds/:guildId/seasons/:seasonId/games/:gameId/result', requireGuildAccess, (req, res) => {

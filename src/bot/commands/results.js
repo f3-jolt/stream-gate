@@ -32,7 +32,7 @@ function gameLabel(g) {
 }
 
 function deriveWinnerSide(homeScore, awayScore, resultType, winnerSide) {
-  if (resultType === 'FR' || resultType === 'FS') return winnerSide;
+  if (resultType === 'FR') return winnerSide; // only forfeits force a winner
   if (homeScore == null || awayScore == null) return null;
   if (homeScore > awayScore) return 'home';
   if (awayScore > homeScore) return 'away';
@@ -58,7 +58,7 @@ module.exports = {
             { name: 'Forfeit Result (FR)', value: 'FR' },
             { name: 'Fair Sim (FS)', value: 'FS' },
           ))
-        .addStringOption(o => o.setName('winner').setDescription('Winner (required for FR/FS)').setRequired(false)
+        .addStringOption(o => o.setName('winner').setDescription('Winner (required for FR only)').setRequired(false)
           .addChoices({ name: 'Home', value: 'home' }, { name: 'Away', value: 'away' }))
     )
     // schedule
@@ -148,18 +148,22 @@ async function handleRecord(interaction) {
   const resultType = interaction.options.getString('result_type') || 'normal';
   const winner = interaction.options.getString('winner');
 
-  if ((resultType === 'FR' || resultType === 'FS') && !winner) {
-    return interaction.reply({ content: 'A `winner` is required for Forfeit (FR) and Fair Sim (FS) results.', flags: 64 });
+  if (resultType === 'FR' && !winner) {
+    return interaction.reply({ content: 'A `winner` is required for a Forfeit (FR) result.', flags: 64 });
   }
-  if (resultType === 'normal' && (homeScore == null || awayScore == null)) {
-    return interaction.reply({ content: 'For a normal result, both `home_score` and `away_score` are required.', flags: 64 });
+  if ((resultType === 'normal' || resultType === 'FS') && (homeScore == null || awayScore == null)) {
+    return interaction.reply({ content: 'Both `home_score` and `away_score` are required for normal and Fair Sim (FS) results.', flags: 64 });
   }
+
+  // Forfeits and fair sims have no play attempts.
+  const sim = resultType === 'FR' || resultType === 'FS';
+  const attemptsTaken = sim ? 0 : (attempts ?? null);
 
   try {
     recordGameResult(game.id, {
       homeScore: homeScore ?? null,
       awayScore: awayScore ?? null,
-      attemptsTaken: attempts ?? null,
+      attemptsTaken,
       resultType,
       winnerSide: winner,
     });
@@ -176,7 +180,7 @@ async function handleRecord(interaction) {
         { name: 'Winner', value: winnerAbbrev, inline: true },
         { name: 'Type', value: resultType, inline: true },
       );
-    if (attempts != null) embed.addFields({ name: 'Attempts', value: String(attempts), inline: true });
+    if (attemptsTaken != null) embed.addFields({ name: 'Attempts', value: String(attemptsTaken), inline: true });
 
     logger.info('Result recorded via Discord', { adminId: interaction.user.id, league: league.abbr, gameId: game.id, resultType });
     await interaction.reply({ embeds: [embed], flags: 64 });

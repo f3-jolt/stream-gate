@@ -670,7 +670,9 @@ const recordGameResult = db.transaction((gameId, { homeScore = null, awayScore =
   // a manual flag set in the schedule builder.
   const homeCoach = getAssignmentCoachId(g.season_id, g.home_abbrev);
   const awayCoach = getAssignmentCoachId(g.season_id, g.away_abbrev);
-  const ws = (resultType === 'FR' || resultType === 'FS') ? winnerSide : null;
+  // Only a forfeit (FR) carries a forced winner. Normal and fair-sim (FS) derive
+  // the winner from the score, so winner_side stays null for them.
+  const ws = resultType === 'FR' ? winnerSide : null;
   return db.prepare(`
     UPDATE games SET
       home_score = ?, away_score = ?, attempts_taken = ?,
@@ -685,9 +687,12 @@ const recordGameResult = db.transaction((gameId, { homeScore = null, awayScore =
 // A game counts once it's resolved: a forfeit/fair-sim with a winner, or a
 // normal game with both scores. winner is winner_side for FR/FS, else by score.
 
-const PLAYED_FILTER = "(g.result_type IN ('FR','FS') OR (g.home_score IS NOT NULL AND g.away_score IS NOT NULL))";
+// Resolved = a forfeit with a forced winner, or any game with both scores
+// (normal and fair-sim are decided by the score).
+const PLAYED_FILTER = "((g.result_type = 'FR' AND g.winner_side IS NOT NULL) OR (g.home_score IS NOT NULL AND g.away_score IS NOT NULL))";
 
 // Per-side (one row per team per resolved game). `meSide` is 'home' | 'away'.
+// Only FR uses winner_side; normal and FS compare scores.
 function sideSelect(meSide) {
   const me = meSide === 'home' ? 'home' : 'away';
   const opp = meSide === 'home' ? 'away' : 'home';
@@ -695,11 +700,11 @@ function sideSelect(meSide) {
     SELECT g.season_id AS season_id, g.week AS week,
       g.${me}_abbrev AS team, g.${me}_coach_id AS coach_id,
       COALESCE(g.${me}_score, 0) AS pf, COALESCE(g.${opp}_score, 0) AS pa,
-      CASE WHEN g.result_type IN ('FR','FS') THEN (CASE WHEN g.winner_side = '${me}' THEN 1 ELSE 0 END)
+      CASE WHEN g.result_type = 'FR' THEN (CASE WHEN g.winner_side = '${me}' THEN 1 ELSE 0 END)
            WHEN g.${me}_score > g.${opp}_score THEN 1 ELSE 0 END AS won,
-      CASE WHEN g.result_type IN ('FR','FS') THEN (CASE WHEN g.winner_side = '${opp}' THEN 1 ELSE 0 END)
+      CASE WHEN g.result_type = 'FR' THEN (CASE WHEN g.winner_side = '${opp}' THEN 1 ELSE 0 END)
            WHEN g.${opp}_score > g.${me}_score THEN 1 ELSE 0 END AS lost,
-      CASE WHEN g.result_type = 'normal' AND g.${me}_score = g.${opp}_score THEN 1 ELSE 0 END AS tied
+      CASE WHEN g.result_type != 'FR' AND g.${me}_score = g.${opp}_score THEN 1 ELSE 0 END AS tied
     FROM games g WHERE __SCOPE__ AND ${PLAYED_FILTER}
   `;
 }
