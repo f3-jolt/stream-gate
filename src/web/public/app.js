@@ -731,6 +731,8 @@ async function assignCoach(coachId) {
 let scheduleCoachedSet = new Set();
 let scheduleSubjectCoached = false;
 let oppMetaTimers = {};
+let seasonGames = [];      // all games in the season (for scheduling-rule checks)
+let weekBookedMap = {};    // week -> Set(abbrev) booked by non-subject matchups
 
 function logoUrl(abbrev) { return `/api/guilds/${currentGuildId}/team-logo/${encodeURIComponent(abbrev)}`; }
 
@@ -767,8 +769,52 @@ async function loadTeamSchedule() {
   const tb = document.getElementById('team-sched-tbody');
   updateScheduleBanner(team);
   if (!team || !currentSeasonId) { tb.innerHTML = ''; return; }
-  const res = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/team-schedule?team=${encodeURIComponent(team)}`);
-  renderTeamScheduleGrid(team, await res.json());
+  // Load this team's schedule + the whole season's games (for the rule checks).
+  const [schedRes, allRes] = await Promise.all([
+    fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/team-schedule?team=${encodeURIComponent(team)}`),
+    fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/games`),
+  ]);
+  seasonGames = await allRes.json();
+  computeWeekBooked(team);
+  renderTeamScheduleGrid(team, await schedRes.json());
+}
+
+// Teams already booked each week by matchups NOT involving the subject team —
+// those can't be picked as the subject's opponent that week (rule 2).
+function computeWeekBooked(team) {
+  const T = team.toUpperCase();
+  weekBookedMap = {};
+  for (const g of seasonGames) {
+    if (g.home_abbrev === T || g.away_abbrev === T) continue;
+    (weekBookedMap[g.week] ||= new Set()).add(g.home_abbrev);
+    weekBookedMap[g.week].add(g.away_abbrev);
+  }
+}
+
+// Abbrevs that may NOT be picked for row `w`: the subject itself (rule 1),
+// teams busy that week (rule 2), and teams already on the subject's grid (rule 3).
+function excludedForRow(w) {
+  const T = (document.getElementById('sched-team').value || '').toUpperCase();
+  const set = new Set([T]);
+  (weekBookedMap[w] || []).forEach(a => set.add(a));
+  for (let i = 0; i <= 14; i++) {
+    if (i === w) continue;
+    const v = (document.getElementById(`opp-${i}`)?.value || '').trim().toUpperCase();
+    if (v) set.add(v);
+  }
+  return set;
+}
+
+// Opponent catalog search, filtered to only valid (selectable) teams for this row.
+function teamSearchForRow(q, w) {
+  clearTimeout(teamSearchTimer);
+  teamSearchTimer = setTimeout(async () => {
+    const res = await fetch(`/api/guilds/${currentGuildId}/team-search?q=${encodeURIComponent(q)}`);
+    const excl = excludedForRow(w);
+    const teams = (await res.json()).filter(t => !excl.has(t.value.toUpperCase()));
+    document.getElementById('team-options').innerHTML =
+      teams.map(t => `<option value="${esc(t.value)}">${esc(t.name)}</option>`).join('');
+  }, 150);
 }
 
 // Header banner: selected team's logo + name over its color scheme.
@@ -832,7 +878,7 @@ function renderTeamScheduleGrid(team, games) {
 // (hidden for a BYE), refresh the logo, and shade the cell with the opponent colors.
 function onOpponentChange(w) {
   const val = (document.getElementById(`opp-${w}`).value || '').trim();
-  teamSearch(val);
+  teamSearchForRow(val, w);
   markUserDefault(w);
   const has = !!val;
   document.getElementById(`sidewrap-${w}`).style.display = has ? '' : 'none';
@@ -864,9 +910,34 @@ function markUserDefault(w) {
   cb.checked = scheduleSubjectCoached && scheduleCoachedSet.has(opp);
 }
 
+// Validate the grid against the scheduling rules before sending (the server also
+// enforces them, but catching here keeps the in-progress edits from being lost).
+function validateSchedule(team) {
+  const T = team.toUpperCase();
+  const seen = new Map(); // opponent abbrev -> week already scheduled
+  // Seed with the subject's postseason opponents (not editable in the 0–14 grid).
+  for (const g of seasonGames) {
+    if (g.week > 14 && (g.home_abbrev === T || g.away_abbrev === T)) {
+      seen.set(g.home_abbrev === T ? g.away_abbrev : g.home_abbrev, g.week);
+    }
+  }
+  for (let w = 0; w <= 14; w++) {
+    const opp = (document.getElementById(`opp-${w}`).value || '').trim().toUpperCase();
+    if (!opp) continue;
+    if (opp === T) return `Week ${w}: a team can't play itself.`;
+    if (seen.has(opp)) return `${opp} is scheduled more than once (weeks ${seen.get(opp)} and ${w}) — no rematches.`;
+    if ((weekBookedMap[w] || new Set()).has(opp)) return `${opp} is already booked in week ${w} by another matchup.`;
+    seen.set(opp, w);
+  }
+  return null;
+}
+
 async function saveTeamSchedule() {
   const team = document.getElementById('sched-team').value;
   if (!team) return;
+  const err = validateSchedule(team);
+  if (err) { flash(err, 'error', 'sched-result'); return; }
+
   const weeks = [];
   for (let w = 0; w <= 14; w++) {
     const opp = (document.getElementById(`opp-${w}`).value || '').trim().toUpperCase();

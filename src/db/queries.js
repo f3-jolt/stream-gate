@@ -572,34 +572,48 @@ function getTeamSchedule(seasonId, teamAbbrev) {
   `).all({ seasonId, t });
 }
 
-// Set (or clear) a team's game for one week. BYE = no opponent. Enforces one game
-// per team per week by removing any existing game that week involving either team.
-const setTeamWeekGame = db.transaction((seasonId, week, teamAbbrev, { opponentAbbrev, isHome = true, isUserGame = null }) => {
-  const t = teamAbbrev.toUpperCase();
-  // Clear the subject team's existing game this week.
+// ── Scheduling-rule helpers ──
+function _deleteTeamWeek(seasonId, week, abbrev) {
   db.prepare('DELETE FROM games WHERE season_id = ? AND week = ? AND (home_abbrev = ? OR away_abbrev = ?)')
-    .run(seasonId, week, t, t);
+    .run(seasonId, week, abbrev, abbrev);
+}
+function _isWeekBusy(seasonId, week, abbrev) {
+  return !!db.prepare('SELECT 1 FROM games WHERE season_id = ? AND week = ? AND (home_abbrev = ? OR away_abbrev = ?)')
+    .get(seasonId, week, abbrev, abbrev);
+}
+function _alreadyPlays(seasonId, a, b) {
+  return !!db.prepare(`SELECT 1 FROM games WHERE season_id = ?
+    AND ((home_abbrev = ? AND away_abbrev = ?) OR (home_abbrev = ? AND away_abbrev = ?))`)
+    .get(seasonId, a, b, b, a);
+}
 
-  if (!opponentAbbrev) return; // BYE — nothing more to do
-
+// Enforces the scheduling rules (after clearing the subject's own game that week):
+// 1) can't play itself, 2) opponent must be open that week, 3) no rematch in the season.
+function _placeGame(seasonId, week, T, opponentAbbrev, isHome, isUserGame) {
+  if (!opponentAbbrev) return; // BYE
   const opp = opponentAbbrev.toUpperCase();
-  if (opp === t) throw new Error('A team cannot play itself');
-  // Clear the opponent's existing game this week too (no double-booking).
-  db.prepare('DELETE FROM games WHERE season_id = ? AND week = ? AND (home_abbrev = ? OR away_abbrev = ?)')
-    .run(seasonId, week, opp, opp);
-
-  const home = isHome ? t : opp;
-  const away = isHome ? opp : t;
+  if (opp === T) throw new Error('A team cannot play itself.');
+  if (_isWeekBusy(seasonId, week, opp)) throw new Error(`${opp} is already scheduled in week ${week}.`);
+  if (_alreadyPlays(seasonId, T, opp)) throw new Error(`${T} already plays ${opp} this season (no rematches).`);
+  const home = isHome ? T : opp;
+  const away = isHome ? opp : T;
   insertGame(seasonId, week, home, away, week >= 15 ? 1 : 0, isUserGame);
+}
+
+// Set (or clear) a single team's game for one week, enforcing the scheduling rules.
+const setTeamWeekGame = db.transaction((seasonId, week, teamAbbrev, { opponentAbbrev, isHome = true, isUserGame = null }) => {
+  const T = teamAbbrev.toUpperCase();
+  _deleteTeamWeek(seasonId, week, T);
+  _placeGame(seasonId, week, T, opponentAbbrev || null, isHome, isUserGame);
 });
 
 const bulkSetTeamSchedule = db.transaction((seasonId, teamAbbrev, weeks) => {
+  const T = teamAbbrev.toUpperCase();
+  // Clear all of T's games for the weeks being saved FIRST, so re-inserting
+  // doesn't trip the rematch/busy checks on T's own prior games.
+  for (const w of weeks) _deleteTeamWeek(seasonId, w.week, T);
   for (const w of weeks) {
-    setTeamWeekGame(seasonId, w.week, teamAbbrev, {
-      opponentAbbrev: w.opponent || null,
-      isHome: w.isHome,
-      isUserGame: w.isUserGame,
-    });
+    _placeGame(seasonId, w.week, T, (w.opponent || null), w.isHome, w.isUserGame);
   }
 });
 

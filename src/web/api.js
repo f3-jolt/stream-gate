@@ -573,7 +573,11 @@ router.post('/guilds/:guildId/seasons/:seasonId/team-schedule', requireGuildAcce
     }
   }
 
-  bulkSetTeamSchedule(info.season.id, team, weeks);
+  try {
+    bulkSetTeamSchedule(info.season.id, team, weeks);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
   logger.info('Team schedule saved', { adminId: req.session.user.id, seasonId: info.season.id, team, weeks: weeks.length });
   res.json({ ok: true });
 });
