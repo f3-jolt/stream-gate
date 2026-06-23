@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, ModalBuilder, ActionRowBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const {
   getGuildSettings,
   getAllLeagues,
@@ -46,12 +46,9 @@ module.exports = {
     // record
     .addSubcommand(sub =>
       sub.setName('record')
-        .setDescription('Record the result of a scheduled game')
+        .setDescription('Record the result of a scheduled game (opens a form for the scores)')
         .addStringOption(o => o.setName('league').setDescription('League').setRequired(true).setAutocomplete(true))
         .addStringOption(o => o.setName('game').setDescription('Scheduled game').setRequired(true).setAutocomplete(true))
-        .addIntegerOption(o => o.setName('home_score').setDescription('Home team score').setRequired(false))
-        .addIntegerOption(o => o.setName('away_score').setDescription('Away team score').setRequired(false))
-        .addIntegerOption(o => o.setName('attempts').setDescription('Attempts taken').setRequired(false))
         .addStringOption(o => o.setName('result_type').setDescription('Result type (default: normal)').setRequired(false)
           .addChoices(
             { name: 'Normal', value: 'normal' },
@@ -121,6 +118,9 @@ module.exports = {
       default:         return interaction.reply({ content: 'Unknown subcommand.', flags: 64 });
     }
   },
+
+  // Called from interactionCreate for the `results:record:*` modal submit.
+  handleModal,
 };
 
 function resolveSeason(interaction) {
@@ -132,8 +132,11 @@ function resolveSeason(interaction) {
   return { league, season };
 }
 
+const lbl45 = s => (s.length > 45 ? s.slice(0, 45) : s);
+
+// Opens a modal whose score fields are labeled with the actual team names.
 async function handleRecord(interaction) {
-  const { league, season, error } = resolveSeason(interaction);
+  const { season, error } = resolveSeason(interaction);
   if (error) return interaction.reply({ content: error, flags: 64 });
 
   const gameId = Number(interaction.options.getString('game'));
@@ -142,31 +145,65 @@ async function handleRecord(interaction) {
     return interaction.reply({ content: 'Game not found in the current season. Pick one from autocomplete.', flags: 64 });
   }
 
-  const homeScore = interaction.options.getInteger('home_score');
-  const awayScore = interaction.options.getInteger('away_score');
-  const attempts = interaction.options.getInteger('attempts');
   const resultType = interaction.options.getString('result_type') || 'normal';
-  const winner = interaction.options.getString('winner');
-
+  const winner = interaction.options.getString('winner') || '';
   if (resultType === 'FR' && !winner) {
-    return interaction.reply({ content: 'A `winner` is required for a Forfeit (FR) result.', flags: 64 });
+    return interaction.reply({ content: 'Pick a `winner` for a Forfeit (FR) result, then run the command.', flags: 64 });
+  }
+
+  const homeName = getTeamByAbbrev(game.home_abbrev)?.name || game.home_abbrev;
+  const awayName = getTeamByAbbrev(game.away_abbrev)?.name || game.away_abbrev;
+
+  const modal = new ModalBuilder()
+    .setCustomId(`results:record:${gameId}:${resultType}:${winner || '-'}`)
+    .setTitle(lbl45(`Result — ${game.away_abbrev} @ ${game.home_abbrev}`));
+
+  const rows = [
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder().setCustomId('home_score').setLabel(lbl45(`${homeName} score`))
+        .setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(4).setPlaceholder('e.g. 31')),
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder().setCustomId('away_score').setLabel(lbl45(`${awayName} score`))
+        .setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(4).setPlaceholder('e.g. 24')),
+  ];
+  if (resultType === 'normal') {
+    rows.push(new ActionRowBuilder().addComponents(
+      new TextInputBuilder().setCustomId('attempts').setLabel('Attempts')
+        .setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(4).setPlaceholder('e.g. 1')));
+  }
+  modal.addComponents(...rows);
+  await interaction.showModal(modal);
+}
+
+// Handles the modal submitted from /results record.
+async function handleModal(interaction) {
+  // customId: results:record:<gameId>:<resultType>:<winner|->
+  const [, , gameIdRaw, resultType = 'normal', winnerRaw] = interaction.customId.split(':');
+  const winner = winnerRaw && winnerRaw !== '-' ? winnerRaw : null;
+  const game = getGameById(Number(gameIdRaw));
+  if (!game) return interaction.reply({ content: 'Game not found.', flags: 64 });
+
+  const num = raw => { const t = (raw ?? '').trim(); return t === '' ? null : Number(t); };
+  const homeScore = num(interaction.fields.getTextInputValue('home_score'));
+  const awayScore = num(interaction.fields.getTextInputValue('away_score'));
+  let attemptsRaw = '';
+  try { attemptsRaw = interaction.fields.getTextInputValue('attempts'); } catch { /* no attempts field for FR/FS */ }
+
+  if ([homeScore, awayScore].some(s => s != null && Number.isNaN(s))) {
+    return interaction.reply({ content: 'Scores must be whole numbers.', flags: 64 });
   }
   if ((resultType === 'normal' || resultType === 'FS') && (homeScore == null || awayScore == null)) {
-    return interaction.reply({ content: 'Both `home_score` and `away_score` are required for normal and Fair Sim (FS) results.', flags: 64 });
+    return interaction.reply({ content: 'Both scores are required for normal and Fair Sim (FS) results.', flags: 64 });
   }
 
-  // Forfeits and fair sims have no play attempts.
   const sim = resultType === 'FR' || resultType === 'FS';
-  const attemptsTaken = sim ? 0 : (attempts ?? null);
+  const attemptsTaken = sim ? 0 : num(attemptsRaw);
+  if (attemptsTaken != null && Number.isNaN(attemptsTaken)) {
+    return interaction.reply({ content: 'Attempts must be a whole number.', flags: 64 });
+  }
 
   try {
-    recordGameResult(game.id, {
-      homeScore: homeScore ?? null,
-      awayScore: awayScore ?? null,
-      attemptsTaken,
-      resultType,
-      winnerSide: winner,
-    });
+    recordGameResult(game.id, { homeScore, awayScore, attemptsTaken, resultType, winnerSide: winner });
 
     const winSide = deriveWinnerSide(homeScore, awayScore, resultType, winner);
     const winnerAbbrev = winSide === 'home' ? game.home_abbrev : winSide === 'away' ? game.away_abbrev : 'Tie';
@@ -182,10 +219,10 @@ async function handleRecord(interaction) {
       );
     if (attemptsTaken != null) embed.addFields({ name: 'Attempts', value: String(attemptsTaken), inline: true });
 
-    logger.info('Result recorded via Discord', { adminId: interaction.user.id, league: league.abbr, gameId: game.id, resultType });
+    logger.info('Result recorded via Discord modal', { adminId: interaction.user.id, gameId: game.id, resultType });
     await interaction.reply({ embeds: [embed], flags: 64 });
   } catch (err) {
-    logger.error('results record error', { error: err.message });
+    logger.error('results modal record error', { error: err.message });
     await interaction.reply({ content: `Failed: ${err.message}`, flags: 64 });
   }
 }

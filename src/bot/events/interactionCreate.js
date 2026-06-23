@@ -42,6 +42,21 @@ module.exports = {
       return;
     }
 
+    // Modal submits: results:record:* → the /results command's modal handler
+    if (interaction.isModalSubmit() && interaction.customId.startsWith('results:')) {
+      const command = interaction.client.commands.get('results');
+      if (command?.handleModal) {
+        try {
+          await command.handleModal(interaction);
+        } catch (err) {
+          if (err.code === 10062) return;
+          logger.error('Modal submit error', { customId: interaction.customId, error: err.message });
+          try { await interaction.reply({ content: 'An error occurred saving that result.', flags: 64 }); } catch { /* expired */ }
+        }
+      }
+      return;
+    }
+
     // Disambiguation buttons: route_<guildId>_<leagueId>_<streamId>
     if (interaction.isButton() && interaction.customId.startsWith('route_')) {
       await handleRouteButton(interaction);
