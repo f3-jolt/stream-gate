@@ -2,6 +2,7 @@
 
 const express = require('express');
 const axios = require('axios');
+const { ChannelType } = require('discord.js');
 const { db } = require('../db/database');
 const {
   getAllLeagues,
@@ -137,10 +138,8 @@ router.post('/guilds/:guildId/leagues', requireGuildAccess, (req, res) => {
 
 router.put('/guilds/:guildId/leagues/:leagueId', requireGuildAccess, (req, res) => {
   const { guildId, leagueId } = req.params;
-  const league = getLeagueById(Number(leagueId));
-  if (!league || league.guild_id !== guildId) {
-    return res.status(404).json({ error: 'League not found' });
-  }
+  const league = leagueInGuild(leagueId, guildId);
+  if (!league) return res.status(404).json({ error: 'League not found' });
 
   const name = String(req.body.name ?? '').trim();
   if (!name) return res.status(400).json({ error: 'Name is required' });
@@ -177,10 +176,8 @@ router.put('/guilds/:guildId/leagues/:leagueId', requireGuildAccess, (req, res) 
 // Soft delete — flips active to 0. Nothing is removed from the database.
 router.delete('/guilds/:guildId/leagues/:leagueId', requireGuildAccess, (req, res) => {
   const { guildId, leagueId } = req.params;
-  const league = getLeagueById(Number(leagueId));
-  if (!league || league.guild_id !== guildId) {
-    return res.status(404).json({ error: 'League not found' });
-  }
+  const league = leagueInGuild(leagueId, guildId);
+  if (!league) return res.status(404).json({ error: 'League not found' });
 
   setLeagueActive(league.id, false);
   logger.info('Web portal deactivated league', {
@@ -191,10 +188,8 @@ router.delete('/guilds/:guildId/leagues/:leagueId', requireGuildAccess, (req, re
 
 router.post('/guilds/:guildId/leagues/:leagueId/restore', requireGuildAccess, (req, res) => {
   const { guildId, leagueId } = req.params;
-  const league = getLeagueById(Number(leagueId));
-  if (!league || league.guild_id !== guildId) {
-    return res.status(404).json({ error: 'League not found' });
-  }
+  const league = leagueInGuild(leagueId, guildId);
+  if (!league) return res.status(404).json({ error: 'League not found' });
 
   setLeagueActive(league.id, true);
   logger.info('Web portal reactivated league', {
@@ -515,6 +510,41 @@ router.get('/guilds/:guildId/team-logo/:abbrev', requireGuildAccess, (req, res) 
     return res.sendFile(p);
   }
   return res.status(404).end();
+});
+
+// Channel + role picker data for the league form. The Guilds intent keeps these
+// cached, so this is a local read in the common case.
+router.get('/guilds/:guildId/discord/channels-roles', requireGuildAccess, async (req, res) => {
+  try {
+    const client = require('../bot/client');
+    const guild = client.guilds.cache.get(req.params.guildId)
+      || await client.guilds.fetch(req.params.guildId).catch(() => null);
+    if (!guild) return res.status(404).json({ error: 'Bot is not in this server' });
+
+    const channels = [...(await guild.channels.fetch()).values()].filter(Boolean);
+    const byPosition = (a, b) => a.rawPosition - b.rawPosition;
+
+    // Streams and advance messages can only be posted to text-like channels.
+    const postable = channels
+      .filter(c => c.type === ChannelType.GuildText || c.type === ChannelType.GuildAnnouncement)
+      .sort(byPosition)
+      .map(c => ({ id: c.id, name: c.name, category: c.parent?.name ?? null }));
+
+    const categories = channels
+      .filter(c => c.type === ChannelType.GuildCategory)
+      .sort(byPosition)
+      .map(c => ({ id: c.id, name: c.name }));
+
+    const roles = [...(await guild.roles.fetch()).values()]
+      .filter(r => r.id !== guild.id) // @everyone
+      .sort((a, b) => b.position - a.position)
+      .map(r => ({ id: r.id, name: r.name }));
+
+    res.json({ channels: postable, categories, roles });
+  } catch (err) {
+    logger.error('channels-roles fetch error', { error: err.message, guildId: req.params.guildId });
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Discord member lookup (username/nickname prefix). Uses the REST member search —

@@ -6,6 +6,7 @@ let allUsers = [];
 let allLeagues = [];            // active only — everything outside the Leagues tab
 let allLeaguesWithInactive = []; // Leagues tab, so deactivated ones can be restored
 let editingLeagueId = null;
+let discordMeta = null;         // { channels, categories, roles } for the current guild
 let allStreams = [];
 let userSort = { col: 'discord_username', dir: 1 };
 let streamSort = { col: 'posted_at', dir: -1 };
@@ -94,6 +95,7 @@ async function fetchMe() {
 async function onGuildChange() {
   const sel = document.getElementById('guild-select');
   currentGuildId = sel.value;
+  discordMeta = null; // channels and roles are per-guild
   if (!currentGuildId) { document.getElementById('main-content').style.display = 'none'; return; }
   document.getElementById('main-content').style.display = 'block';
   await Promise.all([loadUsers(), loadLeagues(), loadStreams(), loadHealth()]);
@@ -249,10 +251,28 @@ async function loadLeagues() {
   const res = await fetch(`/api/guilds/${currentGuildId}/leagues?includeInactive=1`);
   allLeaguesWithInactive = await res.json();
   allLeagues = allLeaguesWithInactive.filter(l => l.active);
+  // Best-effort: lets the cards show channel/role names instead of raw ids.
+  await loadDiscordMeta().catch(() => {});
   renderLeagues(allLeaguesWithInactive);
   populateAdvanceLeagues(allLeagues);
   populateLeagueFilters(allLeagues);
   populateDynLeagues(allLeagues);
+}
+
+// Resolve a snowflake to its Discord name, falling back to the raw id when the
+// bot can't see it (deleted channel, missing permissions, bot offline).
+function discordLabel(id, kind) {
+  if (!id) return '<span class="text-muted">—</span>';
+  const lists = {
+    channel: [discordMeta?.channels, '#'],
+    category: [discordMeta?.categories, ''],
+    role: [discordMeta?.roles, '@'],
+  };
+  const [list, prefix] = lists[kind];
+  const match = list?.find(x => x.id === id);
+  return match
+    ? `<code>${prefix}${esc(match.name)}</code>`
+    : `<code title="Not visible to the bot">${esc(id)}</code>`;
 }
 
 function renderLeagues(leagues) {
@@ -273,11 +293,12 @@ function renderLeagues(leagues) {
         </span>
       </div>
       <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:8px; font-size:13px;">
-        <div><span class="text-muted">PPV Channel:</span> ${l.ppv_channel_id ? `<code>#${l.ppv_channel_id}</code>` : '<span class="text-muted">—</span>'}</div>
-        <div><span class="text-muted">Advance Channel:</span> ${l.advance_channel_id ? `<code>#${l.advance_channel_id}</code>` : '<span class="text-muted">—</span>'}</div>
-        <div><span class="text-muted">User Channel:</span> ${l.user_channel_id ? `<code>#${l.user_channel_id}</code>` : '<span class="text-muted">—</span>'}</div>
-        <div><span class="text-muted">Ping Role:</span> ${l.ping_role_id ? `<code>${l.ping_role_id}</code>` : '<span class="text-muted">—</span>'}</div>
-        <div><span class="text-muted">Staff Role:</span> ${l.staff_role_id ? `<code>${l.staff_role_id}</code>` : '<span class="text-muted">—</span>'}</div>
+        <div><span class="text-muted">PPV Channel:</span> ${discordLabel(l.ppv_channel_id, 'channel')}</div>
+        <div><span class="text-muted">Advance Channel:</span> ${discordLabel(l.advance_channel_id, 'channel')}</div>
+        <div><span class="text-muted">User Channel:</span> ${discordLabel(l.user_channel_id, 'channel')}</div>
+        <div><span class="text-muted">Category:</span> ${discordLabel(l.category_id, 'category')}</div>
+        <div><span class="text-muted">Ping Role:</span> ${discordLabel(l.ping_role_id, 'role')}</div>
+        <div><span class="text-muted">Staff Role:</span> ${discordLabel(l.staff_role_id, 'role')}</div>
         <div><span class="text-muted">Schedule URL:</span> ${l.schedule_url ? '<span class="badge badge-green">✓ Set</span>' : '<span class="text-muted">—</span>'}</div>
       </div>
     </div>
@@ -286,9 +307,44 @@ function renderLeagues(leagues) {
 
 // ── League modal ───────────────────────────────────────────────────────────────
 
+async function loadDiscordMeta() {
+  if (discordMeta) return discordMeta;
+  const res = await fetch(`/api/guilds/${currentGuildId}/discord/channels-roles`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  discordMeta = data;
+  return discordMeta;
+}
+
+// Channels arrive sorted by Discord position; group them under their category
+// heading the way Discord's own sidebar does.
+function channelOptions(channels) {
+  const groups = new Map();
+  for (const c of channels) {
+    const key = c.category ?? '';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(c);
+  }
+  return [...groups.entries()].map(([category, items]) => {
+    const opts = items.map(c => `<option value="${esc(c.id)}"># ${esc(c.name)}</option>`).join('');
+    return category ? `<optgroup label="${esc(category)}">${opts}</optgroup>` : opts;
+  }).join('');
+}
+
+// A saved channel/role can be deleted in Discord, or invisible to the bot. Keep
+// the raw id as an option so editing an unrelated field never silently drops it.
+function fillPicker(elementId, optionsHtml, knownIds, currentId, placeholder) {
+  const el = document.getElementById(elementId);
+  const orphan = currentId && !knownIds.has(currentId)
+    ? `<option value="${esc(currentId)}">Unknown — ${esc(currentId)}</option>`
+    : '';
+  el.innerHTML = `<option value="">${esc(placeholder)}</option>${orphan}${optionsHtml}`;
+  el.value = currentId ?? '';
+}
+
 // leagueId omitted => create mode; the keyword is the stream-routing key and is
 // immutable once streams have been posted against it.
-function openLeagueModal(leagueId = null) {
+async function openLeagueModal(leagueId = null) {
   const league = leagueId ? allLeaguesWithInactive.find(l => l.id === leagueId) : null;
   editingLeagueId = league ? league.id : null;
 
@@ -301,13 +357,33 @@ function openLeagueModal(leagueId = null) {
   document.getElementById('league-abbr-hint').style.display = league ? 'none' : '';
 
   document.getElementById('league-name').value = league?.name ?? '';
-  document.getElementById('league-ppv-channel').value = league?.ppv_channel_id ?? '';
-  document.getElementById('league-category').value = league?.category_id ?? '';
-  document.getElementById('league-ping-role').value = league?.ping_role_id ?? '';
-  document.getElementById('league-advance-channel').value = league?.advance_channel_id ?? '';
-  document.getElementById('league-user-channel').value = league?.user_channel_id ?? '';
-  document.getElementById('league-staff-role').value = league?.staff_role_id ?? '';
   document.getElementById('league-schedule-url').value = league?.schedule_url ?? '';
+
+  const warning = document.getElementById('league-discord-warning');
+  warning.style.display = 'none';
+
+  let meta = { channels: [], categories: [], roles: [] };
+  try {
+    meta = await loadDiscordMeta();
+  } catch (err) {
+    warning.textContent = `Couldn't load channels and roles from Discord (${err.message}). `
+      + 'Existing selections are preserved, but new ones cannot be picked until the bot is back online.';
+    warning.style.display = '';
+  }
+
+  const chanIds = new Set(meta.channels.map(c => c.id));
+  const catIds = new Set(meta.categories.map(c => c.id));
+  const roleIds = new Set(meta.roles.map(r => r.id));
+  const chanOpts = channelOptions(meta.channels);
+  const catOpts = meta.categories.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+  const roleOpts = meta.roles.map(r => `<option value="${esc(r.id)}">@${esc(r.name)}</option>`).join('');
+
+  fillPicker('league-ppv-channel', chanOpts, chanIds, league?.ppv_channel_id, 'Select a channel…');
+  fillPicker('league-advance-channel', chanOpts, chanIds, league?.advance_channel_id, '— None —');
+  fillPicker('league-user-channel', chanOpts, chanIds, league?.user_channel_id, '— None —');
+  fillPicker('league-category', catOpts, catIds, league?.category_id, '— None —');
+  fillPicker('league-ping-role', roleOpts, roleIds, league?.ping_role_id, '— None —');
+  fillPicker('league-staff-role', roleOpts, roleIds, league?.staff_role_id, '— None —');
 
   document.getElementById('league-modal').classList.add('open');
 }
@@ -331,7 +407,7 @@ async function submitLeague() {
   };
 
   if (!body.name || !body.abbr || !body.ppvChannelId) {
-    alert('Name, Keyword, and PPV Channel ID are required.');
+    alert('Name, Keyword, and PPV Channel are required.');
     return;
   }
 
