@@ -98,6 +98,9 @@
 
         <!-- LEAGUES TAB -->
         <div id="tab-leagues" class="tab-panel">
+          <div class="search-row">
+            <button class="btn btn-primary" onclick="openLeagueModal()">+ New League</button>
+          </div>
           <div id="leagues-list"></div>
         </div>
 
@@ -360,6 +363,56 @@
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="closeRegisterModal()">Cancel</button>
         <button class="btn btn-primary" onclick="submitRegister()">Register</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LEAGUE MODAL -->
+  <div id="league-modal" class="modal-backdrop">
+    <div class="modal" style="width:560px;">
+      <h3 id="league-modal-title">New League</h3>
+      <div class="form-grid">
+        <div class="form-field">
+          <label>League Name</label>
+          <input id="league-name" type="text" placeholder="e.g. Alpha Dynasty">
+        </div>
+        <div class="form-field">
+          <label>Keyword</label>
+          <input id="league-abbr" type="text" placeholder="e.g. ALPHA">
+          <small id="league-abbr-hint" class="text-muted">Secondary keyword in the stream title. Cannot be changed later.</small>
+        </div>
+        <div class="form-field full">
+          <label>PPV Channel ID</label>
+          <input id="league-ppv-channel" type="text" placeholder="Channel snowflake ID (required)">
+        </div>
+        <div class="form-field">
+          <label>Category ID (optional)</label>
+          <input id="league-category" type="text" placeholder="Gates self-registration">
+        </div>
+        <div class="form-field">
+          <label>Ping Role ID (optional)</label>
+          <input id="league-ping-role" type="text" placeholder="Pinged on each stream">
+        </div>
+        <div class="form-field">
+          <label>Advance Channel ID (optional)</label>
+          <input id="league-advance-channel" type="text" placeholder="Week advance messages">
+        </div>
+        <div class="form-field">
+          <label>User Channel ID (optional)</label>
+          <input id="league-user-channel" type="text" placeholder="User scheduling updates">
+        </div>
+        <div class="form-field">
+          <label>Staff Role ID (optional)</label>
+          <input id="league-staff-role" type="text" placeholder="Staff role for this league">
+        </div>
+        <div class="form-field">
+          <label>Schedule URL (optional)</label>
+          <input id="league-schedule-url" type="text" placeholder="Published CSV URL">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeLeagueModal()">Cancel</button>
+        <button id="league-save-btn" class="btn btn-primary" onclick="submitLeague()">Create League</button>
       </div>
     </div>
   </div>

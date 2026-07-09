@@ -30,6 +30,7 @@ function initSchema() {
       abbr             TEXT NOT NULL,
       ppv_channel_id   TEXT NOT NULL,
       category_id      TEXT,
+      active           INTEGER NOT NULL DEFAULT 1,
       created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(guild_id, abbr)
     );
@@ -203,6 +204,7 @@ function runMigrations() {
     `ALTER TABLE stream_posts ADD COLUMN discord_message_id TEXT`,
     `ALTER TABLE stream_posts ADD COLUMN discord_channel_id TEXT`,
     `ALTER TABLE leagues ADD COLUMN advance_template TEXT`,
+    `ALTER TABLE leagues ADD COLUMN active INTEGER NOT NULL DEFAULT 1`,
   ];
 
   for (const sql of migrations) {

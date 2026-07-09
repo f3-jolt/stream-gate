@@ -7,6 +7,9 @@ const {
   getAllLeagues,
   getLeagueById,
   getLeagueByAbbr,
+  addLeague,
+  updateLeague,
+  setLeagueActive,
   getHealthStats,
   getOrCreateUser,
   addUserPlatform,
@@ -62,7 +65,142 @@ router.get('/guilds', (req, res) => {
 // ── Guild-scoped routes ───────────────────────────────────────────────────────
 
 router.get('/guilds/:guildId/leagues', requireGuildAccess, (req, res) => {
-  res.json(getAllLeagues(req.params.guildId));
+  const includeInactive = req.query.includeInactive === '1';
+  res.json(getAllLeagues(req.params.guildId, { includeInactive }));
+});
+
+// ── League CRUD ───────────────────────────────────────────────────────────────
+
+// Discord snowflakes arrive as strings from the portal's text inputs. Empty
+// means "not set", which is a null column rather than an empty string.
+function snowflake(value) {
+  const trimmed = String(value ?? '').trim();
+  if (!trimmed) return null;
+  if (!/^\d{5,25}$/.test(trimmed)) throw new Error(`"${trimmed}" is not a valid Discord ID`);
+  return trimmed;
+}
+
+router.post('/guilds/:guildId/leagues', requireGuildAccess, (req, res) => {
+  const { guildId } = req.params;
+  const name = String(req.body.name ?? '').trim();
+  const abbr = String(req.body.abbr ?? '').trim().toUpperCase();
+
+  if (!name || !abbr) {
+    return res.status(400).json({ error: 'Name and keyword are required' });
+  }
+  if (!/^[A-Z0-9]{1,16}$/.test(abbr)) {
+    return res.status(400).json({ error: 'Keyword must be 1-16 letters or digits' });
+  }
+
+  // A deactivated league still holds its (guild_id, abbr) slot, so surface that
+  // instead of the raw UNIQUE violation.
+  const existing = getLeagueByAbbr(guildId, abbr, { includeInactive: true });
+  if (existing) {
+    return res.status(409).json({
+      error: existing.active
+        ? `A league with keyword ${abbr} already exists.`
+        : `Keyword ${abbr} belongs to the deactivated league "${existing.name}". Reactivate it instead.`,
+    });
+  }
+
+  let ids;
+  try {
+    ids = {
+      ppvChannelId: snowflake(req.body.ppvChannelId),
+      categoryId: snowflake(req.body.categoryId),
+      pingRoleId: snowflake(req.body.pingRoleId),
+      advanceChannelId: snowflake(req.body.advanceChannelId),
+      userChannelId: snowflake(req.body.userChannelId),
+      staffRoleId: snowflake(req.body.staffRoleId),
+    };
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  if (!ids.ppvChannelId) {
+    return res.status(400).json({ error: 'PPV channel ID is required' });
+  }
+
+  const scheduleUrl = String(req.body.scheduleUrl ?? '').trim() || null;
+
+  try {
+    const result = addLeague(
+      guildId, name, abbr, ids.ppvChannelId, ids.categoryId, ids.pingRoleId,
+      ids.advanceChannelId, ids.userChannelId, scheduleUrl, ids.staffRoleId,
+    );
+    logger.info('Web portal created league', { adminId: req.session.user.id, guildId, name, abbr });
+    res.json({ ok: true, league: getLeagueById(Number(result.lastInsertRowid)) });
+  } catch (err) {
+    logger.error('Web portal create league failed', { error: err.message, guildId, abbr });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/guilds/:guildId/leagues/:leagueId', requireGuildAccess, (req, res) => {
+  const { guildId, leagueId } = req.params;
+  const league = getLeagueById(Number(leagueId));
+  if (!league || league.guild_id !== guildId) {
+    return res.status(404).json({ error: 'League not found' });
+  }
+
+  const name = String(req.body.name ?? '').trim();
+  if (!name) return res.status(400).json({ error: 'Name is required' });
+
+  let updates;
+  try {
+    updates = {
+      name,
+      ppvChannelId: snowflake(req.body.ppvChannelId),
+      categoryId: snowflake(req.body.categoryId),
+      pingRoleId: snowflake(req.body.pingRoleId),
+      advanceChannelId: snowflake(req.body.advanceChannelId),
+      userChannelId: snowflake(req.body.userChannelId),
+      staffRoleId: snowflake(req.body.staffRoleId),
+      scheduleUrl: String(req.body.scheduleUrl ?? '').trim() || null,
+    };
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+  if (!updates.ppvChannelId) {
+    return res.status(400).json({ error: 'PPV channel ID is required' });
+  }
+
+  try {
+    updateLeague(league.id, updates);
+    logger.info('Web portal updated league', { adminId: req.session.user.id, guildId, leagueId: league.id });
+    res.json({ ok: true, league: getLeagueById(league.id) });
+  } catch (err) {
+    logger.error('Web portal update league failed', { error: err.message, guildId, leagueId });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Soft delete — flips active to 0. Nothing is removed from the database.
+router.delete('/guilds/:guildId/leagues/:leagueId', requireGuildAccess, (req, res) => {
+  const { guildId, leagueId } = req.params;
+  const league = getLeagueById(Number(leagueId));
+  if (!league || league.guild_id !== guildId) {
+    return res.status(404).json({ error: 'League not found' });
+  }
+
+  setLeagueActive(league.id, false);
+  logger.info('Web portal deactivated league', {
+    adminId: req.session.user.id, guildId, leagueId: league.id, abbr: league.abbr,
+  });
+  res.json({ ok: true });
+});
+
+router.post('/guilds/:guildId/leagues/:leagueId/restore', requireGuildAccess, (req, res) => {
+  const { guildId, leagueId } = req.params;
+  const league = getLeagueById(Number(leagueId));
+  if (!league || league.guild_id !== guildId) {
+    return res.status(404).json({ error: 'League not found' });
+  }
+
+  setLeagueActive(league.id, true);
+  logger.info('Web portal reactivated league', {
+    adminId: req.session.user.id, guildId, leagueId: league.id, abbr: league.abbr,
+  });
+  res.json({ ok: true });
 });
 
 router.get('/guilds/:guildId/health', requireGuildAccess, (req, res) => {
@@ -79,7 +217,7 @@ router.get('/guilds/:guildId/users', requireGuildAccess, (req, res) => {
     JOIN user_leagues ul ON ul.user_id = u.id
     JOIN leagues l ON l.id = ul.league_id
     LEFT JOIN user_platforms up ON up.user_id = u.id
-    WHERE l.guild_id = ? AND u.active = 1
+    WHERE l.guild_id = ? AND u.active = 1 AND l.active = 1
     ORDER BY u.discord_username
   `).all(req.params.guildId);
 
@@ -141,6 +279,9 @@ router.post('/guilds/:guildId/register', requireGuildAccess, async (req, res) =>
   const league = getLeagueById(Number(leagueId));
   if (!league || league.guild_id !== guildId) {
     return res.status(404).json({ error: 'League not found' });
+  }
+  if (!league.active) {
+    return res.status(400).json({ error: `League "${league.name}" is deactivated.` });
   }
 
   try {

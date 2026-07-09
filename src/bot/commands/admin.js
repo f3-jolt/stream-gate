@@ -501,7 +501,7 @@ async function handleAuditLeague(interaction) {
 }
 
 async function handleLeagues(interaction) {
-  const leagues = getAllLeagues(interaction.guildId);
+  const leagues = getAllLeagues(interaction.guildId, { includeInactive: true });
 
   if (!leagues.length) {
     return interaction.reply({
@@ -515,7 +515,7 @@ async function handleLeagues(interaction) {
     .setColor(0x5865F2)
     .setDescription(
       leagues.map(l =>
-        `**${l.name}** \`keyword: ${l.abbr}\`\nPPV: <#${l.ppv_channel_id}>${l.category_id ? `\nAccess gate: <#${l.category_id}>` : ''}`
+        `**${l.name}** \`keyword: ${l.abbr}\`${l.active ? '' : ' — *deactivated*'}\nPPV: <#${l.ppv_channel_id}>${l.category_id ? `\nAccess gate: <#${l.category_id}>` : ''}`
       ).join('\n\n')
     )
     .setTimestamp();

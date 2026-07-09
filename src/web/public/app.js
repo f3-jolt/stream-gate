@@ -3,7 +3,9 @@
 let currentUser = null;
 let currentGuildId = null;
 let allUsers = [];
-let allLeagues = [];
+let allLeagues = [];            // active only — everything outside the Leagues tab
+let allLeaguesWithInactive = []; // Leagues tab, so deactivated ones can be restored
+let editingLeagueId = null;
 let allStreams = [];
 let userSort = { col: 'discord_username', dir: 1 };
 let streamSort = { col: 'posted_at', dir: -1 };
@@ -242,9 +244,12 @@ async function submitRegister() {
 // ── Leagues ────────────────────────────────────────────────────────────────────
 
 async function loadLeagues() {
-  const res = await fetch(`/api/guilds/${currentGuildId}/leagues`);
-  allLeagues = await res.json();
-  renderLeagues(allLeagues);
+  // The Leagues tab shows deactivated leagues so they can be reactivated;
+  // everything else in the portal only ever sees the active ones.
+  const res = await fetch(`/api/guilds/${currentGuildId}/leagues?includeInactive=1`);
+  allLeaguesWithInactive = await res.json();
+  allLeagues = allLeaguesWithInactive.filter(l => l.active);
+  renderLeagues(allLeaguesWithInactive);
   populateAdvanceLeagues(allLeagues);
   populateLeagueFilters(allLeagues);
   populateDynLeagues(allLeagues);
@@ -254,8 +259,19 @@ function renderLeagues(leagues) {
   const el = document.getElementById('leagues-list');
   if (!leagues.length) { el.innerHTML = '<p class="text-muted">No leagues configured.</p>'; return; }
   el.innerHTML = leagues.map(l => `
-    <div class="card">
-      <div class="card-title">${esc(l.name)} <span class="badge badge-blue">${esc(l.abbr)}</span></div>
+    <div class="card" ${l.active ? '' : 'style="opacity:.6;"'}>
+      <div class="card-title">
+        ${esc(l.name)} <span class="badge badge-blue">${esc(l.abbr)}</span>
+        ${l.active ? '' : '<span class="badge badge-red">Deactivated</span>'}
+        <span style="float:right; display:flex; gap:8px;">
+          ${l.active ? `
+            <button class="btn btn-ghost btn-sm" onclick="openLeagueModal(${l.id})">Edit</button>
+            <button class="btn btn-danger btn-sm" onclick="deactivateLeague(${l.id})">Deactivate</button>
+          ` : `
+            <button class="btn btn-primary btn-sm" onclick="restoreLeague(${l.id})">Reactivate</button>
+          `}
+        </span>
+      </div>
       <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:8px; font-size:13px;">
         <div><span class="text-muted">PPV Channel:</span> ${l.ppv_channel_id ? `<code>#${l.ppv_channel_id}</code>` : '<span class="text-muted">—</span>'}</div>
         <div><span class="text-muted">Advance Channel:</span> ${l.advance_channel_id ? `<code>#${l.advance_channel_id}</code>` : '<span class="text-muted">—</span>'}</div>
@@ -266,6 +282,111 @@ function renderLeagues(leagues) {
       </div>
     </div>
   `).join('');
+}
+
+// ── League modal ───────────────────────────────────────────────────────────────
+
+// leagueId omitted => create mode; the keyword is the stream-routing key and is
+// immutable once streams have been posted against it.
+function openLeagueModal(leagueId = null) {
+  const league = leagueId ? allLeaguesWithInactive.find(l => l.id === leagueId) : null;
+  editingLeagueId = league ? league.id : null;
+
+  document.getElementById('league-modal-title').textContent = league ? `Edit ${league.name}` : 'New League';
+  document.getElementById('league-save-btn').textContent = league ? 'Save Changes' : 'Create League';
+
+  const abbrInput = document.getElementById('league-abbr');
+  abbrInput.value = league ? league.abbr : '';
+  abbrInput.disabled = Boolean(league);
+  document.getElementById('league-abbr-hint').style.display = league ? 'none' : '';
+
+  document.getElementById('league-name').value = league?.name ?? '';
+  document.getElementById('league-ppv-channel').value = league?.ppv_channel_id ?? '';
+  document.getElementById('league-category').value = league?.category_id ?? '';
+  document.getElementById('league-ping-role').value = league?.ping_role_id ?? '';
+  document.getElementById('league-advance-channel').value = league?.advance_channel_id ?? '';
+  document.getElementById('league-user-channel').value = league?.user_channel_id ?? '';
+  document.getElementById('league-staff-role').value = league?.staff_role_id ?? '';
+  document.getElementById('league-schedule-url').value = league?.schedule_url ?? '';
+
+  document.getElementById('league-modal').classList.add('open');
+}
+
+function closeLeagueModal() {
+  document.getElementById('league-modal').classList.remove('open');
+  editingLeagueId = null;
+}
+
+async function submitLeague() {
+  const body = {
+    name: document.getElementById('league-name').value.trim(),
+    abbr: document.getElementById('league-abbr').value.trim().toUpperCase(),
+    ppvChannelId: document.getElementById('league-ppv-channel').value.trim(),
+    categoryId: document.getElementById('league-category').value.trim(),
+    pingRoleId: document.getElementById('league-ping-role').value.trim(),
+    advanceChannelId: document.getElementById('league-advance-channel').value.trim(),
+    userChannelId: document.getElementById('league-user-channel').value.trim(),
+    staffRoleId: document.getElementById('league-staff-role').value.trim(),
+    scheduleUrl: document.getElementById('league-schedule-url').value.trim(),
+  };
+
+  if (!body.name || !body.abbr || !body.ppvChannelId) {
+    alert('Name, Keyword, and PPV Channel ID are required.');
+    return;
+  }
+
+  const editing = editingLeagueId !== null;
+  const url = editing
+    ? `/api/guilds/${currentGuildId}/leagues/${editingLeagueId}`
+    : `/api/guilds/${currentGuildId}/leagues`;
+
+  const res = await fetch(url, {
+    method: editing ? 'PUT' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+
+  if (data.ok) {
+    flash(editing ? `Updated ${body.name}` : `Created ${body.name}`);
+    closeLeagueModal();
+    await loadLeagues();
+  } else {
+    flash(data.error || 'Save failed', 'error');
+  }
+}
+
+async function deactivateLeague(leagueId) {
+  const league = allLeaguesWithInactive.find(l => l.id === leagueId);
+  if (!league) return;
+  if (!confirm(
+    `Deactivate ${league.name}?\n\n`
+    + 'It will be hidden from registration, stream routing, and every dropdown. '
+    + 'Members, seasons, and stream history are preserved and it can be reactivated later.'
+  )) return;
+
+  const res = await fetch(`/api/guilds/${currentGuildId}/leagues/${leagueId}`, { method: 'DELETE' });
+  const data = await res.json();
+  if (data.ok) {
+    flash(`Deactivated ${league.name}`);
+    await Promise.all([loadLeagues(), loadUsers()]);
+  } else {
+    flash(data.error || 'Deactivate failed', 'error');
+  }
+}
+
+async function restoreLeague(leagueId) {
+  const league = allLeaguesWithInactive.find(l => l.id === leagueId);
+  if (!league) return;
+
+  const res = await fetch(`/api/guilds/${currentGuildId}/leagues/${leagueId}/restore`, { method: 'POST' });
+  const data = await res.json();
+  if (data.ok) {
+    flash(`Reactivated ${league.name}`);
+    await Promise.all([loadLeagues(), loadUsers()]);
+  } else {
+    flash(data.error || 'Reactivate failed', 'error');
+  }
 }
 
 function populateAdvanceLeagues(leagues) {
@@ -1195,6 +1316,9 @@ document.getElementById('season-modal').addEventListener('click', e => {
 });
 document.getElementById('coach-detail-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeCoachDetail();
+});
+document.getElementById('league-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeLeagueModal();
 });
 // Dismiss the Discord-user typeahead when clicking elsewhere
 document.addEventListener('click', e => {

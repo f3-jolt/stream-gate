@@ -39,7 +39,7 @@ function getUserLeagues(discordId, guildId) {
     FROM leagues l
     JOIN user_leagues ul ON ul.league_id = l.id
     JOIN users u ON u.id = ul.user_id
-    WHERE u.discord_id = ? AND l.guild_id = ?
+    WHERE u.discord_id = ? AND l.guild_id = ? AND l.active = 1
   `).all(discordId, guildId);
 }
 
@@ -50,7 +50,7 @@ function getUserLeaguesByGuild(discordId) {
     FROM leagues l
     JOIN user_leagues ul ON ul.league_id = l.id
     JOIN users u ON u.id = ul.user_id
-    WHERE u.discord_id = ?
+    WHERE u.discord_id = ? AND l.active = 1
   `).all(discordId);
 
   const byGuild = new Map();
@@ -149,12 +149,20 @@ function getAllPlatformUsers(platform) {
 
 // ── Leagues ───────────────────────────────────────────────────────────────────
 
-function getAllLeagues(guildId) {
-  return db.prepare('SELECT * FROM leagues WHERE guild_id = ? ORDER BY name').all(guildId);
+// Deactivated leagues are hidden from every consumer by default. Pass
+// includeInactive only from admin surfaces that need to reactivate them.
+function getAllLeagues(guildId, { includeInactive = false } = {}) {
+  const activeClause = includeInactive ? '' : 'AND active = 1';
+  return db.prepare(
+    `SELECT * FROM leagues WHERE guild_id = ? ${activeClause} ORDER BY active DESC, name`
+  ).all(guildId);
 }
 
-function getLeagueByAbbr(guildId, abbr) {
-  return db.prepare('SELECT * FROM leagues WHERE guild_id = ? AND abbr = ?').get(guildId, abbr.toUpperCase());
+function getLeagueByAbbr(guildId, abbr, { includeInactive = false } = {}) {
+  const activeClause = includeInactive ? '' : 'AND active = 1';
+  return db.prepare(
+    `SELECT * FROM leagues WHERE guild_id = ? AND abbr = ? ${activeClause}`
+  ).get(guildId, abbr.toUpperCase());
 }
 
 function getLeagueById(id) {
@@ -167,7 +175,7 @@ function addLeague(guildId, name, abbr, ppvChannelId, categoryId = null, pingRol
   ).run(guildId, name, abbr.toUpperCase(), ppvChannelId, categoryId, pingRoleId, advanceChannelId, userChannelId, scheduleUrl, staffRoleId);
 }
 
-function updateLeague(leagueId, { pingRoleId, ppvChannelId, name, advanceChannelId, userChannelId, scheduleUrl, staffRoleId } = {}) {
+function updateLeague(leagueId, { pingRoleId, ppvChannelId, name, categoryId, advanceChannelId, userChannelId, scheduleUrl, staffRoleId } = {}) {
   if (pingRoleId !== undefined) {
     db.prepare('UPDATE leagues SET ping_role_id = ? WHERE id = ?').run(pingRoleId, leagueId);
   }
@@ -176,6 +184,9 @@ function updateLeague(leagueId, { pingRoleId, ppvChannelId, name, advanceChannel
   }
   if (name !== undefined) {
     db.prepare('UPDATE leagues SET name = ? WHERE id = ?').run(name, leagueId);
+  }
+  if (categoryId !== undefined) {
+    db.prepare('UPDATE leagues SET category_id = ? WHERE id = ?').run(categoryId, leagueId);
   }
   if (advanceChannelId !== undefined) {
     db.prepare('UPDATE leagues SET advance_channel_id = ? WHERE id = ?').run(advanceChannelId, leagueId);
@@ -189,6 +200,12 @@ function updateLeague(leagueId, { pingRoleId, ppvChannelId, name, advanceChannel
   if (staffRoleId !== undefined) {
     db.prepare('UPDATE leagues SET staff_role_id = ? WHERE id = ?').run(staffRoleId, leagueId);
   }
+}
+
+// Soft delete: membership, seasons, and stream history are all preserved so the
+// league can be brought back intact.
+function setLeagueActive(leagueId, active) {
+  return db.prepare('UPDATE leagues SET active = ? WHERE id = ?').run(active ? 1 : 0, leagueId);
 }
 
 function setLeagueAdvanceTemplate(leagueId, template) {
@@ -309,25 +326,25 @@ function updateCustomTeam(currentAbbrev, { name, abbrev, mascot, colors, logo } 
 
 function getLeagueByUserChannel(guildId, channelId) {
   return db.prepare(
-    'SELECT * FROM leagues WHERE guild_id = ? AND user_channel_id = ?'
+    'SELECT * FROM leagues WHERE guild_id = ? AND user_channel_id = ? AND active = 1'
   ).get(guildId, channelId);
 }
 
 function getLeagueByPpvChannel(guildId, channelId) {
   return db.prepare(
-    'SELECT * FROM leagues WHERE guild_id = ? AND ppv_channel_id = ?'
+    'SELECT * FROM leagues WHERE guild_id = ? AND ppv_channel_id = ? AND active = 1'
   ).get(guildId, channelId) || null;
 }
 
 function getAllLeaguesWithUserChannel() {
   return db.prepare(
-    "SELECT * FROM leagues WHERE user_channel_id IS NOT NULL AND user_channel_id != ''"
+    "SELECT * FROM leagues WHERE user_channel_id IS NOT NULL AND user_channel_id != '' AND active = 1"
   ).all();
 }
 
 function getAllLeaguesWithPpvChannel() {
   return db.prepare(
-    "SELECT * FROM leagues WHERE ppv_channel_id IS NOT NULL AND ppv_channel_id != ''"
+    "SELECT * FROM leagues WHERE ppv_channel_id IS NOT NULL AND ppv_channel_id != '' AND active = 1"
   ).all();
 }
 
@@ -340,7 +357,7 @@ function getHealthStats(guildId) {
     FROM users u
     JOIN user_leagues ul ON ul.user_id = u.id
     JOIN leagues l ON l.id = ul.league_id
-    WHERE l.guild_id = ? AND u.active = 1
+    WHERE l.guild_id = ? AND u.active = 1 AND l.active = 1
   `).get(guildId).count;
 
   const twitchSubs = db.prepare("SELECT COUNT(*) as count FROM user_platforms WHERE platform = 'twitch' AND subscription_id IS NOT NULL").get().count;
@@ -788,6 +805,7 @@ module.exports = {
   getLeagueById,
   addLeague,
   updateLeague,
+  setLeagueActive,
   setLeagueAdvanceTemplate,
   getUsersInLeague,
   updateUserPlatformUsername,
