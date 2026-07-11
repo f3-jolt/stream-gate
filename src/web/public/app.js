@@ -139,7 +139,7 @@ function applyUserFilters() {
     const matchesText = !q ||
       u.discord_username.toLowerCase().includes(q) ||
       u.discord_id.includes(q) ||
-      u.league_name.toLowerCase().includes(q) ||
+      (u.league_name || '').toLowerCase().includes(q) ||
       (u.team_name || '').toLowerCase().includes(q);
     const matchesLeague = !leagueFilter || String(u.league_id) === leagueFilter;
     return matchesText && matchesLeague;
@@ -174,20 +174,27 @@ function renderUsers(users) {
     const platforms = u.platforms.map(p =>
       `<span class="badge badge-${p.platform === 'twitch' ? 'blue' : 'red'}">${p.platform}: ${p.platform_username}${p.subscription_id ? ' ✓' : ''}</span>`
     ).join(' ');
+    const leagueCell = u.league_id
+      ? `<span class="badge badge-blue">${esc(u.league_abbr)}</span> ${esc(u.league_name)}`
+      : '<span class="badge">Unassigned</span>';
+    const removeBtn = u.league_id
+      ? `<button class="btn btn-danger btn-sm"
+          onclick="removeFromLeague('${esc(u.discord_id)}', ${u.league_id}, '${esc(u.discord_username)}', '${esc(u.league_name)}')">
+          Remove
+        </button>`
+      : '';
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>
         <div style="font-weight:600;">${esc(u.discord_username)}</div>
         <div class="text-muted" style="font-size:11px;">${esc(u.discord_id)}</div>
       </td>
-      <td><span class="badge badge-blue">${esc(u.league_abbr)}</span> ${esc(u.league_name)}</td>
+      <td>${leagueCell}</td>
       <td>${u.team_name ? esc(u.team_name) : '<span class="text-muted">—</span>'}</td>
       <td>${platforms || '<span class="text-muted">None</span>'}</td>
-      <td>
-        <button class="btn btn-danger btn-sm"
-          onclick="removeFromLeague('${esc(u.discord_id)}', ${u.league_id}, '${esc(u.discord_username)}', '${esc(u.league_name)}')">
-          Remove
-        </button>
+      <td style="white-space:nowrap;">
+        <button class="btn btn-ghost btn-sm" onclick="openStreamModal('${esc(u.discord_id)}')">Edit</button>
+        ${removeBtn}
       </td>
     `;
     tbody.appendChild(tr);
@@ -200,6 +207,53 @@ async function removeFromLeague(discordId, leagueId, username, leagueName) {
   const data = await res.json();
   if (data.ok) { flash(`Removed ${username} from ${leagueName}`); await loadUsers(); }
   else flash(data.error || 'Remove failed', 'error');
+}
+
+// ── Edit stream details modal ───────────────────────────────────────────────────
+
+let editingStreamDiscordId = null;
+
+function openStreamModal(discordId) {
+  const user = allUsers.find(u => u.discord_id === discordId);
+  if (!user) return;
+  editingStreamDiscordId = discordId;
+
+  const byPlatform = {};
+  for (const p of user.platforms) byPlatform[p.platform] = p.platform_username;
+
+  document.getElementById('stream-modal-user').textContent =
+    `${user.discord_username} (${user.discord_id})`;
+  document.getElementById('stream-twitch').value = byPlatform.twitch || '';
+  document.getElementById('stream-youtube').value = byPlatform.youtube || '';
+  document.getElementById('stream-modal').classList.add('open');
+}
+
+function closeStreamModal() {
+  editingStreamDiscordId = null;
+  document.getElementById('stream-modal').classList.remove('open');
+}
+
+async function submitStreamEdit() {
+  if (!editingStreamDiscordId) return;
+  const twitch = document.getElementById('stream-twitch').value.trim();
+  const youtube = document.getElementById('stream-youtube').value.trim();
+
+  const res = await fetch(
+    `/api/guilds/${currentGuildId}/users/${editingStreamDiscordId}/platforms`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ twitch, youtube }),
+    }
+  );
+  const data = await res.json();
+  if (data.ok) {
+    flash('Stream details updated');
+    closeStreamModal();
+    await loadUsers();
+  } else {
+    flash(data.error || 'Update failed', 'error');
+  }
 }
 
 // ── Register modal ─────────────────────────────────────────────────────────────
@@ -1395,6 +1449,9 @@ document.getElementById('coach-detail-modal').addEventListener('click', e => {
 });
 document.getElementById('league-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeLeagueModal();
+});
+document.getElementById('stream-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeStreamModal();
 });
 // Dismiss the Discord-user typeahead when clicking elsewhere
 document.addEventListener('click', e => {

@@ -367,6 +367,30 @@
     </div>
   </div>
 
+  <!-- EDIT STREAM DETAILS MODAL -->
+  <div id="stream-modal" class="modal-backdrop">
+    <div class="modal">
+      <h3>Edit Stream Details</h3>
+      <p class="text-muted" id="stream-modal-user" style="margin-bottom:16px;"></p>
+      <div class="form-grid">
+        <div class="form-field full">
+          <label>Twitch Username</label>
+          <input id="stream-twitch" type="text" placeholder="e.g. streamerName">
+          <small class="text-muted">Leave blank to remove Twitch.</small>
+        </div>
+        <div class="form-field full">
+          <label>YouTube Username</label>
+          <input id="stream-youtube" type="text" placeholder="e.g. channelHandle">
+          <small class="text-muted">Leave blank to remove YouTube.</small>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeStreamModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="submitStreamEdit()">Save</button>
+      </div>
+    </div>
+  </div>
+
   <!-- LEAGUE MODAL -->
   <div id="league-modal" class="modal-backdrop">
     <div class="modal" style="width:560px;">

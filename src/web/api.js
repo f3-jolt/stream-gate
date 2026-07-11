@@ -14,6 +14,9 @@ const {
   getHealthStats,
   getOrCreateUser,
   addUserPlatform,
+  removeUserPlatform,
+  getUserPlatforms,
+  updateUserPlatformUsername,
   addUserToLeague,
   removeUserFromLeague,
   getUsersInLeague,
@@ -241,7 +244,45 @@ router.get('/guilds/:guildId/users', requireGuildAccess, (req, res) => {
     }
   }
 
-  res.json([...byKey.values()]);
+  // Also surface users who have stream details but no active league membership
+  // in this guild. Platform accounts are global, so an unassigned user has no
+  // guild link — we key them by discord_id alone with null league fields.
+  const unassigned = db.prepare(`
+    SELECT u.discord_id, u.discord_username,
+           up.platform, up.platform_username, up.subscription_id
+    FROM users u
+    JOIN user_platforms up ON up.user_id = u.id
+    WHERE u.active = 1
+      AND NOT EXISTS (
+        SELECT 1 FROM user_leagues ul
+        JOIN leagues l ON l.id = ul.league_id
+        WHERE ul.user_id = u.id AND l.guild_id = ? AND l.active = 1
+      )
+    ORDER BY u.discord_username
+  `).all(req.params.guildId);
+
+  const byUser = new Map();
+  for (const row of unassigned) {
+    if (!byUser.has(row.discord_id)) {
+      byUser.set(row.discord_id, {
+        discord_id: row.discord_id,
+        discord_username: row.discord_username,
+        league_id: null,
+        league_name: null,
+        league_abbr: null,
+        team_name: null,
+        team_abbrev: null,
+        platforms: [],
+      });
+    }
+    byUser.get(row.discord_id).platforms.push({
+      platform: row.platform,
+      platform_username: row.platform_username,
+      subscription_id: row.subscription_id,
+    });
+  }
+
+  res.json([...byKey.values(), ...byUser.values()]);
 });
 
 router.get('/guilds/:guildId/streams', requireGuildAccess, (req, res) => {
@@ -329,6 +370,77 @@ router.delete('/guilds/:guildId/users/:discordId/league/:leagueId', requireGuild
     leagueId,
   });
   res.json({ ok: true });
+});
+
+// ── PUT /api/guilds/:guildId/users/:discordId/platforms ───────────────────────
+// Edit a user's stream details (their Twitch / YouTube usernames). Platform
+// accounts are global, so this reconciles both platforms in one call: a blank
+// value removes that platform, a changed value updates (or adds) it.
+
+router.put('/guilds/:guildId/users/:discordId/platforms', requireGuildAccess, async (req, res) => {
+  const { guildId, discordId } = req.params;
+
+  const user = db.prepare('SELECT id FROM users WHERE discord_id = ?').get(discordId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  const current = {};
+  for (const p of getUserPlatforms(discordId)) current[p.platform] = p.platform_username;
+
+  const changes = [];
+  for (const platform of ['twitch', 'youtube']) {
+    if (!(platform in req.body)) continue; // only touch platforms the client sent
+    const next = String(req.body[platform] || '').trim().replace(/^@/, '').toLowerCase();
+    const existing = current[platform] || '';
+    if (next === existing) continue;
+
+    if (!next) {
+      changes.push({ platform, action: 'removed' });
+    } else if (existing) {
+      changes.push({ platform, action: 'updated', username: next });
+    } else {
+      changes.push({ platform, action: 'added', username: next });
+    }
+  }
+
+  if (!changes.length) return res.json({ ok: true, changes: [] });
+
+  try {
+    for (const change of changes) {
+      if (change.action === 'removed') {
+        removeUserPlatform(discordId, change.platform);
+        continue;
+      }
+
+      if (change.action === 'updated') {
+        updateUserPlatformUsername(discordId, change.platform, change.username);
+      } else {
+        addUserPlatform(discordId, change.platform, change.username, null);
+      }
+
+      if (change.platform === 'youtube' && process.env.YOUTUBE_API_KEY) {
+        const { getChannelIdByHandle, subscribeToChannel } = require('../platforms/youtube/api');
+        const { updateSubscriptionId, updatePlatformUserId } = require('../db/queries');
+        const channelId = await getChannelIdByHandle(change.username).catch(() => null);
+        if (channelId) {
+          await subscribeToChannel(channelId);
+          updateSubscriptionId('youtube', change.username, channelId);
+          updatePlatformUserId('youtube', change.username, channelId);
+        }
+      }
+    }
+
+    logger.info('Web portal updated user stream details', {
+      adminId: req.session.user.id, discordId, guildId, changes,
+    });
+    res.json({ ok: true, changes });
+  } catch (err) {
+    logger.error('Web portal update stream details failed', { error: err.message, discordId, guildId });
+    // A UNIQUE(platform, platform_username) clash means that handle is taken.
+    const taken = /UNIQUE/i.test(err.message);
+    res.status(taken ? 409 : 500).json({
+      error: taken ? 'That platform username is already registered to another user.' : err.message,
+    });
+  }
 });
 
 // ── GET /api/guilds/:guildId/advance/preview ──────────────────────────────────
