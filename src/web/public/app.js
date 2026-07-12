@@ -2,6 +2,8 @@
 
 let currentUser = null;
 let currentGuildId = null;
+let currentLeagueId = null;      // global league scope; null = All Leagues
+let activeTab = 'users';         // which tab is currently shown
 let allUsers = [];
 let allLeagues = [];            // active only — everything outside the Leagues tab
 let allLeaguesWithInactive = []; // Leagues tab, so deactivated ones can be restored
@@ -24,6 +26,8 @@ let summarySort = { col: 'wins', dir: -1 };
 let coachSort = { col: 'wins', dir: -1 };
 
 const DYNASTY_TABS = new Set(['season', 'schedule', 'results', 'summary', 'coaches']);
+// Tabs that act on one specific league and can't operate on "All Leagues".
+const SINGLE_LEAGUE_TABS = new Set(['advance', 'season', 'schedule', 'results', 'summary', 'coaches']);
 const WEEK_LABELS = {
   0:'Week 0',1:'Week 1',2:'Week 2',3:'Week 3',4:'Week 4',5:'Week 5',6:'Week 6',7:'Week 7',
   8:'Week 8',9:'Week 9',10:'Week 10',11:'Week 11',12:'Week 12',13:'Week 13',14:'Week 14',
@@ -96,22 +100,86 @@ async function onGuildChange() {
   const sel = document.getElementById('guild-select');
   currentGuildId = sel.value;
   discordMeta = null; // channels and roles are per-guild
+  currentLeagueId = null; // reset league scope when switching servers
   if (!currentGuildId) { document.getElementById('main-content').style.display = 'none'; return; }
   document.getElementById('main-content').style.display = 'block';
   await Promise.all([loadUsers(), loadLeagues(), loadStreams(), loadHealth()]);
+  renderActiveTab();
 }
 
 function logout() { location.href = '/auth/logout'; }
 
-// ── Tabs ───────────────────────────────────────────────────────────────────────
+// ── Tabs & global league scope ───────────────────────────────────────────────────
 
-function switchTab(name, btn) {
+function switchTab(name) {
+  activeTab = name;
+  renderActiveTab();
+}
+
+// Jump to the league management view (reached via the top-nav Configure button
+// rather than a peer tab).
+function openLeagueConfig() {
+  activeTab = 'leagues';
+  renderActiveTab();
+}
+
+// Single source of truth for which panel is shown, driven by activeTab +
+// the global league selection.
+function renderActiveTab() {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.getElementById(`tab-${name}`).classList.add('active');
-  btn.classList.add('active');
-  document.getElementById('dynasty-bar').style.display = DYNASTY_TABS.has(name) ? 'flex' : 'none';
-  if (DYNASTY_TABS.has(name)) onDynastyTabShown(name);
+  document.getElementById('configure-btn').classList.toggle('active', activeTab === 'leagues');
+  document.querySelector(`.tab-btn[data-tab="${activeTab}"]`)?.classList.add('active');
+
+  // A single-league tab with no league picked shows the prompt instead.
+  const needsLeague = SINGLE_LEAGUE_TABS.has(activeTab) && !currentLeagueId;
+  const panelId = needsLeague ? 'pick-league' : activeTab;
+  document.getElementById(`tab-${panelId}`).classList.add('active');
+
+  const showDynBar = DYNASTY_TABS.has(activeTab) && !needsLeague;
+  document.getElementById('dynasty-bar').style.display = showDynBar ? 'flex' : 'none';
+  if (showDynBar) onDynastyTabShown(activeTab);
+}
+
+function currentLeague() {
+  return allLeagues.find(l => l.id === currentLeagueId) || null;
+}
+
+function populateNavLeague(leagues) {
+  const sel = document.getElementById('nav-league-select');
+  const prev = currentLeagueId;
+  sel.innerHTML = `<option value="">All Leagues</option>` +
+    leagues.map(l => `<option value="${l.id}">${esc(l.name)} (${esc(l.abbr)})</option>`).join('');
+  // Preserve the current pick across reloads when it still exists.
+  if (prev && leagues.some(l => l.id === prev)) {
+    sel.value = String(prev);
+  } else {
+    sel.value = '';
+    currentLeagueId = null;
+  }
+}
+
+function onNavLeagueChange() {
+  const v = document.getElementById('nav-league-select').value;
+  currentLeagueId = v ? Number(v) : null;
+  applyUserFilters();
+  applyStreamFilters();
+  syncDynastyLeague();
+  renderActiveTab();
+}
+
+// Point the dynasty/advance machinery at the globally-selected league.
+function syncDynastyLeague() {
+  currentDynLeagueId = currentLeagueId;
+  const badge = document.getElementById('dyn-league-badge');
+  const lg = currentLeague();
+  if (badge) badge.textContent = lg ? `${lg.name} (${lg.abbr})` : '';
+  if (currentDynLeagueId) {
+    loadSeasons();
+    loadAdvanceTemplate();
+  } else {
+    allSeasons = []; currentSeasonId = null;
+  }
 }
 
 // ── Flash ──────────────────────────────────────────────────────────────────────
@@ -133,7 +201,6 @@ async function loadUsers() {
 
 function applyUserFilters() {
   const q = (document.getElementById('user-search').value || '').toLowerCase();
-  const leagueFilter = document.getElementById('user-league-filter').value;
 
   let filtered = allUsers.filter(u => {
     const matchesText = !q ||
@@ -141,7 +208,7 @@ function applyUserFilters() {
       u.discord_id.includes(q) ||
       (u.league_name || '').toLowerCase().includes(q) ||
       (u.team_name || '').toLowerCase().includes(q);
-    const matchesLeague = !leagueFilter || String(u.league_id) === leagueFilter;
+    const matchesLeague = !currentLeagueId || u.league_id === currentLeagueId;
     return matchesText && matchesLeague;
   });
 
@@ -308,9 +375,8 @@ async function loadLeagues() {
   // Best-effort: lets the cards show channel/role names instead of raw ids.
   await loadDiscordMeta().catch(() => {});
   renderLeagues(allLeaguesWithInactive);
-  populateAdvanceLeagues(allLeagues);
-  populateLeagueFilters(allLeagues);
-  populateDynLeagues(allLeagues);
+  populateNavLeague(allLeagues);
+  syncDynastyLeague();
 }
 
 // Resolve a snowflake to its Discord name, falling back to the raw id when the
@@ -519,17 +585,6 @@ async function restoreLeague(leagueId) {
   }
 }
 
-function populateAdvanceLeagues(leagues) {
-  const sel = document.getElementById('advance-league');
-  sel.innerHTML = leagues.map(l => `<option value="${esc(l.abbr)}">${esc(l.name)} (${esc(l.abbr)})</option>`).join('');
-}
-
-function populateLeagueFilters(leagues) {
-  const opts = leagues.map(l => `<option value="${l.id}">${esc(l.name)} (${esc(l.abbr)})</option>`).join('');
-  document.getElementById('user-league-filter').innerHTML = `<option value="">All Leagues</option>${opts}`;
-  document.getElementById('stream-league-filter').innerHTML = `<option value="">All Leagues</option>${opts}`;
-}
-
 // ── Streams ────────────────────────────────────────────────────────────────────
 
 async function loadStreams() {
@@ -540,14 +595,13 @@ async function loadStreams() {
 
 function applyStreamFilters() {
   const q = (document.getElementById('stream-search').value || '').toLowerCase();
-  const leagueFilter = document.getElementById('stream-league-filter').value;
 
   let filtered = allStreams.filter(s => {
     const matchesText = !q ||
       (s.discord_username || s.discord_user_id).toLowerCase().includes(q) ||
       (s.stream_title || '').toLowerCase().includes(q) ||
       s.platform.toLowerCase().includes(q);
-    const matchesLeague = !leagueFilter || String(s.league_id) === leagueFilter;
+    const matchesLeague = !currentLeagueId || s.league_id === currentLeagueId;
     return matchesText && matchesLeague;
   });
 
@@ -632,7 +686,7 @@ function formatDateOverride() {
 }
 
 async function previewAdvance() {
-  const leagueAbbr   = document.getElementById('advance-league').value;
+  const leagueAbbr   = currentLeague()?.abbr;
   const week         = document.getElementById('advance-week').value;
   const dateOverride = formatDateOverride();
   if (!leagueAbbr) return;
@@ -656,7 +710,7 @@ async function previewAdvance() {
 }
 
 async function postAdvance() {
-  const leagueAbbr   = document.getElementById('advance-league').value;
+  const leagueAbbr   = currentLeague()?.abbr;
   const week         = document.getElementById('advance-week').value;
   const dateOverride = formatDateOverride();
   if (!leagueAbbr) return;
@@ -688,25 +742,6 @@ function buildWeekOptions(selectId) {
   sel.innerHTML = Object.entries(WEEK_LABELS).map(([v, n]) => `<option value="${v}">${n}</option>`).join('');
 }
 function weekLabelFor(v) { return WEEK_LABELS[Number(v)] ?? `Week ${v}`; }
-
-function populateDynLeagues(leagues) {
-  const sel = document.getElementById('dyn-league-select');
-  sel.innerHTML = leagues.map(l => `<option value="${l.id}">${esc(l.name)} (${esc(l.abbr)})</option>`).join('');
-  const tsel = document.getElementById('tmpl-league');
-  tsel.innerHTML = leagues.map(l => `<option value="${l.id}">${esc(l.name)} (${esc(l.abbr)})</option>`).join('');
-  if (leagues.length) {
-    currentDynLeagueId = Number(leagues[0].id);
-    loadSeasons();
-    loadAdvanceTemplate();
-  } else {
-    currentDynLeagueId = null; allSeasons = []; currentSeasonId = null;
-  }
-}
-
-function onDynLeagueChange() {
-  currentDynLeagueId = Number(document.getElementById('dyn-league-select').value);
-  loadSeasons();
-}
 
 function onDynSeasonChange() {
   currentSeasonId = Number(document.getElementById('dyn-season-select').value) || null;
@@ -1379,7 +1414,7 @@ function closeCoachDetail() { document.getElementById('coach-detail-modal').clas
 
 // ── Advancement template ──
 async function loadAdvanceTemplate() {
-  const leagueId = document.getElementById('tmpl-league').value;
+  const leagueId = currentLeagueId;
   if (!leagueId) return;
   const res = await fetch(`/api/guilds/${currentGuildId}/leagues/${leagueId}/advance-template`);
   const data = await res.json();
@@ -1387,7 +1422,8 @@ async function loadAdvanceTemplate() {
   if (data.default) document.getElementById('advance-template').placeholder = data.default;
 }
 async function saveAdvanceTemplate() {
-  const leagueId = document.getElementById('tmpl-league').value;
+  const leagueId = currentLeagueId;
+  if (!leagueId) { flash('Select a league first', 'error', 'tmpl-result'); return; }
   const template = document.getElementById('advance-template').value;
   const res = await fetch(`/api/guilds/${currentGuildId}/leagues/${leagueId}/advance-template`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ template }),

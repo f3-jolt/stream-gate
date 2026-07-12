@@ -41,28 +41,31 @@
         <select id="guild-select" onchange="onGuildChange()">
           <option value="">— select a server —</option>
         </select>
+        <label for="nav-league-select">League:</label>
+        <select id="nav-league-select" onchange="onNavLeagueChange()">
+          <option value="">All Leagues</option>
+        </select>
+        <button id="configure-btn" class="btn btn-ghost btn-sm" onclick="openLeagueConfig()">⚙ Configure</button>
       </div>
 
       <main id="main-content" style="display:none;">
         <div id="flash" class="flash"></div>
 
         <div class="tabs">
-          <button class="tab-btn active" onclick="switchTab('users', this)">Users</button>
-          <button class="tab-btn" onclick="switchTab('leagues', this)">Leagues</button>
-          <button class="tab-btn" onclick="switchTab('streams', this)">Stream History</button>
-          <button class="tab-btn" onclick="switchTab('health', this)">Health</button>
-          <button class="tab-btn" onclick="switchTab('advance', this)">Advance Week</button>
-          <button class="tab-btn" onclick="switchTab('season', this)">Season</button>
-          <button class="tab-btn" onclick="switchTab('schedule', this)">Schedule</button>
-          <button class="tab-btn" onclick="switchTab('results', this)">Results</button>
-          <button class="tab-btn" onclick="switchTab('summary', this)">Summary</button>
-          <button class="tab-btn" onclick="switchTab('coaches', this)">Coaches</button>
+          <button class="tab-btn active" data-tab="users" onclick="switchTab('users')">Users</button>
+          <button class="tab-btn" data-tab="streams" onclick="switchTab('streams')">Stream History</button>
+          <button class="tab-btn" data-tab="health" onclick="switchTab('health')">Health</button>
+          <button class="tab-btn" data-tab="advance" onclick="switchTab('advance')">Advance Week</button>
+          <button class="tab-btn" data-tab="season" onclick="switchTab('season')">Season</button>
+          <button class="tab-btn" data-tab="schedule" onclick="switchTab('schedule')">Schedule</button>
+          <button class="tab-btn" data-tab="results" onclick="switchTab('results')">Results</button>
+          <button class="tab-btn" data-tab="summary" onclick="switchTab('summary')">Summary</button>
+          <button class="tab-btn" data-tab="coaches" onclick="switchTab('coaches')">Coaches</button>
         </div>
 
-        <!-- SHARED DYNASTY SELECTOR BAR (visible only on dynasty tabs) -->
+        <!-- SHARED DYNASTY SEASON BAR (visible only on dynasty tabs, once a league is picked) -->
         <div id="dynasty-bar" class="dyn-bar" style="display:none;">
-          <label>League</label>
-          <select id="dyn-league-select" onchange="onDynLeagueChange()"></select>
+          <span id="dyn-league-badge" class="badge badge-blue"></span>
           <label>Season</label>
           <select id="dyn-season-select" onchange="onDynSeasonChange()"></select>
           <button class="btn btn-ghost btn-sm" onclick="openSeasonModal()">+ Season</button>
@@ -71,13 +74,17 @@
         </div>
         <datalist id="team-options"></datalist>
 
+        <!-- SHARED PROMPT: single-league tab opened while "All Leagues" is selected -->
+        <div id="tab-pick-league" class="tab-panel">
+          <div class="card">
+            <p class="text-muted" style="margin:0;">Select a league from the <strong>League</strong> dropdown at the top to manage this section.</p>
+          </div>
+        </div>
+
         <!-- USERS TAB -->
         <div id="tab-users" class="tab-panel active">
           <div class="search-row">
             <input id="user-search" type="text" placeholder="Search users..." oninput="applyUserFilters()">
-            <select id="user-league-filter" onchange="applyUserFilters()">
-              <option value="">All Leagues</option>
-            </select>
             <button class="btn btn-primary" onclick="openRegisterModal()">+ Register User</button>
           </div>
           <div class="table-wrap">
@@ -108,9 +115,6 @@
         <div id="tab-streams" class="tab-panel">
           <div class="search-row">
             <input id="stream-search" type="text" placeholder="Search streams..." oninput="applyStreamFilters()">
-            <select id="stream-league-filter" onchange="applyStreamFilters()">
-              <option value="">All Leagues</option>
-            </select>
           </div>
           <div class="table-wrap">
             <table>
@@ -139,10 +143,6 @@
             <div class="card-title">Post Week Advancement Message</div>
             <p class="text-muted" style="margin-bottom:16px;">Fetches the schedule cell and posts to the league's advance channel. Creates scheduling threads if a user channel is configured.</p>
             <div class="advance-row">
-              <div class="field-group">
-                <label>League</label>
-                <select id="advance-league"></select>
-              </div>
               <div class="field-group">
                 <label>Week</label>
                 <select id="advance-week">
@@ -193,10 +193,6 @@
           <div class="card">
             <div class="card-title">Advancement Message Template</div>
             <p class="text-muted" style="margin-bottom:12px;">When this league has a current season with games scheduled, the message is built from the database using this template. Tokens: <code>{pingRole}</code>, <code>{weekLabel}</code>, <code>{season}</code>, <code>{userGames}</code>, <code>{cpuGames}</code>, <code>{advanceDate}</code>. The advance deadline auto-fills to 36h out (48h when there are user games). Leave blank to use the default format.</p>
-            <div class="field-group" style="margin-bottom:12px;">
-              <label>League</label>
-              <select id="tmpl-league" onchange="loadAdvanceTemplate()"></select>
-            </div>
             <textarea id="advance-template" class="advance-preview" style="width:100%; min-height:120px;" placeholder="**{weekLabel} Matchups**&#10;&#10;{matchups}"></textarea>
             <div class="modal-actions" style="margin-top:12px;">
               <button class="btn btn-ghost" onclick="loadAdvanceTemplate()">Reset</button>
