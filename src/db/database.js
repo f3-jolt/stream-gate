@@ -182,7 +182,59 @@ function initSchema() {
   `);
 
   runMigrations();
+  migrateLeaguesActiveUnique();
   logger.info('Database schema initialised', { path: dbPath });
+}
+
+// The leagues table historically enforced UNIQUE(guild_id, abbr) across ALL
+// rows, so a deactivated league permanently reserved its keyword. We want a
+// keyword to be unique only among ACTIVE leagues: a deactivated league may
+// share its keyword with a new active one. SQLite can't drop a table-level
+// constraint, so rebuild the table without it and add a partial unique index.
+function migrateLeaguesActiveUnique() {
+  // Idempotent: the partial index is the marker that this migration ran.
+  const alreadyDone = db.prepare(
+    "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_leagues_active_abbr'"
+  ).get();
+  if (alreadyDone) return;
+
+  const tbl = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'leagues'"
+  ).get();
+  if (!tbl) return; // table created fresh below by a future run — nothing to migrate
+
+  const hasTableUnique = /UNIQUE\s*\(\s*guild_id\s*,\s*abbr\s*\)/i.test(tbl.sql);
+
+  // A referenced table can't be dropped while FK enforcement is on. The pragma
+  // is a no-op inside a transaction, so toggle it around the transaction.
+  const fkWasOn = db.pragma('foreign_keys', { simple: true });
+  db.pragma('foreign_keys = OFF');
+  try {
+    db.transaction(() => {
+      if (hasTableUnique) {
+        // Reuse the live CREATE (so every ALTER-added column is preserved),
+        // just stripped of the table-level UNIQUE clause.
+        const newSql = tbl.sql
+          .replace(/CREATE TABLE\s+(?:"leagues"|`leagues`|\[leagues\]|leagues)/i, 'CREATE TABLE leagues_new')
+          .replace(/\s*,\s*UNIQUE\s*\(\s*guild_id\s*,\s*abbr\s*\)/i, '');
+        db.exec(newSql);
+        db.exec('INSERT INTO leagues_new SELECT * FROM leagues');
+        db.exec('DROP TABLE leagues');
+        db.exec('ALTER TABLE leagues_new RENAME TO leagues');
+      }
+      db.exec(
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_leagues_active_abbr ON leagues(guild_id, abbr) WHERE active = 1'
+      );
+    })();
+
+    const violations = db.pragma('foreign_key_check');
+    if (violations.length) {
+      logger.error('Leagues rebuild left foreign-key violations', { violations });
+    }
+  } finally {
+    if (fkWasOn) db.pragma('foreign_keys = ON');
+  }
+  logger.info('Migrated leagues to active-only unique keyword');
 }
 
 // Safe column additions for existing databases

@@ -96,15 +96,11 @@ router.post('/guilds/:guildId/leagues', requireGuildAccess, (req, res) => {
     return res.status(400).json({ error: 'Keyword must be 1-16 letters or digits' });
   }
 
-  // A deactivated league still holds its (guild_id, abbr) slot, so surface that
-  // instead of the raw UNIQUE violation.
-  const existing = getLeagueByAbbr(guildId, abbr, { includeInactive: true });
-  if (existing) {
-    return res.status(409).json({
-      error: existing.active
-        ? `A league with keyword ${abbr} already exists.`
-        : `Keyword ${abbr} belongs to the deactivated league "${existing.name}". Reactivate it instead.`,
-    });
+  // A keyword only needs to be unique among ACTIVE leagues. A deactivated
+  // league sharing the keyword is fine — the new active one takes over routing.
+  const existingActive = getLeagueByAbbr(guildId, abbr);
+  if (existingActive) {
+    return res.status(409).json({ error: `A league with keyword ${abbr} already exists.` });
   }
 
   let ids;
@@ -193,6 +189,15 @@ router.post('/guilds/:guildId/leagues/:leagueId/restore', requireGuildAccess, (r
   const { guildId, leagueId } = req.params;
   const league = leagueInGuild(leagueId, guildId);
   if (!league) return res.status(404).json({ error: 'League not found' });
+
+  // A keyword can be reused by a new active league once the old one was
+  // deactivated, so reactivating would collide. Block it with a clear message.
+  const clash = getLeagueByAbbr(guildId, league.abbr);
+  if (clash && clash.id !== league.id) {
+    return res.status(409).json({
+      error: `Can't reactivate "${league.name}" — keyword ${league.abbr} is now used by the active league "${clash.name}". Deactivate that one first.`,
+    });
+  }
 
   setLeagueActive(league.id, true);
   logger.info('Web portal reactivated league', {
