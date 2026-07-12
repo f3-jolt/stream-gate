@@ -7,6 +7,7 @@ let activeTab = 'users';         // which tab is currently shown
 let allUsers = [];
 let allLeagues = [];            // active only — everything outside the Leagues tab
 let allLeaguesWithInactive = []; // Leagues tab, so deactivated ones can be restored
+let showDeactivatedLeagues = false; // Leagues tab hides deactivated ones until asked
 let editingLeagueId = null;
 let discordMeta = null;         // { channels, categories, roles } for the current guild
 let allStreams = [];
@@ -374,9 +375,30 @@ async function loadLeagues() {
   allLeagues = allLeaguesWithInactive.filter(l => l.active);
   // Best-effort: lets the cards show channel/role names instead of raw ids.
   await loadDiscordMeta().catch(() => {});
-  renderLeagues(allLeaguesWithInactive);
+  renderLeaguesList();
   populateNavLeague(allLeagues);
   syncDynastyLeague();
+}
+
+// Deactivated leagues are hidden by default; the toggle reveals them.
+function renderLeaguesList() {
+  const deactivatedCount = allLeaguesWithInactive.filter(l => !l.active).length;
+  const list = showDeactivatedLeagues
+    ? allLeaguesWithInactive
+    : allLeaguesWithInactive.filter(l => l.active);
+
+  const btn = document.getElementById('toggle-deactivated-btn');
+  btn.style.display = deactivatedCount ? '' : 'none';
+  btn.textContent = showDeactivatedLeagues
+    ? 'Hide deactivated'
+    : `Show deactivated (${deactivatedCount})`;
+
+  renderLeagues(list);
+}
+
+function toggleDeactivatedLeagues() {
+  showDeactivatedLeagues = !showDeactivatedLeagues;
+  renderLeaguesList();
 }
 
 // Resolve a snowflake to its Discord name, falling back to the raw id when the
