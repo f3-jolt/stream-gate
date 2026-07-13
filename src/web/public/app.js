@@ -434,7 +434,7 @@ function applyTeamFilters() {
   btn.textContent = showDeactivatedTeams ? 'Hide deactivated' : `Show deactivated (${deactivatedCount})`;
 
   renderTeams(filtered);
-  updateSortHeaders('teams-table', teamSort);
+  updateSortHeaders('team-catalog-table', teamSort);
 }
 
 function sortTeams(col) {
@@ -449,7 +449,7 @@ function toggleDeactivatedTeams() {
 }
 
 function renderTeams(teams) {
-  const tbody = document.getElementById('teams-tbody');
+  const tbody = document.getElementById('team-catalog-tbody');
   if (!teams.length) {
     tbody.innerHTML = '<tr><td colspan="6" class="text-muted" style="text-align:center;padding:24px;">No teams found</td></tr>';
     return;
@@ -1084,7 +1084,7 @@ function renderSeasonTeams() {
     <tr>
       <td>${teamChip(t.team_abbrev, t.team_name, t.colors)} ${t.is_user_team ? '<span class="badge badge-yellow">user</span>' : ''}</td>
       <td>${t.conference_name ? esc(t.conference_name) : '<span class="text-muted">—</span>'}</td>
-      <td>${t.coach_name ? esc(t.coach_name) : '<span class="text-muted">CPU</span>'}</td>
+      <td>${t.coach_name ? esc(t.coach_name) : '<span class="badge badge-red" title="No coach/user assigned">Unassigned</span>'}</td>
       <td><button class="btn btn-danger btn-sm" onclick="removeSeasonTeam('${esc(t.team_abbrev)}')">Remove</button></td>
     </tr>`).join('');
 }
