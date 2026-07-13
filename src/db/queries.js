@@ -413,6 +413,21 @@ function getSeasonsByLeague(leagueId) {
   return db.prepare('SELECT * FROM seasons WHERE league_id = ? ORDER BY year DESC').all(leagueId);
 }
 
+// Copy a season's setup (team roster + conferences and coach assignments) into
+// another season. Schedule and results (games) are intentionally NOT copied —
+// the new season starts fresh. Returns how many rows of each were carried over.
+const cloneSeasonData = db.transaction((fromSeasonId, toSeasonId) => {
+  const teams = db.prepare(`
+    INSERT OR IGNORE INTO season_teams (season_id, team_abbrev, conference_id)
+    SELECT ?, team_abbrev, conference_id FROM season_teams WHERE season_id = ?
+  `).run(toSeasonId, fromSeasonId);
+  const assignments = db.prepare(`
+    INSERT OR IGNORE INTO coach_team_assignments (season_id, coach_id, team_abbrev)
+    SELECT ?, coach_id, team_abbrev FROM coach_team_assignments WHERE season_id = ?
+  `).run(toSeasonId, fromSeasonId);
+  return { teams: teams.changes, assignments: assignments.changes };
+});
+
 function getSeasonById(seasonId) {
   return db.prepare('SELECT * FROM seasons WHERE id = ?').get(seasonId);
 }
@@ -858,6 +873,7 @@ module.exports = {
   getAllLeaguesWithPpvChannel,
   // Dynasty: seasons
   createSeason,
+  cloneSeasonData,
   getSeasonsByLeague,
   getSeasonById,
   getCurrentSeason,

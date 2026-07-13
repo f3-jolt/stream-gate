@@ -197,10 +197,11 @@
               <div class="field-group">
                 <label>Date/Time Override <span style="font-weight:400; text-transform:none;">(optional)</span></label>
                 <div class="advance-dt-row">
-                  <input id="advance-date-override" type="datetime-local">
+                  <input id="advance-date" type="date">
+                  <select id="advance-time"><option value="">— time —</option></select>
                   <select id="advance-tz">
                     <option value="ET">ET</option>
-                    <option value="CT">CT</option>
+                    <option value="CT" selected>CT</option>
                     <option value="MT">MT</option>
                     <option value="PT">PT</option>
                   </select>
@@ -517,6 +518,10 @@
           <input id="season-label" type="text" placeholder="e.g. Year 7">
         </div>
       </div>
+      <label id="season-clone-field" class="checkbox-row" style="display:none; align-items:center; gap:8px; margin-top:12px; cursor:pointer;">
+        <input id="season-clone" type="checkbox" checked>
+        <span>Clone current season <span class="text-muted">(teams, conferences &amp; coach assignments — not the schedule)</span></span>
+      </label>
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="closeSeasonModal()">Cancel</button>
         <button class="btn btn-primary" onclick="submitSeason()">Create</button>

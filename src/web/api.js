@@ -23,6 +23,7 @@ const {
   setLeagueAdvanceTemplate,
   // Dynasty
   createSeason,
+  cloneSeasonData,
   getSeasonsByLeague,
   getSeasonById,
   getCurrentSeason,
@@ -823,12 +824,25 @@ router.get('/guilds/:guildId/leagues/:leagueId/seasons', requireGuildAccess, (re
 router.post('/guilds/:guildId/leagues/:leagueId/seasons', requireGuildAccess, (req, res) => {
   const league = leagueInGuild(req.params.leagueId, req.params.guildId);
   if (!league) return res.status(404).json({ error: 'League not found' });
-  const { year, label } = req.body;
+  const { year, label, clone } = req.body;
   if (!year) return res.status(400).json({ error: 'year is required' });
   try {
     const season = createSeason(league.id, Number(year), label || null);
+
+    // Optionally seed the new season from the current one (roster + conferences
+    // + coach assignments). Skip if the new season IS the current one (first
+    // season for the league) — there's nothing prior to copy.
+    let cloned = null;
+    if (clone) {
+      const source = getCurrentSeason(league.id);
+      if (source && source.id !== season.id) {
+        cloned = cloneSeasonData(source.id, season.id);
+        logger.info('Season cloned', { adminId: req.session.user.id, fromSeason: source.id, toSeason: season.id, ...cloned });
+      }
+    }
+
     logger.info('Season created', { adminId: req.session.user.id, leagueId: league.id, year });
-    res.json(season);
+    res.json({ ...season, cloned });
   } catch (err) {
     const msg = err.message?.includes('UNIQUE') ? `Season ${year} already exists for this league` : err.message;
     res.status(400).json({ error: msg });

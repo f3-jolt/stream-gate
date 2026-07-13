@@ -75,6 +75,7 @@ function showPortal(guilds) {
   document.getElementById('portal').style.display = 'flex';
 
   fetchMe();
+  initAdvanceForm();
 
   const sel = document.getElementById('guild-select');
   for (const g of guilds) {
@@ -877,14 +878,37 @@ async function loadHealth() {
 
 // ── Advance ────────────────────────────────────────────────────────────────────
 
-function formatDateOverride() {
-  const val = document.getElementById('advance-date-override').value;
-  const tz  = document.getElementById('advance-tz').value;
-  if (!val) return '';
+// Populate the time dropdown (30-minute steps only) and default the date to
+// +2 days from today. Called once when the portal loads.
+function initAdvanceForm() {
+  const timeSel = document.getElementById('advance-time');
+  if (timeSel && timeSel.options.length <= 1) {
+    let opts = '<option value="">— time —</option>';
+    for (let h = 0; h < 24; h++) {
+      for (const m of [0, 30]) {
+        const value = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+        const label = `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+        opts += `<option value="${value}">${label}</option>`;
+      }
+    }
+    timeSel.innerHTML = opts;
+  }
+  const dateInput = document.getElementById('advance-date');
+  if (dateInput) {
+    const d = new Date();
+    d.setDate(d.getDate() + 2);
+    dateInput.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+}
 
-  const [datePart, timePart] = val.split('T');
-  const [year, month, day]   = datePart.split('-').map(Number);
-  const [hour, minute]       = timePart.split(':').map(Number);
+function formatDateOverride() {
+  const datePart = document.getElementById('advance-date').value;
+  const timePart = document.getElementById('advance-time').value;
+  const tz       = document.getElementById('advance-tz').value;
+  if (!datePart || !timePart) return '';
+
+  const [year, month, day] = datePart.split('-').map(Number);
+  const [hour, minute]     = timePart.split(':').map(Number);
 
   const date     = new Date(year, month - 1, day, hour, minute);
   const weekday  = date.toLocaleDateString('en-US', { weekday: 'long' });
@@ -1004,20 +1028,27 @@ function onDynastyTabShown(name) {
 // ── Season modal ──
 function openSeasonModal() {
   if (!currentDynLeagueId) { alert('Select a league first.'); return; }
+  // Cloning is only meaningful when a prior season exists to copy from.
+  const canClone = allSeasons.length > 0;
+  document.getElementById('season-clone-field').style.display = canClone ? 'flex' : 'none';
+  document.getElementById('season-clone').checked = canClone;
   document.getElementById('season-modal').classList.add('open');
 }
 function closeSeasonModal() { document.getElementById('season-modal').classList.remove('open'); }
 async function submitSeason() {
   const year = document.getElementById('season-year').value.trim();
   const label = document.getElementById('season-label').value.trim();
+  const cloneField = document.getElementById('season-clone-field');
+  const clone = cloneField.style.display !== 'none' && document.getElementById('season-clone').checked;
   if (!year) { alert('Year is required.'); return; }
   const res = await fetch(`/api/guilds/${currentGuildId}/leagues/${currentDynLeagueId}/seasons`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ year: Number(year), label }),
+    body: JSON.stringify({ year: Number(year), label, clone }),
   });
   const data = await res.json();
   if (data.id) {
-    flash('Season created');
+    const c = data.cloned;
+    flash(c ? `Season created — cloned ${c.teams} team(s) and ${c.assignments} coach assignment(s)` : 'Season created');
     closeSeasonModal();
     document.getElementById('season-year').value = '';
     document.getElementById('season-label').value = '';
