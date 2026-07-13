@@ -77,7 +77,7 @@ function initSchema() {
       UNIQUE(platform, platform_stream_id, league_id)
     );
 
-    -- Custom teams (survive deploys; logos stored as BLOBs)
+    -- Legacy custom-teams store (kept as a backup; seeded into the teams table below).
     CREATE TABLE IF NOT EXISTS custom_teams (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       name       TEXT UNIQUE NOT NULL,
@@ -86,6 +86,24 @@ function initSchema() {
       colors     TEXT NOT NULL DEFAULT '[]',
       logo       BLOB,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Unified team catalog (all teams, NCAA + custom) so team data lives on the
+    -- persistent volume and is editable at runtime. Seeded once from the bundled
+    -- JSON + the legacy custom_teams table by seedTeamsIfEmpty().
+    CREATE TABLE IF NOT EXISTS teams (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT NOT NULL,
+      abbrev     TEXT NOT NULL,
+      conference TEXT,
+      mascot     TEXT,
+      colors     TEXT NOT NULL DEFAULT '[]',
+      pic        TEXT,                       -- bundled logo file path (NCAA teams)
+      logo       BLOB,                       -- overrides pic when present
+      is_custom  INTEGER NOT NULL DEFAULT 0,
+      active     INTEGER NOT NULL DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(abbrev)
     );
 
     -- One pending disambiguation record per (user, guild)
@@ -183,7 +201,71 @@ function initSchema() {
 
   runMigrations();
   migrateLeaguesActiveUnique();
+  seedTeamsIfEmpty();
   logger.info('Database schema initialised', { path: dbPath });
+}
+
+const TEAMS_JSON_PATH = path.join(process.cwd(), 'src/db/teams/ncca-teams.json');
+
+// One-time population of the unified `teams` table from the bundled NCAA JSON
+// plus the legacy custom_teams rows. Runs only while the table is empty, so it
+// never clobbers runtime edits. NCAA logos stay as `pic` file paths (they ship
+// in the image); custom/edited logos live in the `logo` BLOB on the volume.
+function seedTeamsIfEmpty() {
+  const { c } = db.prepare('SELECT COUNT(*) AS c FROM teams').get();
+  if (c > 0) return;
+
+  let json = {};
+  try {
+    json = JSON.parse(fs.readFileSync(TEAMS_JSON_PATH, 'utf8'));
+  } catch (err) {
+    logger.error('Team seed: could not read teams JSON', { error: err.message });
+  }
+
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO teams (name, abbrev, conference, mascot, colors, pic, logo, is_custom, active)
+    VALUES (@name, @abbrev, @conference, @mascot, @colors, @pic, @logo, @is_custom, 1)
+  `);
+
+  const seed = db.transaction(() => {
+    for (const [name, info] of Object.entries(json)) {
+      insert.run({
+        name,
+        abbrev: String(info.abbrev).toUpperCase(),
+        conference: info.conference || null,
+        mascot: info.mascot || null,
+        colors: JSON.stringify(info.colors || []),
+        pic: info.pic || null,
+        logo: null,
+        is_custom: 0,
+      });
+    }
+    let customRows = [];
+    try { customRows = db.prepare('SELECT * FROM custom_teams').all(); } catch { /* table may not exist */ }
+    for (const t of customRows) {
+      insert.run({
+        name: t.name,
+        abbrev: String(t.abbrev).toUpperCase(),
+        conference: 'Custom',
+        mascot: t.mascot || null,
+        colors: t.colors || '[]',
+        pic: null,
+        logo: t.logo || null,
+        is_custom: 1,
+      });
+    }
+  });
+  seed();
+
+  const total = db.prepare('SELECT COUNT(*) AS c FROM teams').get().c;
+  let legacyCustom = 0;
+  try { legacyCustom = db.prepare('SELECT COUNT(*) AS c FROM custom_teams').get().c; } catch { /* no table */ }
+  const expected = Object.keys(json).length + legacyCustom;
+  if (total < expected) {
+    // INSERT OR IGNORE dropped rows — almost always a duplicate abbrev in the source.
+    logger.error('Team seed dropped rows (duplicate abbrev?)', { seeded: total, expected });
+  }
+  logger.info('Seeded teams table', { total, fromJson: Object.keys(json).length, legacyCustom });
 }
 
 // The leagues table historically enforced UNIQUE(guild_id, abbr) across ALL

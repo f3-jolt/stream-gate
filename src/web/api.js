@@ -48,6 +48,11 @@ const {
   getCoachHistory,
   getCoachById,
   getCoachSeasonBreakdown,
+  getAllTeams,
+  getTeamRow,
+  addCustomTeam,
+  updateTeam,
+  setTeamActive,
 } = require('../db/queries');
 const { requireAuth, requireGuildAccess } = require('./middleware');
 const { parseScheduleCell, parseMatchups, WEEK_LABELS, applyDateOverride } = require('../utils/schedule');
@@ -627,6 +632,126 @@ router.get('/guilds/:guildId/team-logo/:abbrev', requireGuildAccess, (req, res) 
     return res.sendFile(p);
   }
   return res.status(404).end();
+});
+
+// ── Team management (unified NCAA + custom catalog) ───────────────────────────
+
+function normalizeColors(input) {
+  const arr = Array.isArray(input) ? input : [];
+  const out = [];
+  for (const c of arr) {
+    const s = String(c).trim();
+    if (!s) continue;
+    if (!/^#?[0-9A-Fa-f]{6}$/.test(s)) throw new Error(`Invalid color "${s}" — use hex like #500000`);
+    out.push(s.startsWith('#') ? s : `#${s}`);
+  }
+  return out;
+}
+
+// A logo can arrive as a base64 data URL (file upload) or a URL to download.
+// Returns a Buffer, or undefined when neither was supplied (i.e. leave as-is).
+async function resolveLogoBuffer({ logoData, logoUrl }) {
+  if (logoData) {
+    const b64 = String(logoData).replace(/^data:[^;]+;base64,/, '');
+    const buf = Buffer.from(b64, 'base64');
+    if (!buf.length) throw new Error('uploaded image was empty');
+    return buf;
+  }
+  if (logoUrl) {
+    const resp = await axios.get(String(logoUrl).trim(), {
+      responseType: 'arraybuffer', timeout: 10000, maxContentLength: 8 * 1024 * 1024,
+    });
+    return Buffer.from(resp.data);
+  }
+  return undefined;
+}
+
+router.get('/guilds/:guildId/teams', requireGuildAccess, (req, res) => {
+  res.json(getAllTeams().map(t => ({
+    name: t.name,
+    abbrev: t.abbrev,
+    conference: t.conference,
+    mascot: t.mascot,
+    colors: JSON.parse(t.colors || '[]'),
+    is_custom: t.is_custom,
+    active: t.active,
+    has_logo: Boolean(t.logo || t.pic),
+  })));
+});
+
+router.post('/guilds/:guildId/teams', requireGuildAccess, async (req, res) => {
+  const name = String(req.body.name ?? '').trim();
+  const abbrev = String(req.body.abbrev ?? '').trim().toUpperCase();
+  const mascot = String(req.body.mascot ?? '').trim() || null;
+  const conference = String(req.body.conference ?? '').trim() || 'Custom';
+
+  if (!name || !abbrev) return res.status(400).json({ error: 'Name and abbreviation are required' });
+  if (!/^[A-Z0-9]{1,16}$/.test(abbrev)) return res.status(400).json({ error: 'Abbreviation must be 1-16 letters or digits' });
+  if (getTeamRow(abbrev)) return res.status(409).json({ error: `A team with abbreviation ${abbrev} already exists.` });
+
+  let colors, logo;
+  try { colors = normalizeColors(req.body.colors); } catch (err) { return res.status(400).json({ error: err.message }); }
+  try { logo = await resolveLogoBuffer(req.body); } catch (err) { return res.status(400).json({ error: `Logo: ${err.message}` }); }
+
+  try {
+    addCustomTeam(name, abbrev, mascot, colors, logo || null);
+    if (conference && conference !== 'Custom') updateTeam(abbrev, { conference });
+    logger.info('Web portal created team', { adminId: req.session.user.id, abbrev });
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error('Web portal create team failed', { error: err.message, abbrev });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/guilds/:guildId/teams/:abbrev', requireGuildAccess, async (req, res) => {
+  const current = getTeamRow(req.params.abbrev);
+  if (!current) return res.status(404).json({ error: 'Team not found' });
+
+  const updates = {};
+  if (req.body.name !== undefined) {
+    const n = String(req.body.name).trim();
+    if (!n) return res.status(400).json({ error: 'Name cannot be empty' });
+    updates.name = n;
+  }
+  if (req.body.mascot !== undefined) updates.mascot = String(req.body.mascot).trim() || null;
+  if (req.body.conference !== undefined) updates.conference = String(req.body.conference).trim() || null;
+  if (req.body.colors !== undefined) {
+    try { updates.colors = normalizeColors(req.body.colors); } catch (err) { return res.status(400).json({ error: err.message }); }
+  }
+  // abbrev is the routing key and is intentionally not editable here.
+
+  try {
+    const logo = await resolveLogoBuffer(req.body);
+    if (logo !== undefined) updates.logo = logo;
+  } catch (err) {
+    return res.status(400).json({ error: `Logo: ${err.message}` });
+  }
+
+  try {
+    updateTeam(current.abbrev, updates);
+    logger.info('Web portal updated team', { adminId: req.session.user.id, abbrev: current.abbrev });
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error('Web portal update team failed', { error: err.message, abbrev: current.abbrev });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/guilds/:guildId/teams/:abbrev/deactivate', requireGuildAccess, (req, res) => {
+  const t = getTeamRow(req.params.abbrev);
+  if (!t) return res.status(404).json({ error: 'Team not found' });
+  setTeamActive(t.abbrev, false);
+  logger.info('Web portal deactivated team', { adminId: req.session.user.id, abbrev: t.abbrev });
+  res.json({ ok: true });
+});
+
+router.post('/guilds/:guildId/teams/:abbrev/restore', requireGuildAccess, (req, res) => {
+  const t = getTeamRow(req.params.abbrev);
+  if (!t) return res.status(404).json({ error: 'Team not found' });
+  setTeamActive(t.abbrev, true);
+  logger.info('Web portal restored team', { adminId: req.session.user.id, abbrev: t.abbrev });
+  res.json({ ok: true });
 });
 
 // Channel + role picker data for the league form. The Guilds intent keeps these

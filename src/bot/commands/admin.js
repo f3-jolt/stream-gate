@@ -22,6 +22,7 @@ const {
   getHealthStats,
   addCustomTeam,
   updateCustomTeam,
+  updateTeam,
   getStreamPostMessageIds,
 } = require('../../db/queries');
 const fs = require('fs');
@@ -926,52 +927,33 @@ async function handleEditTeam(interaction) {
     return interaction.editReply({ content: `Invalid secondary color **${secondaryHex}**.` });
   }
 
-  const teamsData = JSON.parse(fs.readFileSync(TEAMS_JSON_PATH, 'utf8'));
-  const entry = teamsData[team.name];
+  // Team data now lives in the `teams` table, so edits persist on the volume.
+  const updates = {};
+  if (newName)       updates.name = newName;
+  if (newMascot)     updates.mascot = newMascot;
+  if (newAbbrev)     updates.abbrev = newAbbrev;
+  if (newConference) updates.conference = newConference;
 
-  if (newMascot)     entry.mascot = newMascot;
-  if (newAbbrev)     entry.abbrev = newAbbrev;
-  if (newConference) entry.conference = newConference;
-
+  const normalizeHex = h => h.startsWith('#') ? h : `#${h}`;
   if (primaryHex) {
-    const normalizeHex = h => h.startsWith('#') ? h : `#${h}`;
-    entry.colors = [normalizeHex(primaryHex)];
-    if (secondaryHex) entry.colors.push(normalizeHex(secondaryHex));
+    updates.colors = [normalizeHex(primaryHex)];
+    if (secondaryHex) updates.colors.push(normalizeHex(secondaryHex));
   } else if (secondaryHex) {
-    const normalizeHex = h => h.startsWith('#') ? h : `#${h}`;
-    entry.colors = [entry.colors?.[0] || '#000000', normalizeHex(secondaryHex)];
+    updates.colors = [team.colors?.[0] || '#000000', normalizeHex(secondaryHex)];
   }
 
   if (logoAttach) {
     try {
-      const ext = path.extname(logoAttach.name) || '.png';
-      const logoDir = entry.pic
-        ? path.dirname(path.resolve(process.cwd(), entry.pic.replace(/^\.\//, '')))
-        : path.join(process.cwd(), 'src/db/teams/logos');
-      if (!fs.existsSync(logoDir)) fs.mkdirSync(logoDir, { recursive: true });
-      const filename = `${(newAbbrev || teamAbbrev).toLowerCase()}${ext}`;
-      const logoPath = path.join(logoDir, filename);
       const response = await axios.get(logoAttach.url, { responseType: 'arraybuffer' });
-      fs.writeFileSync(logoPath, response.data);
-      entry.pic = `./src/db/teams/logos/${filename}`;
+      updates.logo = Buffer.from(response.data); // stored as BLOB, overrides bundled pic
     } catch (err) {
       return interaction.editReply({ content: `Failed to download logo: ${err.message}` });
     }
   }
 
-  // Handle name change — rename the JSON key
+  updateTeam(teamAbbrev, updates);
+
   const finalName = newName || team.name;
-  if (newName && newName !== team.name) {
-    delete teamsData[team.name];
-  }
-  teamsData[finalName] = entry;
-
-  const sorted = Object.fromEntries(
-    Object.entries(teamsData).sort(([a], [b]) => a.localeCompare(b))
-  );
-  fs.writeFileSync(TEAMS_JSON_PATH, JSON.stringify(sorted, null, 2));
-  invalidateTeamsCache();
-
   logger.info('Team edited', { adminId: interaction.user.id, team: finalName });
   await interaction.editReply({ content: `Team **${finalName}** updated successfully.` });
 }

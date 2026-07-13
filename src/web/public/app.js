@@ -11,8 +11,14 @@ let showDeactivatedLeagues = false; // Leagues tab hides deactivated ones until 
 let editingLeagueId = null;
 let discordMeta = null;         // { channels, categories, roles } for the current guild
 let allStreams = [];
+let teamCatalog = [];
+let showDeactivatedTeams = false;
+let editingTeamAbbrev = null;   // null = add mode
+let teamLogoData = null;        // base64 data URL from a file upload, pending save
+let teamAssetVersion = 0;       // cache-buster for logo <img> after edits
 let userSort = { col: 'discord_username', dir: 1 };
 let streamSort = { col: 'posted_at', dir: -1 };
+let teamSort = { col: 'name', dir: 1 };
 
 // ── Dynasty state ──
 let allSeasons = [];
@@ -104,7 +110,7 @@ async function onGuildChange() {
   currentLeagueId = null; // reset league scope when switching servers
   if (!currentGuildId) { document.getElementById('main-content').style.display = 'none'; return; }
   document.getElementById('main-content').style.display = 'block';
-  await Promise.all([loadUsers(), loadLeagues(), loadStreams(), loadHealth()]);
+  await Promise.all([loadUsers(), loadLeagues(), loadStreams(), loadHealth(), loadTeams()]);
   renderActiveTab();
 }
 
@@ -399,6 +405,192 @@ function renderLeaguesList() {
 function toggleDeactivatedLeagues() {
   showDeactivatedLeagues = !showDeactivatedLeagues;
   renderLeaguesList();
+}
+
+// ── Teams ────────────────────────────────────────────────────────────────────
+
+async function loadTeams() {
+  const res = await fetch(`/api/guilds/${currentGuildId}/teams`);
+  teamCatalog = await res.json();
+  applyTeamFilters();
+}
+
+function applyTeamFilters() {
+  const q = (document.getElementById('team-search').value || '').toLowerCase();
+  const deactivatedCount = teamCatalog.filter(t => !t.active).length;
+
+  let filtered = teamCatalog.filter(t => {
+    if (!showDeactivatedTeams && !t.active) return false;
+    return !q ||
+      t.name.toLowerCase().includes(q) ||
+      t.abbrev.toLowerCase().includes(q) ||
+      (t.conference || '').toLowerCase().includes(q) ||
+      (t.mascot || '').toLowerCase().includes(q);
+  });
+  filtered = sortData(filtered, teamSort.col, teamSort.dir);
+
+  const btn = document.getElementById('toggle-deactivated-teams-btn');
+  btn.style.display = deactivatedCount ? '' : 'none';
+  btn.textContent = showDeactivatedTeams ? 'Hide deactivated' : `Show deactivated (${deactivatedCount})`;
+
+  renderTeams(filtered);
+  updateSortHeaders('teams-table', teamSort);
+}
+
+function sortTeams(col) {
+  if (teamSort.col === col) teamSort.dir *= -1;
+  else { teamSort.col = col; teamSort.dir = 1; }
+  applyTeamFilters();
+}
+
+function toggleDeactivatedTeams() {
+  showDeactivatedTeams = !showDeactivatedTeams;
+  applyTeamFilters();
+}
+
+function renderTeams(teams) {
+  const tbody = document.getElementById('teams-tbody');
+  if (!teams.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="text-muted" style="text-align:center;padding:24px;">No teams found</td></tr>';
+    return;
+  }
+  tbody.innerHTML = teams.map(t => {
+    const logo = t.has_logo
+      ? `<img src="/api/guilds/${currentGuildId}/team-logo/${encodeURIComponent(t.abbrev)}?v=${teamAssetVersion}" alt="" style="width:32px;height:32px;object-fit:contain;" onerror="this.style.visibility='hidden'">`
+      : '';
+    const swatches = (t.colors || []).map(c =>
+      `<span title="${esc(c)}" style="display:inline-block;width:16px;height:16px;border-radius:3px;border:1px solid var(--border);background:${esc(c)};"></span>`
+    ).join(' ');
+    const typeBadge = t.is_custom
+      ? '<span class="badge badge-blue">Custom</span>'
+      : '<span class="badge">NCAA</span>';
+    const actions = t.active
+      ? `<button class="btn btn-ghost btn-sm" onclick="openTeamModal('${esc(t.abbrev)}')">Edit</button>
+         <button class="btn btn-danger btn-sm" onclick="deactivateTeam('${esc(t.abbrev)}','${esc(t.name)}')">Deactivate</button>`
+      : `<button class="btn btn-primary btn-sm" onclick="restoreTeam('${esc(t.abbrev)}','${esc(t.name)}')">Reactivate</button>`;
+    return `
+      <tr ${t.active ? '' : 'style="opacity:.55;"'}>
+        <td style="width:40px;">${logo}</td>
+        <td>
+          <div style="font-weight:600;">${esc(t.name)} ${t.active ? '' : '<span class="badge badge-red">Deactivated</span>'}</div>
+          <div class="text-muted" style="font-size:11px;">${esc(t.abbrev)}${t.mascot ? ' · ' + esc(t.mascot) : ''}</div>
+        </td>
+        <td>${esc(t.conference || '—')}</td>
+        <td>${typeBadge}</td>
+        <td style="white-space:nowrap;">${swatches || '<span class="text-muted">—</span>'}</td>
+        <td style="white-space:nowrap;">${actions}</td>
+      </tr>`;
+  }).join('');
+}
+
+function onTeamLogoFile(event) {
+  const file = event.target.files[0];
+  if (!file) { teamLogoData = null; return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    teamLogoData = reader.result; // data URL
+    const img = document.getElementById('team-logo-preview');
+    img.src = teamLogoData;
+    img.style.display = '';
+    document.getElementById('team-logo-url').value = ''; // file wins over URL
+  };
+  reader.readAsDataURL(file);
+}
+
+function openTeamModal(abbrev = null) {
+  const team = abbrev ? teamCatalog.find(t => t.abbrev === abbrev) : null;
+  editingTeamAbbrev = team ? team.abbrev : null;
+  teamLogoData = null;
+
+  document.getElementById('team-modal-title').textContent = team ? `Edit ${team.name}` : 'Add Team';
+  document.getElementById('team-save-btn').textContent = team ? 'Save Changes' : 'Add Team';
+
+  document.getElementById('team-name').value = team?.name ?? '';
+  const abbrevInput = document.getElementById('team-abbrev');
+  abbrevInput.value = team?.abbrev ?? '';
+  abbrevInput.disabled = Boolean(team); // routing key is locked once created
+  document.getElementById('team-abbrev-hint').style.display = team ? 'none' : '';
+  document.getElementById('team-conference').value = team?.conference ?? '';
+  document.getElementById('team-mascot').value = team?.mascot ?? '';
+  document.getElementById('team-color1').value = team?.colors?.[0] ?? '';
+  document.getElementById('team-color2').value = team?.colors?.[1] ?? '';
+
+  document.getElementById('team-logo-file').value = '';
+  document.getElementById('team-logo-url').value = '';
+  const preview = document.getElementById('team-logo-preview');
+  if (team && team.has_logo) {
+    preview.src = `/api/guilds/${currentGuildId}/team-logo/${encodeURIComponent(team.abbrev)}?v=${teamAssetVersion}`;
+    preview.style.display = '';
+  } else {
+    preview.style.display = 'none';
+  }
+
+  document.getElementById('team-modal').classList.add('open');
+}
+
+function closeTeamModal() {
+  editingTeamAbbrev = null;
+  teamLogoData = null;
+  document.getElementById('team-modal').classList.remove('open');
+}
+
+async function submitTeam() {
+  const colors = [
+    document.getElementById('team-color1').value.trim(),
+    document.getElementById('team-color2').value.trim(),
+  ].filter(Boolean);
+
+  const body = {
+    name: document.getElementById('team-name').value.trim(),
+    conference: document.getElementById('team-conference').value.trim(),
+    mascot: document.getElementById('team-mascot').value.trim(),
+    colors,
+  };
+  const logoUrl = document.getElementById('team-logo-url').value.trim();
+  if (teamLogoData) body.logoData = teamLogoData;
+  else if (logoUrl) body.logoUrl = logoUrl;
+
+  const editing = editingTeamAbbrev !== null;
+  if (!editing) {
+    body.abbrev = document.getElementById('team-abbrev').value.trim().toUpperCase();
+    if (!body.name || !body.abbrev) { alert('Name and Abbreviation are required.'); return; }
+  } else if (!body.name) {
+    alert('Name is required.');
+    return;
+  }
+
+  const url = editing
+    ? `/api/guilds/${currentGuildId}/teams/${encodeURIComponent(editingTeamAbbrev)}`
+    : `/api/guilds/${currentGuildId}/teams`;
+  const res = await fetch(url, {
+    method: editing ? 'PUT' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (data.ok) {
+    teamAssetVersion++; // bust cached logo <img> URLs
+    flash(editing ? `Updated ${body.name}` : `Added ${body.name}`);
+    closeTeamModal();
+    await loadTeams();
+  } else {
+    flash(data.error || 'Save failed', 'error');
+  }
+}
+
+async function deactivateTeam(abbrev, name) {
+  if (!confirm(`Deactivate ${name}? It will be hidden from team selection.`)) return;
+  const res = await fetch(`/api/guilds/${currentGuildId}/teams/${encodeURIComponent(abbrev)}/deactivate`, { method: 'POST' });
+  const data = await res.json();
+  if (data.ok) { flash(`Deactivated ${name}`); await loadTeams(); }
+  else flash(data.error || 'Failed', 'error');
+}
+
+async function restoreTeam(abbrev, name) {
+  const res = await fetch(`/api/guilds/${currentGuildId}/teams/${encodeURIComponent(abbrev)}/restore`, { method: 'POST' });
+  const data = await res.json();
+  if (data.ok) { flash(`Reactivated ${name}`); await loadTeams(); }
+  else flash(data.error || 'Failed', 'error');
 }
 
 // Resolve a snowflake to its Discord name, falling back to the raw id when the
@@ -1510,6 +1702,9 @@ document.getElementById('league-modal').addEventListener('click', e => {
 });
 document.getElementById('stream-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeStreamModal();
+});
+document.getElementById('team-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeTeamModal();
 });
 // Dismiss the Discord-user typeahead when clicking elsewhere
 document.addEventListener('click', e => {

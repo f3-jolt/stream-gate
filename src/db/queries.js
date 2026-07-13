@@ -300,26 +300,49 @@ function getUserByDiscordUsername(username) {
   return db.prepare("SELECT * FROM users WHERE discord_username LIKE ?").get(`%${username}%`);
 }
 
-// ── Custom teams ──────────────────────────────────────────────────────────────
+// ── Teams (unified NCAA + custom catalog) ─────────────────────────────────────
+
+// Every team, active first-class flag included; custom teams surfaced first.
+function getAllTeams() {
+  return db.prepare('SELECT * FROM teams ORDER BY is_custom DESC, name').all();
+}
+
+function getTeamRow(abbrev) {
+  return db.prepare('SELECT * FROM teams WHERE abbrev = ? COLLATE NOCASE').get(abbrev);
+}
 
 function addCustomTeam(name, abbrev, mascot, colors, logoBuffer) {
   return db.prepare(`
-    INSERT INTO custom_teams (name, abbrev, mascot, colors, logo)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO teams (name, abbrev, conference, mascot, colors, logo, is_custom, active)
+    VALUES (?, ?, 'Custom', ?, ?, ?, 1, 1)
   `).run(name, abbrev.toUpperCase(), mascot || null, JSON.stringify(colors), logoBuffer || null);
 }
 
-function updateCustomTeam(currentAbbrev, { name, abbrev, mascot, colors, logo } = {}) {
+// Generic team update, keyed by the team's current abbrev. Any subset of fields
+// may be supplied; `colors` is an array, `logo` a Buffer (or null to clear).
+function updateTeam(currentAbbrev, { name, abbrev, conference, mascot, colors, pic, logo, active } = {}) {
   const sets = [];
   const vals = [];
-  if (name !== undefined)   { sets.push('name = ?');   vals.push(name); }
-  if (abbrev !== undefined) { sets.push('abbrev = ?');  vals.push(abbrev.toUpperCase()); }
-  if (mascot !== undefined) { sets.push('mascot = ?');  vals.push(mascot); }
-  if (colors !== undefined) { sets.push('colors = ?');  vals.push(JSON.stringify(colors)); }
-  if (logo !== undefined)   { sets.push('logo = ?');    vals.push(logo); }
+  if (name !== undefined)       { sets.push('name = ?');       vals.push(name); }
+  if (abbrev !== undefined)     { sets.push('abbrev = ?');     vals.push(abbrev.toUpperCase()); }
+  if (conference !== undefined) { sets.push('conference = ?'); vals.push(conference); }
+  if (mascot !== undefined)     { sets.push('mascot = ?');     vals.push(mascot); }
+  if (colors !== undefined)     { sets.push('colors = ?');     vals.push(JSON.stringify(colors)); }
+  if (pic !== undefined)        { sets.push('pic = ?');        vals.push(pic); }
+  if (logo !== undefined)       { sets.push('logo = ?');       vals.push(logo); }
+  if (active !== undefined)     { sets.push('active = ?');     vals.push(active ? 1 : 0); }
   if (!sets.length) return;
   vals.push(currentAbbrev.toUpperCase());
-  return db.prepare(`UPDATE custom_teams SET ${sets.join(', ')} WHERE abbrev = ? COLLATE NOCASE`).run(...vals);
+  return db.prepare(`UPDATE teams SET ${sets.join(', ')} WHERE abbrev = ? COLLATE NOCASE`).run(...vals);
+}
+
+// Backwards-compatible alias for existing bot callers.
+function updateCustomTeam(currentAbbrev, fields = {}) {
+  return updateTeam(currentAbbrev, fields);
+}
+
+function setTeamActive(abbrev, active) {
+  return db.prepare('UPDATE teams SET active = ? WHERE abbrev = ? COLLATE NOCASE').run(active ? 1 : 0, abbrev.toUpperCase());
 }
 
 // ── League channel lookups ────────────────────────────────────────────────────
@@ -822,6 +845,10 @@ module.exports = {
   getHealthStats,
   addCustomTeam,
   updateCustomTeam,
+  updateTeam,
+  getAllTeams,
+  getTeamRow,
+  setTeamActive,
   getLeagueByUserChannel,
   getLeagueByPpvChannel,
   getAllLeaguesWithUserChannel,

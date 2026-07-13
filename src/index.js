@@ -30,8 +30,9 @@ app.use(session({
   cookie: { httpOnly: true, secure: 'auto', maxAge: 7 * 24 * 60 * 60 * 1000 },
 }));
 
-// JSON body parser for API routes (must come before apiRouter)
-app.use('/api', express.json());
+// JSON body parser for API routes (must come before apiRouter).
+// Limit is generous so base64 team-logo uploads fit.
+app.use('/api', express.json({ limit: '8mb' }));
 
 app.use((req, res, next) => {
   // Skip raw body capture for API/auth routes

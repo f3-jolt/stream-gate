@@ -55,6 +55,7 @@
           <button class="tab-btn active" data-tab="users" onclick="switchTab('users')">Users</button>
           <button class="tab-btn" data-tab="streams" onclick="switchTab('streams')">Stream History</button>
           <button class="tab-btn" data-tab="health" onclick="switchTab('health')">Health</button>
+          <button class="tab-btn" data-tab="teams" onclick="switchTab('teams')">Teams</button>
           <button class="tab-btn" data-tab="advance" onclick="switchTab('advance')">Advance Week</button>
           <button class="tab-btn" data-tab="season" onclick="switchTab('season')">Season</button>
           <button class="tab-btn" data-tab="schedule" onclick="switchTab('schedule')">Schedule</button>
@@ -136,6 +137,30 @@
         <!-- HEALTH TAB -->
         <div id="tab-health" class="tab-panel">
           <div class="stats-row" id="health-stats"></div>
+        </div>
+
+        <!-- TEAMS TAB -->
+        <div id="tab-teams" class="tab-panel">
+          <div class="search-row">
+            <input id="team-search" type="text" placeholder="Search teams..." oninput="applyTeamFilters()">
+            <button class="btn btn-primary" onclick="openTeamModal()">+ Add Team</button>
+            <button id="toggle-deactivated-teams-btn" class="btn btn-ghost" onclick="toggleDeactivatedTeams()" style="display:none;"></button>
+          </div>
+          <div class="table-wrap">
+            <table id="teams-table">
+              <thead>
+                <tr>
+                  <th></th>
+                  <th class="sortable" data-col="name" onclick="sortTeams('name')">Team</th>
+                  <th class="sortable" data-col="conference" onclick="sortTeams('conference')">Conference</th>
+                  <th class="sortable" data-col="is_custom" onclick="sortTeams('is_custom')">Type</th>
+                  <th>Colors</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="teams-tbody"></tbody>
+            </table>
+          </div>
         </div>
 
         <!-- ADVANCE TAB -->
@@ -384,6 +409,53 @@
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="closeStreamModal()">Cancel</button>
         <button class="btn btn-primary" onclick="submitStreamEdit()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TEAM MODAL -->
+  <div id="team-modal" class="modal-backdrop">
+    <div class="modal" style="width:560px;">
+      <h3 id="team-modal-title">Add Team</h3>
+      <div class="form-grid">
+        <div class="form-field">
+          <label>Name</label>
+          <input id="team-name" type="text" placeholder="e.g. Alabama">
+        </div>
+        <div class="form-field">
+          <label>Abbreviation</label>
+          <input id="team-abbrev" type="text" placeholder="e.g. BAMA">
+          <small id="team-abbrev-hint" class="text-muted">Routing key. Cannot be changed later.</small>
+        </div>
+        <div class="form-field">
+          <label>Conference</label>
+          <input id="team-conference" type="text" placeholder="e.g. SEC (or Custom)">
+        </div>
+        <div class="form-field">
+          <label>Mascot (optional)</label>
+          <input id="team-mascot" type="text" placeholder="e.g. Crimson Tide">
+        </div>
+        <div class="form-field">
+          <label>Primary Color</label>
+          <input id="team-color1" type="text" placeholder="#9E1B32">
+        </div>
+        <div class="form-field">
+          <label>Secondary Color (optional)</label>
+          <input id="team-color2" type="text" placeholder="#FFFFFF">
+        </div>
+        <div class="form-field full">
+          <label>Logo</label>
+          <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+            <img id="team-logo-preview" alt="" style="width:48px; height:48px; object-fit:contain; display:none; border-radius:6px;">
+            <input id="team-logo-file" type="file" accept="image/*" onchange="onTeamLogoFile(event)">
+          </div>
+          <small class="text-muted">Upload an image, or paste a URL below.</small>
+          <input id="team-logo-url" type="text" placeholder="https://…/logo.png" style="margin-top:8px;">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeTeamModal()">Cancel</button>
+        <button id="team-save-btn" class="btn btn-primary" onclick="submitTeam()">Add Team</button>
       </div>
     </div>
   </div>
