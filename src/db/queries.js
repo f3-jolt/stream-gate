@@ -499,7 +499,10 @@ function getOrCreateCoach(leagueId, userId, displayName) {
 
 function getCoachesByLeague(leagueId) {
   return db.prepare(`
-    SELECT co.*, u.discord_id, u.discord_username
+    SELECT co.*, u.discord_id, u.discord_username,
+           (SELECT COUNT(*) FROM user_platforms up WHERE up.user_id = co.user_id) AS platform_count,
+           (SELECT GROUP_CONCAT(up.platform || ': ' || up.platform_username, ', ')
+              FROM user_platforms up WHERE up.user_id = co.user_id) AS platforms
     FROM coaches co
     LEFT JOIN users u ON u.id = co.user_id
     WHERE co.league_id = ?

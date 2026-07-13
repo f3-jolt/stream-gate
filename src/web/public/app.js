@@ -1129,17 +1129,22 @@ function populateCoachTeamSelect() {
 }
 function renderCoaches(assignMap) {
   const tb = document.getElementById('coaches-tbody');
-  if (!allCoaches.length) { tb.innerHTML = '<tr><td colspan="3" class="text-muted" style="text-align:center;padding:16px;">No coaches added</td></tr>'; return; }
+  if (!allCoaches.length) { tb.innerHTML = '<tr><td colspan="4" class="text-muted" style="text-align:center;padding:16px;">No coaches added</td></tr>'; return; }
   const teamOpts = allTeams.map(t => `<option value="${esc(t.team_abbrev)}">${esc(t.team_abbrev)} — ${esc(t.team_name)}</option>`).join('');
   tb.innerHTML = allCoaches.map(c => {
     const assigned = assignMap.get(c.id);
     const chip = assigned
       ? `<div style="margin-bottom:6px;">${teamChip(assigned, teamNameFor(assigned), colorsForTeam(assigned))}</div>`
       : '';
+    let stream;
+    if (!c.discord_id) stream = '<span class="text-muted" title="No Discord user linked">—</span>';
+    else if (c.platform_count > 0) stream = `<span class="badge badge-green" title="${esc(c.platforms || '')}">✓ Set</span>`;
+    else stream = '<span class="badge badge-red" title="No stream platforms registered">✗ Missing</span>';
     return `
     <tr>
       <td><strong>${esc(c.display_name)}</strong></td>
       <td>${c.discord_id ? esc(c.discord_username || c.discord_id) : '<span class="text-muted">—</span>'}</td>
+      <td>${stream}</td>
       <td>
         ${chip}
         <select id="assign-${c.id}"><option value="">— none —</option>${teamOpts}</select>
