@@ -202,7 +202,31 @@ function initSchema() {
   runMigrations();
   migrateLeaguesActiveUnique();
   seedTeamsIfEmpty();
+  runDataMigrations();
   logger.info('Database schema initialised', { path: dbPath });
+}
+
+// One-time data migrations, tracked via PRAGMA user_version so they never re-run
+// (important where a re-run would undo intentional user actions).
+function runDataMigrations() {
+  let version = db.pragma('user_version', { simple: true });
+
+  // v1: existing dynasty coaches predate coach-add registering league
+  // membership. Backfill a user_leagues row for each coach that has a linked
+  // user, without disturbing any team already recorded. One-time only, so a
+  // later "remove from league" is not resurrected on the next boot.
+  if (version < 1) {
+    const r = db.prepare(`
+      INSERT INTO user_leagues (user_id, league_id, added_by, team_name, team_abbrev)
+      SELECT co.user_id, co.league_id, 'dynasty-coach', NULL, NULL
+      FROM coaches co
+      WHERE co.user_id IS NOT NULL
+      ON CONFLICT(user_id, league_id) DO NOTHING
+    `).run();
+    logger.info('Data migration v1: backfilled coach league memberships', { added: r.changes });
+    db.pragma('user_version = 1');
+    version = 1;
+  }
 }
 
 const TEAMS_JSON_PATH = path.join(process.cwd(), 'src/db/teams/ncca-teams.json');

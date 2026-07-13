@@ -18,6 +18,7 @@ const {
   getUserPlatforms,
   updateUserPlatformUsername,
   addUserToLeague,
+  ensureUserInLeague,
   removeUserFromLeague,
   getUsersInLeague,
   setLeagueAdvanceTemplate,
@@ -922,7 +923,12 @@ router.post('/guilds/:guildId/leagues/:leagueId/coaches', requireGuildAccess, (r
   if (!league) return res.status(404).json({ error: 'League not found' });
   const { discordId, discordUsername, displayName } = req.body;
   let userId = null;
-  if (discordId) userId = getOrCreateUser(discordId, discordUsername || discordId).id;
+  if (discordId) {
+    userId = getOrCreateUser(discordId, discordUsername || discordId).id;
+    // A coach is a league participant — register them so they appear on the
+    // Users page even before a team is assigned (doesn't touch any team).
+    ensureUserInLeague(discordId, league.id, 'dynasty-coach');
+  }
   const name = (displayName || discordUsername || discordId || '').trim();
   if (!name) return res.status(400).json({ error: 'displayName or discordId is required' });
   res.json(getOrCreateCoach(league.id, userId, name));

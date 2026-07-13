@@ -75,6 +75,19 @@ function addUserToLeague(discordId, leagueId, addedBy, teamName = null, teamAbbr
   `).run(user.id, leagueId, addedBy, teamName, teamAbbrev);
 }
 
+// Register a user into a league without touching an existing team assignment —
+// used when a coach is added so they show up as a league member even before a
+// team is picked.
+function ensureUserInLeague(discordId, leagueId, addedBy) {
+  const user = db.prepare('SELECT id FROM users WHERE discord_id = ?').get(discordId);
+  if (!user) return;
+  return db.prepare(`
+    INSERT INTO user_leagues (user_id, league_id, added_by)
+    VALUES (?, ?, ?)
+    ON CONFLICT(user_id, league_id) DO NOTHING
+  `).run(user.id, leagueId, addedBy);
+}
+
 function removeUserFromLeague(discordId, leagueId) {
   const user = db.prepare('SELECT id FROM users WHERE discord_id = ?').get(discordId);
   if (!user) return;
@@ -833,6 +846,7 @@ module.exports = {
   getUserLeagues,
   getUserLeaguesByGuild,
   addUserToLeague,
+  ensureUserInLeague,
   removeUserFromLeague,
   addUserPlatform,
   removeUserPlatform,
