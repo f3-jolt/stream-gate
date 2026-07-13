@@ -877,10 +877,13 @@ router.get('/guilds/:guildId/seasons/:seasonId/teams', requireGuildAccess, (req,
 router.post('/guilds/:guildId/seasons/:seasonId/teams', requireGuildAccess, (req, res) => {
   const info = seasonInGuild(req.params.seasonId, req.params.guildId);
   if (!info) return res.status(404).json({ error: 'Season not found' });
-  const { teamAbbrev, conferenceId } = req.body;
+  const { teamAbbrev, conferenceName } = req.body;
   if (!teamAbbrev) return res.status(400).json({ error: 'teamAbbrev is required' });
   if (!getTeamByAbbrev(teamAbbrev)) return res.status(400).json({ error: `Team ${teamAbbrev} not found` });
-  upsertSeasonTeam(info.season.id, teamAbbrev, conferenceId ? Number(conferenceId) : null);
+  // Conferences come from a fixed dropdown by name; resolve (or create) the
+  // per-league conference row and store its id on the season team.
+  const conf = conferenceName ? upsertConference(info.league.id, String(conferenceName).trim()) : null;
+  upsertSeasonTeam(info.season.id, teamAbbrev, conf ? conf.id : null);
   res.json({ ok: true });
 });
 

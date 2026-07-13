@@ -26,7 +26,6 @@ let currentSeasonId = null;
 let currentDynLeagueId = null;
 let allTeams = [];
 let allCoaches = [];
-let allConferences = [];
 let summaryData = [];
 let coachData = [];
 let summarySort = { col: 'wins', dir: -1 };
@@ -1038,24 +1037,9 @@ async function setCurrentSeasonBtn() {
   else flash(data.error || 'Failed', 'error');
 }
 
-// ── Conferences + team search ──
-async function loadConferences() {
-  const res = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/conferences`);
-  allConferences = await res.json();
-  document.getElementById('season-team-conf').innerHTML =
-    '<option value="">— conference —</option>' +
-    allConferences.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
-}
-async function addConferencePrompt() {
-  if (!currentSeasonId) return;
-  const name = prompt('Conference name:');
-  if (!name) return;
-  await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/conferences`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
-  });
-  await loadConferences();
-  flash('Conference added');
-}
+// ── Team search ──
+// Conferences are a fixed list defined statically in the season-team-conf
+// dropdown, so there is no conference loading/creation here anymore.
 let teamSearchTimer = null;
 function teamSearch(q) {
   clearTimeout(teamSearchTimer);
@@ -1072,7 +1056,6 @@ async function loadSeasonTeams() {
   document.getElementById('season-empty').style.display = currentSeasonId ? 'none' : 'block';
   document.getElementById('season-content').style.display = currentSeasonId ? 'block' : 'none';
   if (!currentSeasonId) return;
-  await loadConferences();
   const res = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/teams`);
   allTeams = await res.json();
   renderSeasonTeams();
@@ -1090,11 +1073,11 @@ function renderSeasonTeams() {
 }
 async function addSeasonTeam() {
   const teamAbbrev = document.getElementById('season-team-input').value.trim().toUpperCase();
-  const conferenceId = document.getElementById('season-team-conf').value || null;
+  const conferenceName = document.getElementById('season-team-conf').value || null;
   if (!teamAbbrev) return;
   const res = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/teams`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ teamAbbrev, conferenceId }),
+    body: JSON.stringify({ teamAbbrev, conferenceName }),
   });
   const data = await res.json();
   if (data.ok) { document.getElementById('season-team-input').value = ''; await loadSeasonTeams(); }

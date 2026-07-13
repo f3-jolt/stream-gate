@@ -236,9 +236,21 @@
               <div class="card-title">Teams &amp; Conferences</div>
               <div class="search-row">
                 <input id="season-team-input" list="team-options" type="text" placeholder="Team abbrev (e.g. BAMA)" oninput="teamSearch(this.value)">
-                <select id="season-team-conf"><option value="">— conference —</option></select>
+                <select id="season-team-conf">
+                  <option value="">— conference —</option>
+                  <option value="ACC">ACC</option>
+                  <option value="American Athletic">American Athletic</option>
+                  <option value="Big 12">Big 12</option>
+                  <option value="Big Ten">Big Ten</option>
+                  <option value="Conference USA">Conference USA</option>
+                  <option value="FBS Independents">FBS Independents</option>
+                  <option value="Mid-American">Mid-American</option>
+                  <option value="Mountain West">Mountain West</option>
+                  <option value="Pac-12">Pac-12</option>
+                  <option value="SEC">SEC</option>
+                  <option value="Sun Belt">Sun Belt</option>
+                </select>
                 <button class="btn btn-primary" onclick="addSeasonTeam()">+ Add Team</button>
-                <button class="btn btn-ghost" onclick="addConferencePrompt()">+ Conference</button>
               </div>
               <div class="table-wrap">
                 <table id="teams-table">
