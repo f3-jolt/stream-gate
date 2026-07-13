@@ -30,6 +30,7 @@ const {
   getConferences,
   upsertConference,
   getSeasonTeams,
+  getSeasonTeam,
   upsertSeasonTeam,
   removeSeasonTeam,
   getCoachesByLeague,
@@ -924,12 +925,24 @@ router.get('/guilds/:guildId/seasons/:seasonId/assignments', requireGuildAccess,
 router.post('/guilds/:guildId/seasons/:seasonId/assignments', requireGuildAccess, (req, res) => {
   const info = seasonInGuild(req.params.seasonId, req.params.guildId);
   if (!info) return res.status(404).json({ error: 'Season not found' });
-  const { coachId, teamAbbrev } = req.body;
+  const { coachId, teamAbbrev, conferenceName } = req.body;
   if (!coachId || !teamAbbrev) return res.status(400).json({ error: 'coachId and teamAbbrev are required' });
   const coach = getCoachById(Number(coachId));
   if (!coach || coach.league_id !== info.league.id) return res.status(404).json({ error: 'Coach not found' });
+  if (!getTeamByAbbrev(teamAbbrev)) return res.status(400).json({ error: `Team ${teamAbbrev} not found` });
+
+  // Assigning a coach also puts the team on the season roster. Set its
+  // conference from the dropdown when given, otherwise keep whatever it has.
+  let conferenceId = null;
+  if (conferenceName) {
+    conferenceId = upsertConference(info.league.id, String(conferenceName).trim()).id;
+  } else {
+    conferenceId = getSeasonTeam(info.season.id, teamAbbrev)?.conference_id ?? null;
+  }
+  upsertSeasonTeam(info.season.id, teamAbbrev, conferenceId);
   assignCoachTeam(info.season.id, Number(coachId), teamAbbrev, teamName(teamAbbrev));
-  logger.info('Coach assigned', { adminId: req.session.user.id, seasonId: info.season.id, coachId, team: teamAbbrev });
+
+  logger.info('Coach assigned', { adminId: req.session.user.id, seasonId: info.season.id, coachId, team: teamAbbrev, conference: conferenceName || null });
   res.json({ ok: true });
 });
 

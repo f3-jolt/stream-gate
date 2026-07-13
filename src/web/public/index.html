@@ -230,48 +230,23 @@
 
         <!-- SEASON TAB -->
         <div id="tab-season" class="tab-panel">
-          <div id="season-empty" class="text-muted" style="display:none; padding:24px;">Select or create a season above to manage its teams and coaches.</div>
+          <div id="season-empty" class="text-muted" style="display:none; padding:24px;">Select or create a season above to manage its coaches.</div>
           <div id="season-content">
             <div class="card">
-              <div class="card-title">Teams &amp; Conferences</div>
-              <div class="search-row">
-                <input id="season-team-input" list="team-options" type="text" placeholder="Team abbrev (e.g. BAMA)" oninput="teamSearch(this.value)">
-                <select id="season-team-conf">
-                  <option value="">— conference —</option>
-                  <option value="ACC">ACC</option>
-                  <option value="American Athletic">American Athletic</option>
-                  <option value="Big 12">Big 12</option>
-                  <option value="Big Ten">Big Ten</option>
-                  <option value="Conference USA">Conference USA</option>
-                  <option value="FBS Independents">FBS Independents</option>
-                  <option value="Mid-American">Mid-American</option>
-                  <option value="Mountain West">Mountain West</option>
-                  <option value="Pac-12">Pac-12</option>
-                  <option value="SEC">SEC</option>
-                  <option value="Sun Belt">Sun Belt</option>
-                </select>
-                <button class="btn btn-primary" onclick="addSeasonTeam()">+ Add Team</button>
-              </div>
-              <div class="table-wrap">
-                <table id="teams-table">
-                  <thead><tr><th>Team</th><th>Conference</th><th>Coach</th><th></th></tr></thead>
-                  <tbody id="teams-tbody"></tbody>
-                </table>
-              </div>
-            </div>
-            <div class="card">
               <div class="card-title">Coaches &amp; Assignments</div>
+              <p class="text-muted" style="margin:-6px 0 12px;">Add a coach and optionally assign a team + conference now, or assign it later. Teams join the season when a coach is assigned to them.</p>
               <div class="search-row">
                 <div class="typeahead">
                   <input id="coach-search" type="text" autocomplete="off" placeholder="Search Discord user…" oninput="onCoachSearchInput(this.value)">
                   <div id="coach-search-results" class="typeahead-results" style="display:none;"></div>
                 </div>
-                <select id="coach-team"><option value="">— assign team —</option></select>
+                <select id="coach-team" onchange="syncCoachConf('coach-team','coach-conf')"><option value="">— team (optional) —</option></select>
+                <select id="coach-conf"><option value="">— conference —</option></select>
                 <button class="btn btn-primary" onclick="addCoach()">+ Add Coach</button>
               </div>
               <div class="table-wrap">
                 <table id="coaches-table">
-                  <thead><tr><th>Coach</th><th>Discord</th><th>Stream</th><th>Assign to team (this season)</th></tr></thead>
+                  <thead><tr><th>Coach</th><th>Discord</th><th>Stream</th><th>Team &amp; Conference (this season)</th></tr></thead>
                   <tbody id="coaches-tbody"></tbody>
                 </table>
               </div>

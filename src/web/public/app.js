@@ -1037,56 +1037,38 @@ async function setCurrentSeasonBtn() {
   else flash(data.error || 'Failed', 'error');
 }
 
-// ── Team search ──
-// Conferences are a fixed list defined statically in the season-team-conf
-// dropdown, so there is no conference loading/creation here anymore.
+// Shared debounce timer for the schedule opponent typeahead (see onOppChange).
 let teamSearchTimer = null;
-function teamSearch(q) {
-  clearTimeout(teamSearchTimer);
-  teamSearchTimer = setTimeout(async () => {
-    const res = await fetch(`/api/guilds/${currentGuildId}/team-search?q=${encodeURIComponent(q)}`);
-    const teams = await res.json();
-    document.getElementById('team-options').innerHTML =
-      teams.map(t => `<option value="${esc(t.value)}">${esc(t.name)}</option>`).join('');
-  }, 150);
+
+// The 11 FBS conferences — a fixed list; teams get their conference here.
+const CONFERENCES = ['ACC', 'American Athletic', 'Big 12', 'Big Ten', 'Conference USA', 'FBS Independents', 'Mid-American', 'Mountain West', 'Pac-12', 'SEC', 'Sun Belt'];
+function confOptions(selected) {
+  return '<option value="">— conference —</option>' +
+    CONFERENCES.map(c => `<option value="${esc(c)}"${c === selected ? ' selected' : ''}>${esc(c)}</option>`).join('');
+}
+// Team picker drawn from the full catalog — teams join the season when a coach
+// is assigned, so every active team is selectable here.
+function teamPickerOptions(selected) {
+  return '<option value="">— team (optional) —</option>' +
+    [...teamCatalog].sort((a, b) => a.name.localeCompare(b.name))
+      .map(t => `<option value="${esc(t.abbrev)}"${t.abbrev === selected ? ' selected' : ''}>${esc(t.abbrev)} — ${esc(t.name)}</option>`).join('');
+}
+// Picking a team defaults the paired conference dropdown to that team's known
+// conference (when it's one of the fixed 11).
+function syncCoachConf(teamSelId, confSelId) {
+  const abbrev = document.getElementById(teamSelId).value;
+  const t = teamCatalog.find(x => x.abbrev === abbrev);
+  const confSel = document.getElementById(confSelId);
+  if (t && confSel && CONFERENCES.includes(t.conference)) confSel.value = t.conference;
 }
 
-// ── Season teams ──
+// ── Season roster (loaded for schedule/results/chips; managed via coaches) ──
 async function loadSeasonTeams() {
   document.getElementById('season-empty').style.display = currentSeasonId ? 'none' : 'block';
   document.getElementById('season-content').style.display = currentSeasonId ? 'block' : 'none';
   if (!currentSeasonId) return;
   const res = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/teams`);
   allTeams = await res.json();
-  renderSeasonTeams();
-}
-function renderSeasonTeams() {
-  const tb = document.getElementById('teams-tbody');
-  if (!allTeams.length) { tb.innerHTML = '<tr><td colspan="4" class="text-muted" style="text-align:center;padding:16px;">No teams added</td></tr>'; return; }
-  tb.innerHTML = allTeams.map(t => `
-    <tr>
-      <td>${teamChip(t.team_abbrev, t.team_name, t.colors)} ${t.is_user_team ? '<span class="badge badge-yellow">user</span>' : ''}</td>
-      <td>${t.conference_name ? esc(t.conference_name) : '<span class="text-muted">—</span>'}</td>
-      <td>${t.coach_name ? esc(t.coach_name) : '<span class="badge badge-red" title="No coach/user assigned">Unassigned</span>'}</td>
-      <td><button class="btn btn-danger btn-sm" onclick="removeSeasonTeam('${esc(t.team_abbrev)}')">Remove</button></td>
-    </tr>`).join('');
-}
-async function addSeasonTeam() {
-  const teamAbbrev = document.getElementById('season-team-input').value.trim().toUpperCase();
-  const conferenceName = document.getElementById('season-team-conf').value || null;
-  if (!teamAbbrev) return;
-  const res = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/teams`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ teamAbbrev, conferenceName }),
-  });
-  const data = await res.json();
-  if (data.ok) { document.getElementById('season-team-input').value = ''; await loadSeasonTeams(); }
-  else flash(data.error || 'Failed', 'error');
-}
-async function removeSeasonTeam(abbrev) {
-  if (!confirm(`Remove ${abbrev} from this season?`)) return;
-  await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/teams/${encodeURIComponent(abbrev)}`, { method: 'DELETE' });
-  await loadSeasonTeams();
 }
 
 // ── Coaches + assignments ──
@@ -1101,24 +1083,26 @@ async function loadCoaches() {
   const aRes = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/assignments`);
   const assignments = await aRes.json();
   const assignMap = new Map(assignments.map(a => [a.coach_id, a.team_abbrev]));
-  renderCoaches(assignMap);
+  const confByTeam = new Map(allTeams.map(t => [t.team_abbrev, t.conference_name]));
+  renderCoaches(assignMap, confByTeam);
   populateCoachTeamSelect();
 }
 function populateCoachTeamSelect() {
-  const sel = document.getElementById('coach-team');
-  if (!sel) return;
-  sel.innerHTML = '<option value="">— assign team —</option>' +
-    allTeams.map(t => `<option value="${esc(t.team_abbrev)}">${esc(t.team_abbrev)} — ${esc(t.team_name)}</option>`).join('');
+  const teamSel = document.getElementById('coach-team');
+  if (teamSel) teamSel.innerHTML = teamPickerOptions('');
+  const confSel = document.getElementById('coach-conf');
+  if (confSel) confSel.innerHTML = confOptions('');
 }
-function renderCoaches(assignMap) {
+function renderCoaches(assignMap, confByTeam) {
   const tb = document.getElementById('coaches-tbody');
   if (!allCoaches.length) { tb.innerHTML = '<tr><td colspan="4" class="text-muted" style="text-align:center;padding:16px;">No coaches added</td></tr>'; return; }
-  const teamOpts = allTeams.map(t => `<option value="${esc(t.team_abbrev)}">${esc(t.team_abbrev)} — ${esc(t.team_name)}</option>`).join('');
   tb.innerHTML = allCoaches.map(c => {
-    const assigned = assignMap.get(c.id);
-    const chip = assigned
-      ? `<div style="margin-bottom:6px;">${teamChip(assigned, teamNameFor(assigned), colorsForTeam(assigned))}</div>`
-      : '';
+    const assigned = assignMap.get(c.id) || '';
+    const conf = assigned ? (confByTeam.get(assigned) || '') : '';
+    let current;
+    if (!assigned) current = '<span class="badge badge-red" title="No team assigned">Unassigned</span>';
+    else current = `${teamChip(assigned, teamNameFor(assigned), colorsForTeam(assigned))} `
+      + (conf ? `<span class="badge badge-blue">${esc(conf)}</span>` : '<span class="badge badge-red" title="No conference set">No conference</span>');
     let stream;
     if (!c.discord_id) stream = '<span class="text-muted" title="No Discord user linked">—</span>';
     else if (c.platform_count > 0) stream = `<span class="badge badge-green" title="${esc(c.platforms || '')}">✓ Set</span>`;
@@ -1129,16 +1113,13 @@ function renderCoaches(assignMap) {
       <td>${c.discord_id ? esc(c.discord_username || c.discord_id) : '<span class="text-muted">—</span>'}</td>
       <td>${stream}</td>
       <td>
-        ${chip}
-        <select id="assign-${c.id}"><option value="">— none —</option>${teamOpts}</select>
+        <div style="margin-bottom:6px;">${current}</div>
+        <select id="assign-${c.id}" onchange="syncCoachConf('assign-${c.id}','conf-${c.id}')">${teamPickerOptions(assigned)}</select>
+        <select id="conf-${c.id}">${confOptions(conf)}</select>
         <button class="btn btn-primary btn-sm" onclick="assignCoach(${c.id})">Assign</button>
       </td>
     </tr>`;
   }).join('');
-  for (const c of allCoaches) {
-    const sel = document.getElementById(`assign-${c.id}`);
-    if (sel) sel.value = assignMap.get(c.id) || '';
-  }
 }
 // ── Add coach via Discord user lookup (+ optional team in one step) ──
 let selectedCoachUser = null;
@@ -1180,6 +1161,7 @@ function hideCoachResults() {
 async function addCoach() {
   if (!selectedCoachUser) { alert('Search for and select a Discord user first.'); return; }
   const teamAbbrev = document.getElementById('coach-team').value;
+  const conferenceName = document.getElementById('coach-conf').value || null;
 
   const res = await fetch(`/api/guilds/${currentGuildId}/leagues/${currentDynLeagueId}/coaches`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1195,7 +1177,7 @@ async function addCoach() {
   if (teamAbbrev) {
     const ar = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/assignments`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ coachId: coach.id, teamAbbrev }),
+      body: JSON.stringify({ coachId: coach.id, teamAbbrev, conferenceName }),
     });
     const ad = await ar.json();
     if (!ad.ok) { flash(ad.error || 'Coach added, but team assignment failed', 'error'); }
@@ -1207,15 +1189,17 @@ async function addCoach() {
   selectedCoachUser = null;
   document.getElementById('coach-search').value = '';
   document.getElementById('coach-team').value = '';
+  document.getElementById('coach-conf').value = '';
   await loadSeasonTeams();
   await loadCoaches();
 }
 async function assignCoach(coachId) {
   const teamAbbrev = document.getElementById(`assign-${coachId}`).value;
   if (!teamAbbrev) return;
+  const conferenceName = document.getElementById(`conf-${coachId}`).value || null;
   const res = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/assignments`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ coachId, teamAbbrev }),
+    body: JSON.stringify({ coachId, teamAbbrev, conferenceName }),
   });
   const data = await res.json();
   if (data.ok) { flash('Coach assigned'); await loadSeasonTeams(); await loadCoaches(); }
