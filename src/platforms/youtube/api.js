@@ -60,6 +60,21 @@ async function getLiveStreamDetails(videoId) {
   };
 }
 
+// Ensure a single YouTube user has an active WebSub subscription. Used when a user
+// is added/edited so we don't wait for the next startup/daily renewal.
+async function subscribeYoutubeUser(username, knownChannelId) {
+  const channelId = knownChannelId || await getChannelIdByHandle(username);
+  if (!channelId) {
+    logger.warn('YouTube channel not found, subscription deferred to renewal', { handle: username });
+    return null;
+  }
+
+  await subscribeToChannel(channelId);
+  updateSubscriptionId('youtube', username, channelId);
+  updatePlatformUserId('youtube', username, channelId);
+  return channelId;
+}
+
 async function renewSubscriptions() {
   const users = getAllPlatformUsers('youtube');
   if (!users.length) return;
@@ -68,20 +83,7 @@ async function renewSubscriptions() {
 
   for (const user of users) {
     try {
-      let channelId = user.platform_user_id;
-
-      if (!channelId) {
-        channelId = await getChannelIdByHandle(user.platform_username);
-        if (!channelId) {
-          logger.warn('YouTube channel not found', { handle: user.platform_username });
-          continue;
-        }
-      }
-
-      await subscribeToChannel(channelId);
-      updateSubscriptionId('youtube', user.platform_username, channelId);
-      updatePlatformUserId('youtube', user.platform_username, channelId);
-      // logger.info('YouTube subscription renewed', { handle: user.platform_username, channelId });
+      await subscribeYoutubeUser(user.platform_username, user.platform_user_id);
     } catch (err) {
       logger.error('YouTube renewal error', { handle: user.platform_username, error: err.message });
     }
@@ -109,4 +111,4 @@ async function getActiveLiveStream(channelId) {
   };
 }
 
-module.exports = { getChannelIdByHandle, subscribeToChannel, checkIfLiveStream, getLiveStreamDetails, renewSubscriptions, getActiveLiveStream };
+module.exports = { getChannelIdByHandle, subscribeToChannel, subscribeYoutubeUser, checkIfLiveStream, getLiveStreamDetails, renewSubscriptions, getActiveLiveStream };

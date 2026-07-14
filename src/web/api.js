@@ -339,16 +339,8 @@ router.post('/guilds/:guildId/register', requireGuildAccess, async (req, res) =>
     addUserPlatform(discordId, platform, username, null);
     addUserToLeague(discordId, league.id, req.session.user.id, teamName || null, teamAbbrev || null);
 
-    if (platform === 'youtube' && process.env.YOUTUBE_API_KEY) {
-      const { getChannelIdByHandle, subscribeToChannel } = require('../platforms/youtube/api');
-      const { updateSubscriptionId, updatePlatformUserId } = require('../db/queries');
-      const channelId = await getChannelIdByHandle(username).catch(() => null);
-      if (channelId) {
-        await subscribeToChannel(channelId);
-        updateSubscriptionId('youtube', username, channelId);
-        updatePlatformUserId('youtube', username, channelId);
-      }
-    }
+    const { ensureSubscription } = require('../platforms/subscribe');
+    await ensureSubscription(platform, username);
 
     logger.info('Web portal registered user', {
       adminId: req.session.user.id,
@@ -430,16 +422,8 @@ router.put('/guilds/:guildId/users/:discordId/platforms', requireGuildAccess, as
         addUserPlatform(discordId, change.platform, change.username, null);
       }
 
-      if (change.platform === 'youtube' && process.env.YOUTUBE_API_KEY) {
-        const { getChannelIdByHandle, subscribeToChannel } = require('../platforms/youtube/api');
-        const { updateSubscriptionId, updatePlatformUserId } = require('../db/queries');
-        const channelId = await getChannelIdByHandle(change.username).catch(() => null);
-        if (channelId) {
-          await subscribeToChannel(channelId);
-          updateSubscriptionId('youtube', change.username, channelId);
-          updatePlatformUserId('youtube', change.username, channelId);
-        }
-      }
+      const { ensureSubscription } = require('../platforms/subscribe');
+      await ensureSubscription(change.platform, change.username);
     }
 
     logger.info('Web portal updated user stream details', {

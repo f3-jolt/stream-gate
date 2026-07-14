@@ -100,17 +100,8 @@ module.exports = {
       addUserPlatform(interaction.user.id, platform, username, null);
       addUserToLeague(interaction.user.id, league.id, 'self', team.name, team.abbrev);
 
-      if (platform === 'youtube' && process.env.YOUTUBE_API_KEY) {
-        const { getChannelIdByHandle, subscribeToChannel } = require('../../platforms/youtube/api');
-        const { updateSubscriptionId, updatePlatformUserId } = require('../../db/queries');
-        const channelId = await getChannelIdByHandle(username);
-        if (channelId) {
-          await subscribeToChannel(channelId);
-          updateSubscriptionId('youtube', username, channelId);
-          updatePlatformUserId('youtube', username, channelId);
-          logger.info('YouTube subscription created on self-register', { username, channelId });
-        }
-      }
+      const { ensureSubscription } = require('../../platforms/subscribe');
+      await ensureSubscription(platform, username);
 
       logger.info('User self-registered', {
         discordId: interaction.user.id,

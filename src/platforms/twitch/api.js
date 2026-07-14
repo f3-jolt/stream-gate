@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { getAllPlatformUsers, updateSubscriptionId } = require('../../db/queries');
+const { getAllPlatformUsers, updateSubscriptionId, updatePlatformUserId } = require('../../db/queries');
 const logger = require('../../utils/logger');
 
 let _appAccessToken = null;
@@ -75,6 +75,24 @@ async function getExistingSubscriptions() {
   return data.data || [];
 }
 
+// Ensure a single Twitch user has an active stream.online EventSub subscription.
+// Used when a user is added/edited so we don't wait for the next startup sync.
+async function subscribeTwitchUser(username) {
+  const twitchUser = await getTwitchUserByUsername(username);
+  if (!twitchUser) {
+    logger.warn('Twitch user not found, subscription deferred to startup sync', { username });
+    return null;
+  }
+
+  const existing = await getExistingSubscriptions();
+  const match = existing.find(s => s.condition.broadcaster_user_id === twitchUser.id);
+  const sub = match || await subscribeToStreamOnline(twitchUser.id);
+
+  updatePlatformUserId('twitch', username, twitchUser.id);
+  updateSubscriptionId('twitch', username, sub.id);
+  return sub.id;
+}
+
 async function syncSubscriptions() {
   const users = getAllPlatformUsers('twitch');
   if (!users.length) return;
@@ -141,4 +159,4 @@ async function getLiveStream(username) {
   };
 }
 
-module.exports = { getAppAccessToken, getTwitchUserByUsername, getTwitchVideo, subscribeToStreamOnline, deleteSubscription, syncSubscriptions, getLiveStream, twitchApiGet };
+module.exports = { getAppAccessToken, getTwitchUserByUsername, getTwitchVideo, subscribeToStreamOnline, subscribeTwitchUser, deleteSubscription, syncSubscriptions, getLiveStream, twitchApiGet };

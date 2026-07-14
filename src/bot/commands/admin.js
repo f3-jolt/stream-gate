@@ -373,19 +373,8 @@ async function handleRegister(interaction) {
     addUserPlatform(target.id, platform, username, null);
     addUserToLeague(target.id, league.id, interaction.user.id, team.name, team.abbrev);
 
-    if (platform === 'youtube' && process.env.YOUTUBE_API_KEY) {
-      const { getChannelIdByHandle, subscribeToChannel } = require('../../platforms/youtube/api');
-      const { updateSubscriptionId, updatePlatformUserId } = require('../../db/queries');
-      const channelId = await getChannelIdByHandle(username);
-      if (channelId) {
-        await subscribeToChannel(channelId);
-        updateSubscriptionId('youtube', username, channelId);
-        updatePlatformUserId('youtube', username, channelId);
-        logger.info('YouTube subscription created on register', { username, channelId });
-      } else {
-        logger.warn('YouTube channel not found on register, subscription deferred to cron', { username });
-      }
-    }
+    const { ensureSubscription } = require('../../platforms/subscribe');
+    await ensureSubscription(platform, username);
 
     logger.info('Admin registered user', {
       adminId: interaction.user.id,
@@ -875,17 +864,9 @@ async function handleEditUser(interaction) {
         updateUserPlatformUsername(targetUser.id, platform, newUsername);
         notes.push(`**${platform}** username changed to \`${newUsername}\``);
 
-        if (platform === 'youtube' && process.env.YOUTUBE_API_KEY) {
-          const { getChannelIdByHandle, subscribeToChannel } = require('../../platforms/youtube/api');
-          const { updateSubscriptionId, updatePlatformUserId } = require('../../db/queries');
-          const channelId = await getChannelIdByHandle(newUsername);
-          if (channelId) {
-            await subscribeToChannel(channelId);
-            updateSubscriptionId('youtube', newUsername, channelId);
-            updatePlatformUserId('youtube', newUsername, channelId);
-            notes.push(`YouTube subscription updated`);
-          }
-        }
+        const { ensureSubscription } = require('../../platforms/subscribe');
+        await ensureSubscription(platform, newUsername);
+        notes.push(`${platform} subscription updated`);
       }
     }
 
