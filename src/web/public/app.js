@@ -30,6 +30,8 @@ let summaryData = [];
 let coachData = [];
 let summarySort = { col: 'wins', dir: -1 };
 let coachSort = { col: 'wins', dir: -1 };
+let coachAssignRows = [];
+let coachAssignSort = { col: 'coach', dir: 1 };
 
 const DYNASTY_TABS = new Set(['season', 'schedule', 'results', 'summary', 'coaches']);
 // Tabs that act on one specific league and can't operate on "All Leagues".
@@ -1078,16 +1080,29 @@ function confOptions(selected) {
     CONFERENCES.map(c => `<option value="${esc(c)}"${c === selected ? ' selected' : ''}>${esc(c)}</option>`).join('');
 }
 // Team picker drawn from the full catalog — teams join the season when a coach
-// is assigned, so every active team is selectable here.
-function teamPickerOptions(selected) {
-  return '<option value="">— team (optional) —</option>' +
-    [...teamCatalog].sort((a, b) => a.name.localeCompare(b.name))
-      .map(t => `<option value="${esc(t.abbrev)}"${t.abbrev === selected ? ' selected' : ''}>${esc(t.abbrev)} — ${esc(t.name)}</option>`).join('');
+// is assigned, so every active team is selectable here. Rendered into a
+// <datalist> so the team inputs autocomplete as you type.
+function teamDatalistOptions() {
+  return [...teamCatalog].sort((a, b) => a.name.localeCompare(b.name))
+    .map(t => `<option value="${esc(t.abbrev)}">${esc(t.abbrev)} — ${esc(t.name)}</option>`).join('');
+}
+// Turn whatever the user typed/picked in a team autocomplete input into a team
+// abbrev — matches an abbrev, a full name, or the "ABBR — Name" label form.
+function resolveTeamAbbrev(raw) {
+  const v = (raw || '').trim();
+  if (!v) return '';
+  const up = v.toUpperCase();
+  let t = teamCatalog.find(x => x.abbrev.toUpperCase() === up);
+  if (t) return t.abbrev;
+  t = teamCatalog.find(x => x.name.toLowerCase() === v.toLowerCase()
+    || `${x.abbrev} — ${x.name}`.toLowerCase() === v.toLowerCase());
+  if (t) return t.abbrev;
+  return up; // fall back to the raw entry uppercased
 }
 // Picking a team defaults the paired conference dropdown to that team's known
 // conference (when it's one of the fixed 11).
 function syncCoachConf(teamSelId, confSelId) {
-  const abbrev = document.getElementById(teamSelId).value;
+  const abbrev = resolveTeamAbbrev(document.getElementById(teamSelId).value);
   const t = teamCatalog.find(x => x.abbrev === abbrev);
   const confSel = document.getElementById(confSelId);
   if (t && confSel && CONFERENCES.includes(t.conference)) confSel.value = t.conference;
@@ -1115,39 +1130,83 @@ async function loadCoaches() {
   const assignments = await aRes.json();
   const assignMap = new Map(assignments.map(a => [a.coach_id, a.team_abbrev]));
   const confByTeam = new Map(allTeams.map(t => [t.team_abbrev, t.conference_name]));
-  renderCoaches(assignMap, confByTeam);
+  // Flatten each coach into a sortable row (numbers for stream so it sorts by
+  // status; team_sort keeps unassigned rows at the bottom when ascending).
+  coachAssignRows = allCoaches.map(c => {
+    const assigned = assignMap.get(c.id) || '';
+    return {
+      id: c.id,
+      coach: c.display_name || '',
+      discord: c.discord_id ? (c.discord_username || c.discord_id) : '',
+      stream: c.discord_id ? (c.platform_count > 0 ? 2 : 1) : 0,
+      platforms: c.platforms || '',
+      assigned,
+      conference: assigned ? (confByTeam.get(assigned) || '') : '',
+      team_sort: assigned ? teamNameFor(assigned) : '￿',
+    };
+  });
+  applyCoachAssign();
   populateCoachTeamSelect();
+  renderConfBreakdown();
+}
+function applyCoachAssign() {
+  renderCoaches(sortData(coachAssignRows, coachAssignSort.col, coachAssignSort.dir));
+  updateSortHeaders('coaches-table', coachAssignSort);
+}
+function sortCoachAssign(col) {
+  if (coachAssignSort.col === col) coachAssignSort.dir *= -1; else { coachAssignSort.col = col; coachAssignSort.dir = 1; }
+  applyCoachAssign();
 }
 function populateCoachTeamSelect() {
-  const teamSel = document.getElementById('coach-team');
-  if (teamSel) teamSel.innerHTML = teamPickerOptions('');
+  const dl = document.getElementById('coach-team-options');
+  if (dl) dl.innerHTML = teamDatalistOptions();
   const confSel = document.getElementById('coach-conf');
   if (confSel) confSel.innerHTML = confOptions('');
 }
-function renderCoaches(assignMap, confByTeam) {
+// Count season teams per conference for the breakdown card.
+function renderConfBreakdown() {
+  const el = document.getElementById('conf-breakdown');
+  if (!el) return;
+  if (!allTeams.length) { el.innerHTML = '<span class="text-muted">No teams in this season yet.</span>'; return; }
+  const counts = new Map();
+  for (const t of allTeams) {
+    const c = t.conference_name || 'No conference';
+    counts.set(c, (counts.get(c) || 0) + 1);
+  }
+  const entries = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  el.innerHTML = entries.map(([conf, n]) =>
+    `<div class="conf-tile"><span class="conf-name">${esc(conf)}</span><span class="badge badge-blue">${n}</span></div>`
+  ).join('') +
+    `<div class="conf-tile conf-total"><span class="conf-name">Total</span><span class="badge badge-green">${allTeams.length}</span></div>`;
+}
+function renderCoaches(rows) {
   const tb = document.getElementById('coaches-tbody');
-  if (!allCoaches.length) { tb.innerHTML = '<tr><td colspan="4" class="text-muted" style="text-align:center;padding:16px;">No coaches added</td></tr>'; return; }
-  tb.innerHTML = allCoaches.map(c => {
-    const assigned = assignMap.get(c.id) || '';
-    const conf = assigned ? (confByTeam.get(assigned) || '') : '';
-    let current;
-    if (!assigned) current = '<span class="badge badge-red" title="No team assigned">Unassigned</span>';
-    else current = `${teamChip(assigned, teamNameFor(assigned), colorsForTeam(assigned))} `
-      + (conf ? `<span class="badge badge-blue">${esc(conf)}</span>` : '<span class="badge badge-red" title="No conference set">No conference</span>');
+  if (!rows.length) { tb.innerHTML = '<tr><td colspan="6" class="text-muted" style="text-align:center;padding:16px;">No coaches added</td></tr>'; return; }
+  tb.innerHTML = rows.map(c => {
+    const assigned = c.assigned;
+    const teamCell = assigned
+      ? teamChip(assigned, teamNameFor(assigned), colorsForTeam(assigned))
+      : '<span class="badge badge-red" title="No team assigned">Unassigned</span>';
+    const confCell = c.conference
+      ? `<span class="badge badge-blue">${esc(c.conference)}</span>`
+      : (assigned ? '<span class="badge badge-red" title="No conference set">No conference</span>' : '<span class="text-muted">—</span>');
     let stream;
-    if (!c.discord_id) stream = '<span class="text-muted" title="No Discord user linked">—</span>';
-    else if (c.platform_count > 0) stream = `<span class="badge badge-green" title="${esc(c.platforms || '')}">✓ Set</span>`;
+    if (c.stream === 0) stream = '<span class="text-muted" title="No Discord user linked">—</span>';
+    else if (c.stream === 2) stream = `<span class="badge badge-green" title="${esc(c.platforms)}">✓ Set</span>`;
     else stream = '<span class="badge badge-red" title="No stream platforms registered">✗ Missing</span>';
     return `
     <tr>
-      <td><strong>${esc(c.display_name)}</strong></td>
-      <td>${c.discord_id ? esc(c.discord_username || c.discord_id) : '<span class="text-muted">—</span>'}</td>
+      <td>${teamCell}</td>
+      <td>${confCell}</td>
+      <td><strong>${esc(c.coach)}</strong></td>
+      <td>${c.discord ? esc(c.discord) : '<span class="text-muted">—</span>'}</td>
       <td>${stream}</td>
       <td>
-        <div style="margin-bottom:6px;">${current}</div>
-        <select id="assign-${c.id}" onchange="syncCoachConf('assign-${c.id}','conf-${c.id}')">${teamPickerOptions(assigned)}</select>
-        <select id="conf-${c.id}">${confOptions(conf)}</select>
-        <button class="btn btn-primary btn-sm" onclick="assignCoach(${c.id})">Assign</button>
+        <div class="assign-controls">
+          <input id="assign-${c.id}" list="coach-team-options" autocomplete="off" placeholder="Team…" value="${esc(assigned)}" onchange="syncCoachConf('assign-${c.id}','conf-${c.id}')" oninput="syncCoachConf('assign-${c.id}','conf-${c.id}')">
+          <select id="conf-${c.id}">${confOptions(c.conference)}</select>
+          <button class="btn btn-primary btn-sm" onclick="assignCoach(${c.id})">Assign</button>
+        </div>
       </td>
     </tr>`;
   }).join('');
@@ -1191,7 +1250,7 @@ function hideCoachResults() {
 
 async function addCoach() {
   if (!selectedCoachUser) { alert('Search for and select a Discord user first.'); return; }
-  const teamAbbrev = document.getElementById('coach-team').value;
+  const teamAbbrev = resolveTeamAbbrev(document.getElementById('coach-team').value);
   const conferenceName = document.getElementById('coach-conf').value || null;
 
   const res = await fetch(`/api/guilds/${currentGuildId}/leagues/${currentDynLeagueId}/coaches`, {
@@ -1225,7 +1284,7 @@ async function addCoach() {
   await loadCoaches();
 }
 async function assignCoach(coachId) {
-  const teamAbbrev = document.getElementById(`assign-${coachId}`).value;
+  const teamAbbrev = resolveTeamAbbrev(document.getElementById(`assign-${coachId}`).value);
   if (!teamAbbrev) return;
   const conferenceName = document.getElementById(`conf-${coachId}`).value || null;
   const res = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/assignments`, {

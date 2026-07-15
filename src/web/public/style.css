@@ -185,6 +185,21 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .search-row input { width: 220px; }
 .search-row select { min-width: 140px; }
 
+/* ── Conference breakdown ── */
+.conf-breakdown { display: flex; flex-wrap: wrap; gap: 8px; }
+.conf-tile {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; background: var(--surface2);
+  border: 1px solid var(--border); border-radius: var(--radius);
+}
+.conf-tile .conf-name { font-weight: 600; }
+.conf-tile.conf-total { border-style: dashed; }
+
+/* ── Coach assign controls (one column) ── */
+.assign-controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.assign-controls input { width: 160px; }
+.assign-controls select { min-width: 130px; }
+
 /* ── Advance ── */
 .advance-row { display: flex; align-items: flex-end; gap: 10px; margin-bottom: 24px; flex-wrap: wrap; }
 .field-group { display: flex; flex-direction: column; gap: 6px; }

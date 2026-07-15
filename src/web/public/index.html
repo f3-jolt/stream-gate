@@ -234,6 +234,11 @@
           <div id="season-empty" class="text-muted" style="display:none; padding:24px;">Select or create a season above to manage its coaches.</div>
           <div id="season-content">
             <div class="card">
+              <div class="card-title">Conference Breakdown</div>
+              <p class="text-muted" style="margin:-6px 0 12px;">Teams in each conference for this season.</p>
+              <div id="conf-breakdown" class="conf-breakdown"></div>
+            </div>
+            <div class="card">
               <div class="card-title">Coaches &amp; Assignments</div>
               <p class="text-muted" style="margin:-6px 0 12px;">Add a coach and optionally assign a team + conference now, or assign it later. Teams join the season when a coach is assigned to them.</p>
               <div class="search-row">
@@ -241,13 +246,21 @@
                   <input id="coach-search" type="text" autocomplete="off" placeholder="Search Discord user…" oninput="onCoachSearchInput(this.value)">
                   <div id="coach-search-results" class="typeahead-results" style="display:none;"></div>
                 </div>
-                <select id="coach-team" onchange="syncCoachConf('coach-team','coach-conf')"><option value="">— team (optional) —</option></select>
+                <input id="coach-team" list="coach-team-options" autocomplete="off" placeholder="Team (type to search)…" onchange="syncCoachConf('coach-team','coach-conf')" oninput="syncCoachConf('coach-team','coach-conf')">
                 <select id="coach-conf"><option value="">— conference —</option></select>
                 <button class="btn btn-primary" onclick="addCoach()">+ Add Coach</button>
               </div>
+              <datalist id="coach-team-options"></datalist>
               <div class="table-wrap">
                 <table id="coaches-table">
-                  <thead><tr><th>Coach</th><th>Discord</th><th>Stream</th><th>Team &amp; Conference (this season)</th></tr></thead>
+                  <thead><tr>
+                    <th class="sortable" data-col="team_sort" onclick="sortCoachAssign('team_sort')">Team</th>
+                    <th class="sortable" data-col="conference" onclick="sortCoachAssign('conference')">Conference</th>
+                    <th class="sortable" data-col="coach" onclick="sortCoachAssign('coach')">Coach</th>
+                    <th class="sortable" data-col="discord" onclick="sortCoachAssign('discord')">Discord</th>
+                    <th class="sortable" data-col="stream" onclick="sortCoachAssign('stream')">Stream</th>
+                    <th>Assign / Change</th>
+                  </tr></thead>
                   <tbody id="coaches-tbody"></tbody>
                 </table>
               </div>
