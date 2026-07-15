@@ -564,6 +564,27 @@ function getAssignmentCoachId(seasonId, teamAbbrev) {
 // only on this explicit action — syncs the coach's stream-registration team.
 const assignCoachTeam = db.transaction((seasonId, coachId, teamAbbrev, teamName = null) => {
   const abbr = teamAbbrev.toUpperCase();
+
+  // A coach holds at most one team per season. Clear any prior assignment to a
+  // different team so "change team" moves the coach instead of leaving a stale
+  // duplicate (which made the old team keep showing). Detach the coach from the
+  // vacated team's unplayed games so its is_user flags recompute.
+  const prior = db.prepare(
+    'SELECT team_abbrev FROM coach_team_assignments WHERE season_id = ? AND coach_id = ? AND team_abbrev != ?'
+  ).all(seasonId, coachId, abbr);
+  for (const { team_abbrev: old } of prior) {
+    db.prepare('DELETE FROM coach_team_assignments WHERE season_id = ? AND coach_id = ? AND team_abbrev = ?')
+      .run(seasonId, coachId, old);
+    db.prepare('UPDATE games SET home_coach_id = NULL WHERE season_id = ? AND home_abbrev = ? AND home_coach_id = ? AND played_at IS NULL')
+      .run(seasonId, old, coachId);
+    db.prepare('UPDATE games SET away_coach_id = NULL WHERE season_id = ? AND away_abbrev = ? AND away_coach_id = ? AND played_at IS NULL')
+      .run(seasonId, old, coachId);
+    db.prepare(`
+      UPDATE games SET is_user_game = (home_coach_id IS NOT NULL AND away_coach_id IS NOT NULL)
+      WHERE season_id = ? AND played_at IS NULL AND (home_abbrev = ? OR away_abbrev = ?)
+    `).run(seasonId, old, old);
+  }
+
   db.prepare(`
     INSERT INTO coach_team_assignments (season_id, coach_id, team_abbrev) VALUES (?, ?, ?)
     ON CONFLICT(season_id, team_abbrev) DO UPDATE SET coach_id = excluded.coach_id
@@ -652,20 +673,24 @@ function _isWeekBusy(seasonId, week, abbrev) {
   return !!db.prepare('SELECT 1 FROM games WHERE season_id = ? AND week = ? AND (home_abbrev = ? OR away_abbrev = ?)')
     .get(seasonId, week, abbrev, abbrev);
 }
-function _alreadyPlays(seasonId, a, b) {
-  return !!db.prepare(`SELECT 1 FROM games WHERE season_id = ?
+// The no-rematch rule only applies to the regular season (weeks 0–14). Postseason
+// weeks (15+) routinely rematch regular-season opponents (conference title games,
+// bowls, the national championship), so those are excluded here.
+function _alreadyPlaysRegular(seasonId, a, b) {
+  return !!db.prepare(`SELECT 1 FROM games WHERE season_id = ? AND week <= 14
     AND ((home_abbrev = ? AND away_abbrev = ?) OR (home_abbrev = ? AND away_abbrev = ?))`)
     .get(seasonId, a, b, b, a);
 }
 
 // Enforces the scheduling rules (after clearing the subject's own game that week):
-// 1) can't play itself, 2) opponent must be open that week, 3) no rematch in the season.
+// 1) can't play itself, 2) opponent must be open that week, 3) no rematch during
+// the regular season (postseason weeks may rematch).
 function _placeGame(seasonId, week, T, opponentAbbrev, isHome, isUserGame) {
   if (!opponentAbbrev) return; // BYE
   const opp = opponentAbbrev.toUpperCase();
   if (opp === T) throw new Error('A team cannot play itself.');
   if (_isWeekBusy(seasonId, week, opp)) throw new Error(`${opp} is already scheduled in week ${week}.`);
-  if (_alreadyPlays(seasonId, T, opp)) throw new Error(`${T} already plays ${opp} this season (no rematches).`);
+  if (week <= 14 && _alreadyPlaysRegular(seasonId, T, opp)) throw new Error(`${T} already plays ${opp} this season (no rematches).`);
   const home = isHome ? T : opp;
   const away = isHome ? opp : T;
   insertGame(seasonId, week, home, away, week >= 15 ? 1 : 0, isUserGame);

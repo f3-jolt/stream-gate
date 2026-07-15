@@ -340,6 +340,26 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .card-flash.success { color: var(--success); }
 .card-flash.error { color: var(--danger); }
 
+/* ── Schedule team picker (chips + single loaded card) ── */
+.sched-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.sched-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; font: inherit; font-size: 13px; color: var(--text);
+  background: var(--surface2); border: 1px solid var(--border); border-radius: 999px;
+  cursor: pointer; transition: border-color .12s, box-shadow .12s;
+}
+.sched-chip:hover { border-color: var(--border-strong); }
+.sched-chip.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.sched-chip-logo { width: 18px; height: 18px; object-fit: contain; flex: none; }
+.sched-detail { max-width: 520px; }
+.sched-card-solo { max-width: 520px; }
+.sched-card-meta { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.sched-card-table tr.sched-sep td {
+  padding: 4px 8px; font-size: 11px; font-weight: 600; letter-spacing: .8px;
+  text-transform: uppercase; color: var(--text-muted); background: var(--surface2);
+}
+.sched-card-table .wk.wk-post { color: var(--accent); font-weight: 600; }
+
 /* ── Typeahead (Discord user search) ── */
 .typeahead { position: relative; }
 .typeahead-results {

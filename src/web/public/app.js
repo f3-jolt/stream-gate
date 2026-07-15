@@ -41,6 +41,11 @@ const WEEK_LABELS = {
   8:'Week 8',9:'Week 9',10:'Week 10',11:'Week 11',12:'Week 12',13:'Week 13',14:'Week 14',
   15:'CCW',16:'Bowl Week 1',17:'Bowl Week 2',18:'CFP Semi Finals',19:'National Championship',
 };
+// Highest week the schedule builder exposes (0–14 regular season, 15–19 postseason).
+const SCHED_MAX_WEEK = 19;
+// Compact labels for the schedule grid's week column.
+const WEEK_SHORT = { 15:'CCW', 16:'BW1', 17:'BW2', 18:'CFP Semi', 19:'NC' };
+function weekShort(w) { return w <= 14 ? `W${w}` : (WEEK_SHORT[w] || `W${w}`); }
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────────
 
@@ -1296,10 +1301,11 @@ async function assignCoach(coachId) {
   else flash(data.error || 'Failed', 'error');
 }
 
-// ── Schedule (all-teams card board) ──
+// ── Schedule (team picker + one detail card) ──
 let oppMetaTimers = {};
 let seasonGames = [];       // all games in the season (for scheduling-rule checks)
 let scheduleFilter = '';
+let selectedScheduleTeam = null;  // abbrev of the team whose card is loaded
 
 // Reusable team chip (logo + shaded colors); also used by the Season tab.
 function teamChip(abbrev, name, colors) {
@@ -1328,8 +1334,13 @@ function shadeFor(colors) {
 }
 
 async function loadScheduleTab() {
-  const wrap = document.getElementById('schedule-cards');
-  if (!currentSeasonId) { wrap.innerHTML = '<p class="text-muted" style="padding:16px;">Select a season to build schedules.</p>'; return; }
+  const chips = document.getElementById('schedule-chips');
+  const detail = document.getElementById('schedule-detail');
+  if (!currentSeasonId) {
+    chips.innerHTML = '<p class="text-muted" style="padding:16px;">Select a season to build schedules.</p>';
+    detail.innerHTML = '';
+    return;
+  }
   const [teamsRes, gamesRes] = await Promise.all([
     fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/teams`),
     fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/games`),
@@ -1339,14 +1350,52 @@ async function loadScheduleTab() {
   renderScheduleCards();
 }
 
-function filterScheduleCards(v) { scheduleFilter = (v || '').toLowerCase(); renderScheduleCards(); }
+function filterScheduleCards(v) { scheduleFilter = (v || '').toLowerCase(); renderScheduleChips(); }
 
+// Entry render: ensure a valid selection, then draw the chip bar + detail card.
 function renderScheduleCards() {
-  const wrap = document.getElementById('schedule-cards');
-  if (!allTeams.length) { wrap.innerHTML = '<p class="text-muted" style="padding:16px;">No teams on the roster yet — add them in the Season tab.</p>'; return; }
+  const chips = document.getElementById('schedule-chips');
+  const detail = document.getElementById('schedule-detail');
+  if (!allTeams.length) {
+    chips.innerHTML = '<p class="text-muted" style="padding:16px;">No teams on the roster yet — add them in the Season tab.</p>';
+    detail.innerHTML = '';
+    return;
+  }
+  if (!selectedScheduleTeam || !allTeams.some(t => t.team_abbrev === selectedScheduleTeam)) {
+    selectedScheduleTeam = allTeams[0].team_abbrev;
+  }
+  renderScheduleChips();
+  renderScheduleDetail();
+}
+
+// Row of team chips; the active one is highlighted. Filtering only narrows the
+// chip bar — the loaded card stays put until another chip is clicked.
+function renderScheduleChips() {
+  const chips = document.getElementById('schedule-chips');
   const f = scheduleFilter;
   const teams = allTeams.filter(t => !f || t.team_abbrev.toLowerCase().includes(f) || (t.team_name || '').toLowerCase().includes(f));
-  wrap.innerHTML = teams.length ? teams.map(scheduleCardHtml).join('') : '<p class="text-muted" style="padding:16px;">No teams match.</p>';
+  if (!teams.length) { chips.innerHTML = '<p class="text-muted" style="padding:8px 0;">No teams match.</p>'; return; }
+  chips.innerHTML = teams.map(t => {
+    const active = t.team_abbrev === selectedScheduleTeam;
+    return `<button class="sched-chip${active ? ' active' : ''}" style="background:${shadeFor(t.colors)}" onclick="selectScheduleTeam('${t.team_abbrev}')" title="${esc(t.team_name)}">`
+      + `<img class="sched-chip-logo" src="${logoUrl(t.team_abbrev)}" alt="" onerror="this.style.display='none'">`
+      + `<strong>${esc(t.team_abbrev)}</strong></button>`;
+  }).join('');
+}
+
+function selectScheduleTeam(abbr) {
+  selectedScheduleTeam = abbr;
+  renderScheduleChips();
+  renderScheduleDetail();
+}
+
+// The loaded card: team + coach info header, then the week grid (0–14 regular
+// season, 15–19 postseason under a divider).
+function renderScheduleDetail() {
+  const detail = document.getElementById('schedule-detail');
+  const t = allTeams.find(x => x.team_abbrev === selectedScheduleTeam);
+  if (!t) { detail.innerHTML = ''; return; }
+  detail.innerHTML = scheduleCardHtml(t);
 }
 
 function scheduleCardHtml(t) {
@@ -1359,7 +1408,8 @@ function scheduleCardHtml(t) {
     ? `linear-gradient(90deg, ${hexToRgba(t.colors[0], 0.9)}, ${hexToRgba(t.colors[1] || t.colors[0], 0.55)})`
     : 'var(--surface2)';
   let rows = '';
-  for (let w = 0; w <= 14; w++) {
+  for (let w = 0; w <= SCHED_MAX_WEEK; w++) {
+    if (w === 15) rows += `<tr class="sched-sep"><td colspan="4">Postseason</td></tr>`;
     const g = byWeek.get(w);
     const isHome = g ? g.home_abbrev === abbr : true;
     const opp = g ? (isHome ? g.away_abbrev : g.home_abbrev) : '';
@@ -1367,7 +1417,7 @@ function scheduleCardHtml(t) {
     const user = g ? g.is_user_game === 1 : false;
     const has = !!opp;
     rows += `<tr>
-      <td class="wk">W${w}</td>
+      <td class="wk${w > 14 ? ' wk-post' : ''}">${weekShort(w)}</td>
       <td>
         <div class="opp-cell" id="oppcell-${abbr}-${w}" style="background:${has ? shadeFor(colors) : 'transparent'};">
           <img class="opp-logo" id="opplogo-${abbr}-${w}" alt="" ${has ? `src="${logoUrl(opp)}"` : ''}
@@ -1388,12 +1438,19 @@ function scheduleCardHtml(t) {
       </td>
     </tr>`;
   }
-  return `<div class="sched-card">
+  const coachInfo = t.coach_name
+    ? `<span class="badge badge-blue">Coach: ${esc(t.coach_name)}</span>`
+    : '<span class="badge badge-red">No coach assigned</span>';
+  const confInfo = t.conference_name
+    ? `<span class="badge">${esc(t.conference_name)}</span>`
+    : '<span class="text-muted">No conference</span>';
+  return `<div class="sched-card sched-card-solo">
     <div class="sched-card-head" style="background:${headerBg};">
       <img class="sched-card-logo" src="${logoUrl(abbr)}" alt="" onerror="this.style.display='none'">
       <span>${esc(t.team_name)} <small>(${esc(abbr)})</small></span>
       ${t.is_user_team ? '<span class="badge badge-yellow" style="margin-left:auto;">user</span>' : ''}
     </div>
+    <div class="sched-card-meta">${confInfo} ${coachInfo}</div>
     <table class="sched-card-table"><tbody>${rows}</tbody></table>
     <div class="sched-card-foot">
       <button class="btn btn-primary btn-sm" onclick="saveCard('${abbr}')">Save ${esc(abbr)}</button>
@@ -1416,14 +1473,18 @@ function bookedThatWeek(abbr, w) {
 }
 
 // Abbrevs not selectable for (abbr, w): self (rule 1), busy that week (rule 2),
-// already on this team's card (rule 3).
+// and — for regular-season rows only — anyone already on another regular-season
+// row (rule 3, no rematch). Postseason rows (15+) may rematch, so they only
+// exclude self and teams busy that week.
 function excludedForRow(abbr, w) {
   const set = new Set([abbr]);
   bookedThatWeek(abbr, w).forEach(a => set.add(a));
-  for (let i = 0; i <= 14; i++) {
-    if (i === w) continue;
-    const v = (gid('opp', abbr, i)?.value || '').trim().toUpperCase();
-    if (v) set.add(v);
+  if (w <= 14) {
+    for (let i = 0; i <= 14; i++) {
+      if (i === w) continue;
+      const v = (gid('opp', abbr, i)?.value || '').trim().toUpperCase();
+      if (v) set.add(v);
+    }
   }
   return set;
 }
@@ -1481,20 +1542,17 @@ function markUserDefault(abbr, w) {
 // enforces them, but catching here keeps the in-progress edits from being lost).
 function validateCard(abbr) {
   const T = abbr.toUpperCase();
-  const seen = new Map(); // opponent abbrev -> week already scheduled
-  // Seed with this team's postseason opponents (not editable in the 0–14 grid).
-  for (const g of seasonGames) {
-    if (g.week > 14 && (g.home_abbrev === T || g.away_abbrev === T)) {
-      seen.set(g.home_abbrev === T ? g.away_abbrev : g.home_abbrev, g.week);
-    }
-  }
-  for (let w = 0; w <= 14; w++) {
+  const seenRegular = new Map(); // regular-season opponent abbrev -> week
+  for (let w = 0; w <= SCHED_MAX_WEEK; w++) {
     const opp = (gid('opp', abbr, w).value || '').trim().toUpperCase();
     if (!opp) continue;
-    if (opp === T) return `W${w}: a team can't play itself.`;
-    if (seen.has(opp)) return `${opp} scheduled twice (W${seen.get(opp)} & W${w}) — no rematches.`;
-    if (bookedThatWeek(abbr, w).has(opp)) return `${opp} is already booked in W${w}.`;
-    seen.set(opp, w);
+    if (opp === T) return `${weekShort(w)}: a team can't play itself.`;
+    if (bookedThatWeek(abbr, w).has(opp)) return `${opp} is already booked in ${weekShort(w)}.`;
+    // No-rematch applies to the regular season only; postseason weeks may rematch.
+    if (w <= 14) {
+      if (seenRegular.has(opp)) return `${opp} scheduled twice (${weekShort(seenRegular.get(opp))} & ${weekShort(w)}) — no rematches.`;
+      seenRegular.set(opp, w);
+    }
   }
   return null;
 }
@@ -1503,7 +1561,7 @@ async function saveCard(abbr) {
   const err = validateCard(abbr);
   if (err) { flashCard(abbr, err, 'error'); return; }
   const weeks = [];
-  for (let w = 0; w <= 14; w++) {
+  for (let w = 0; w <= SCHED_MAX_WEEK; w++) {
     const opp = (gid('opp', abbr, w).value || '').trim().toUpperCase();
     weeks.push({
       week: w,
