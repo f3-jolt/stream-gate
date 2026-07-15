@@ -340,19 +340,38 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .card-flash.success { color: var(--success); }
 .card-flash.error { color: var(--danger); }
 
-/* ── Schedule team picker (chips + single loaded card) ── */
-.sched-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
-.sched-chip {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 12px; font: inherit; font-size: 13px; color: var(--text);
-  background: var(--surface2); border: 1px solid var(--border); border-radius: 999px;
-  cursor: pointer; transition: border-color .12s, box-shadow .12s;
+/* ── Schedule team picker (left nav + loaded card) ── */
+.sched-layout { display: flex; gap: 16px; align-items: flex-start; }
+.sched-nav {
+  flex: 0 0 240px; position: sticky; top: 12px;
+  display: flex; flex-direction: column; gap: 8px;
+  max-height: calc(100vh - 120px);
 }
-.sched-chip:hover { border-color: var(--border-strong); }
-.sched-chip.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
-.sched-chip-logo { width: 18px; height: 18px; object-fit: contain; flex: none; }
-.sched-detail { max-width: 520px; }
-.sched-card-solo { max-width: 520px; }
+.sched-nav-filter { width: 100%; }
+.sched-nav-list {
+  overflow-y: auto; display: flex; flex-direction: column; gap: 2px;
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 4px;
+}
+.sched-nav-item {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  padding: 7px 9px; font: inherit; font-size: 13px; color: var(--text);
+  background: transparent; border: 1px solid transparent; border-radius: var(--radius);
+  cursor: pointer; transition: background .12s, border-color .12s;
+}
+.sched-nav-item:hover { background: var(--surface2); }
+.sched-nav-item.active { background: var(--surface2); border-color: var(--accent); }
+.sched-nav-logo { width: 20px; height: 20px; object-fit: contain; flex: none; }
+.sched-nav-abbr { font-weight: 600; flex: none; min-width: 42px; }
+.sched-nav-name { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sched-nav-item.active .sched-nav-name { color: var(--text); }
+.sched-nav-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--danger); margin-left: auto; flex: none; }
+.sched-detail { flex: 1 1 auto; min-width: 0; }
+.sched-card-solo { max-width: 560px; }
+@media (max-width: 720px) {
+  .sched-layout { flex-direction: column; }
+  .sched-nav { flex-basis: auto; width: 100%; position: static; max-height: none; }
+  .sched-nav-list { max-height: 260px; }
+}
 .sched-card-meta { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
 .sched-card-table tr.sched-sep td {
   padding: 4px 8px; font-size: 11px; font-weight: 600; letter-spacing: .8px;

@@ -272,12 +272,14 @@
         <div id="tab-schedule" class="tab-panel">
           <div class="card">
             <div class="card-title">Build Schedule</div>
-            <p class="text-muted" style="margin-bottom:12px;">Pick a team below to load its schedule. For each week set the opponent (type to search — blank = BYE), home/away, and the user flag, then <strong>Save</strong>. Saving reloads so opponents reflect across teams — save before switching teams. Weeks 15–19 (CCW, BW1, BW2, CFP Semi, NC) are the postseason and may rematch regular-season opponents.</p>
-            <div class="search-row">
-              <input id="sched-filter" type="text" placeholder="Filter teams…" oninput="filterScheduleCards(this.value)">
+            <p class="text-muted" style="margin-bottom:12px;">Pick a team on the left to load its schedule. For each week set the opponent (type to search — blank = BYE), home/away, and the user flag, then <strong>Save</strong>. Saving reloads so opponents reflect across teams — save before switching teams. Weeks 15–19 (CCW, BW1, BW2, CFP Semi, NC) are the postseason and may rematch regular-season opponents.</p>
+            <div class="sched-layout">
+              <div class="sched-nav">
+                <input id="sched-filter" class="sched-nav-filter" type="text" placeholder="Filter teams…" oninput="filterScheduleCards(this.value)">
+                <div id="schedule-nav-list" class="sched-nav-list"></div>
+              </div>
+              <div id="schedule-detail" class="sched-detail"></div>
             </div>
-            <div id="schedule-chips" class="sched-chips"></div>
-            <div id="schedule-detail" class="sched-detail"></div>
           </div>
         </div>
 

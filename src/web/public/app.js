@@ -1334,11 +1334,11 @@ function shadeFor(colors) {
 }
 
 async function loadScheduleTab() {
-  const chips = document.getElementById('schedule-chips');
+  const nav = document.getElementById('schedule-nav-list');
   const detail = document.getElementById('schedule-detail');
   if (!currentSeasonId) {
-    chips.innerHTML = '<p class="text-muted" style="padding:16px;">Select a season to build schedules.</p>';
-    detail.innerHTML = '';
+    nav.innerHTML = '<p class="text-muted" style="padding:12px;">Select a season.</p>';
+    detail.innerHTML = '<p class="text-muted" style="padding:16px;">Select a season to build schedules.</p>';
     return;
   }
   const [teamsRes, gamesRes] = await Promise.all([
@@ -1350,42 +1350,44 @@ async function loadScheduleTab() {
   renderScheduleCards();
 }
 
-function filterScheduleCards(v) { scheduleFilter = (v || '').toLowerCase(); renderScheduleChips(); }
+function filterScheduleCards(v) { scheduleFilter = (v || '').toLowerCase(); renderScheduleNav(); }
 
-// Entry render: ensure a valid selection, then draw the chip bar + detail card.
+// Entry render: ensure a valid selection, then draw the team nav + detail card.
 function renderScheduleCards() {
-  const chips = document.getElementById('schedule-chips');
+  const nav = document.getElementById('schedule-nav-list');
   const detail = document.getElementById('schedule-detail');
   if (!allTeams.length) {
-    chips.innerHTML = '<p class="text-muted" style="padding:16px;">No teams on the roster yet — add them in the Season tab.</p>';
-    detail.innerHTML = '';
+    nav.innerHTML = '<p class="text-muted" style="padding:12px;">No teams yet.</p>';
+    detail.innerHTML = '<p class="text-muted" style="padding:16px;">No teams on the roster yet — add them in the Season tab.</p>';
     return;
   }
   if (!selectedScheduleTeam || !allTeams.some(t => t.team_abbrev === selectedScheduleTeam)) {
     selectedScheduleTeam = allTeams[0].team_abbrev;
   }
-  renderScheduleChips();
+  renderScheduleNav();
   renderScheduleDetail();
 }
 
-// Row of team chips; the active one is highlighted. Filtering only narrows the
-// chip bar — the loaded card stays put until another chip is clicked.
-function renderScheduleChips() {
-  const chips = document.getElementById('schedule-chips');
+// Left-nav list of teams; the active one is highlighted. Filtering only narrows
+// the list — the loaded card stays put until another team is clicked.
+function renderScheduleNav() {
+  const nav = document.getElementById('schedule-nav-list');
   const f = scheduleFilter;
   const teams = allTeams.filter(t => !f || t.team_abbrev.toLowerCase().includes(f) || (t.team_name || '').toLowerCase().includes(f));
-  if (!teams.length) { chips.innerHTML = '<p class="text-muted" style="padding:8px 0;">No teams match.</p>'; return; }
-  chips.innerHTML = teams.map(t => {
+  if (!teams.length) { nav.innerHTML = '<p class="text-muted" style="padding:12px;">No teams match.</p>'; return; }
+  nav.innerHTML = teams.map(t => {
     const active = t.team_abbrev === selectedScheduleTeam;
-    return `<button class="sched-chip${active ? ' active' : ''}" style="background:${shadeFor(t.colors)}" onclick="selectScheduleTeam('${t.team_abbrev}')" title="${esc(t.team_name)}">`
-      + `<img class="sched-chip-logo" src="${logoUrl(t.team_abbrev)}" alt="" onerror="this.style.display='none'">`
-      + `<strong>${esc(t.team_abbrev)}</strong></button>`;
+    return `<button class="sched-nav-item${active ? ' active' : ''}" onclick="selectScheduleTeam('${t.team_abbrev}')" title="${esc(t.team_name)}">`
+      + `<img class="sched-nav-logo" src="${logoUrl(t.team_abbrev)}" alt="" onerror="this.style.display='none'">`
+      + `<span class="sched-nav-abbr">${esc(t.team_abbrev)}</span>`
+      + `<span class="sched-nav-name">${esc(t.team_name)}</span>`
+      + `${t.is_user_team ? '' : '<span class="sched-nav-dot" title="No coach assigned"></span>'}</button>`;
   }).join('');
 }
 
 function selectScheduleTeam(abbr) {
   selectedScheduleTeam = abbr;
-  renderScheduleChips();
+  renderScheduleNav();
   renderScheduleDetail();
 }
 
