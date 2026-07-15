@@ -265,6 +265,13 @@
                 </table>
               </div>
             </div>
+            <div class="card">
+              <div class="card-title">Teams Without a Coach <span id="unassigned-count" class="badge badge-yellow" style="display:none;"></span>
+                <button class="btn btn-ghost btn-sm" id="toggle-unassigned" style="margin-left:8px;" onclick="toggleUnassignedTeams()">Show</button>
+              </div>
+              <p class="text-muted" style="margin:-6px 0 12px;">Roster teams with no coach assigned — for example, a team left behind after a coach switched to a different team. Remove any you don't want counted in this season. (Removed teams can still be picked as schedule opponents.)</p>
+              <div id="unassigned-teams" style="display:none;"></div>
+            </div>
           </div>
         </div>
 

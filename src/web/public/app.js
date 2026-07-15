@@ -1153,6 +1153,47 @@ async function loadCoaches() {
   applyCoachAssign();
   populateCoachTeamSelect();
   renderConfBreakdown();
+  renderUnassignedTeams();
+}
+
+// Roster teams with no coach assigned. Hidden behind a toggle; each can be
+// removed from the season (removeSeasonTeam only drops the roster row, so the
+// team stays usable as a schedule opponent).
+let showUnassignedTeams = false;
+function toggleUnassignedTeams() {
+  showUnassignedTeams = !showUnassignedTeams;
+  const btn = document.getElementById('toggle-unassigned');
+  if (btn) btn.textContent = showUnassignedTeams ? 'Hide' : 'Show';
+  renderUnassignedTeams();
+}
+function renderUnassignedTeams() {
+  const el = document.getElementById('unassigned-teams');
+  if (!el) return;
+  const teams = allTeams.filter(t => !t.is_user_team);
+  const countBadge = document.getElementById('unassigned-count');
+  if (countBadge) {
+    countBadge.textContent = teams.length;
+    countBadge.style.display = teams.length ? 'inline-block' : 'none';
+  }
+  el.style.display = showUnassignedTeams ? 'block' : 'none';
+  if (!showUnassignedTeams) return;
+  if (!teams.length) { el.innerHTML = '<p class="text-muted" style="padding:8px 0;">No teams without a coach.</p>'; return; }
+  el.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>Team</th><th>Conference</th><th></th></tr></thead>
+    <tbody>${teams.map(t => `<tr>
+      <td>${teamChip(t.team_abbrev, t.team_name, t.colors)}</td>
+      <td>${t.conference_name ? esc(t.conference_name) : '<span class="text-muted">—</span>'}</td>
+      <td style="text-align:right;"><button class="btn btn-danger btn-sm" onclick="removeSeasonTeamUi('${esc(t.team_abbrev)}')">Remove</button></td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+async function removeSeasonTeamUi(abbrev) {
+  const t = allTeams.find(x => x.team_abbrev === abbrev);
+  const name = t ? t.team_name : abbrev;
+  if (!confirm(`Remove ${name} (${abbrev}) from this season's roster?`)) return;
+  const res = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/teams/${encodeURIComponent(abbrev)}`, { method: 'DELETE' });
+  const data = await res.json();
+  if (data.ok) { flash(`Removed ${abbrev}`); await loadSeasonTeams(); await loadCoaches(); }
+  else flash(data.error || 'Failed to remove', 'error');
 }
 function applyCoachAssign() {
   renderCoaches(sortData(coachAssignRows, coachAssignSort.col, coachAssignSort.dir));
@@ -1352,36 +1393,40 @@ async function loadScheduleTab() {
 
 function filterScheduleCards(v) { scheduleFilter = (v || '').toLowerCase(); renderScheduleNav(); }
 
+// The schedule only manages teams that have a coach assigned (user teams);
+// uncoached roster teams are still selectable as opponents, just not listed here.
+function coachedScheduleTeams() { return allTeams.filter(t => t.is_user_team); }
+
 // Entry render: ensure a valid selection, then draw the team nav + detail card.
 function renderScheduleCards() {
   const nav = document.getElementById('schedule-nav-list');
   const detail = document.getElementById('schedule-detail');
-  if (!allTeams.length) {
-    nav.innerHTML = '<p class="text-muted" style="padding:12px;">No teams yet.</p>';
-    detail.innerHTML = '<p class="text-muted" style="padding:16px;">No teams on the roster yet — add them in the Season tab.</p>';
+  const coached = coachedScheduleTeams();
+  if (!coached.length) {
+    nav.innerHTML = '<p class="text-muted" style="padding:12px;">No coached teams.</p>';
+    detail.innerHTML = '<p class="text-muted" style="padding:16px;">No teams with a coach assigned yet — assign coaches in the Season tab.</p>';
     return;
   }
-  if (!selectedScheduleTeam || !allTeams.some(t => t.team_abbrev === selectedScheduleTeam)) {
-    selectedScheduleTeam = allTeams[0].team_abbrev;
+  if (!selectedScheduleTeam || !coached.some(t => t.team_abbrev === selectedScheduleTeam)) {
+    selectedScheduleTeam = coached[0].team_abbrev;
   }
   renderScheduleNav();
   renderScheduleDetail();
 }
 
-// Left-nav list of teams; the active one is highlighted. Filtering only narrows
-// the list — the loaded card stays put until another team is clicked.
+// Left-nav list of coached teams; the active one is highlighted. Filtering only
+// narrows the list — the loaded card stays put until another team is clicked.
 function renderScheduleNav() {
   const nav = document.getElementById('schedule-nav-list');
   const f = scheduleFilter;
-  const teams = allTeams.filter(t => !f || t.team_abbrev.toLowerCase().includes(f) || (t.team_name || '').toLowerCase().includes(f));
+  const teams = coachedScheduleTeams().filter(t => !f || t.team_abbrev.toLowerCase().includes(f) || (t.team_name || '').toLowerCase().includes(f));
   if (!teams.length) { nav.innerHTML = '<p class="text-muted" style="padding:12px;">No teams match.</p>'; return; }
   nav.innerHTML = teams.map(t => {
     const active = t.team_abbrev === selectedScheduleTeam;
     return `<button class="sched-nav-item${active ? ' active' : ''}" onclick="selectScheduleTeam('${t.team_abbrev}')" title="${esc(t.team_name)}">`
       + `<img class="sched-nav-logo" src="${logoUrl(t.team_abbrev)}" alt="" onerror="this.style.display='none'">`
       + `<span class="sched-nav-abbr">${esc(t.team_abbrev)}</span>`
-      + `<span class="sched-nav-name">${esc(t.team_name)}</span>`
-      + `${t.is_user_team ? '' : '<span class="sched-nav-dot" title="No coach assigned"></span>'}</button>`;
+      + `<span class="sched-nav-name">${esc(t.team_name)}</span></button>`;
   }).join('');
 }
 

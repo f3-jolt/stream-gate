@@ -364,7 +364,6 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .sched-nav-abbr { font-weight: 600; flex: none; min-width: 42px; }
 .sched-nav-name { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sched-nav-item.active .sched-nav-name { color: var(--text); }
-.sched-nav-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--danger); margin-left: auto; flex: none; }
 .sched-detail { flex: 1 1 auto; min-width: 0; }
 .sched-card-solo { max-width: 560px; }
 @media (max-width: 720px) {
