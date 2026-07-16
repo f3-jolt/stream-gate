@@ -197,6 +197,18 @@ function initSchema() {
       created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(season_id, week, home_abbrev, away_abbrev)
     );
+
+    -- The single canonical "settings" embed each league keeps in its settings
+    -- channel. We edit this message in place on every update; a null row means
+    -- nothing has been published yet. posted_settings is the resolved snapshot
+    -- last shown, used to diff against for the changelog message.
+    CREATE TABLE IF NOT EXISTS league_settings_post (
+      league_id        INTEGER PRIMARY KEY REFERENCES leagues(id),
+      channel_id       TEXT NOT NULL,
+      message_id       TEXT NOT NULL,
+      posted_settings  TEXT,
+      updated_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   runMigrations();
@@ -363,6 +375,8 @@ function runMigrations() {
     `ALTER TABLE stream_posts ADD COLUMN discord_channel_id TEXT`,
     `ALTER TABLE leagues ADD COLUMN advance_template TEXT`,
     `ALTER TABLE leagues ADD COLUMN active INTEGER NOT NULL DEFAULT 1`,
+    `ALTER TABLE leagues ADD COLUMN settings TEXT`,
+    `ALTER TABLE leagues ADD COLUMN settings_channel_id TEXT`,
   ];
 
   for (const sql of migrations) {

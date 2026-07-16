@@ -62,6 +62,7 @@
           <button class="tab-btn" data-tab="results" onclick="switchTab('results')">Results</button>
           <button class="tab-btn" data-tab="summary" onclick="switchTab('summary')">Summary</button>
           <button class="tab-btn" data-tab="coaches" onclick="switchTab('coaches')">Coaches</button>
+          <button class="tab-btn" data-tab="settings" onclick="switchTab('settings')">Settings</button>
         </div>
 
         <!-- SHARED DYNASTY SEASON BAR (visible only on dynasty tabs, once a league is picked) -->
@@ -351,6 +352,29 @@
             </div>
           </div>
         </div>
+
+        <!-- SETTINGS TAB -->
+        <div id="tab-settings" class="tab-panel">
+          <div class="card">
+            <div class="settings-head">
+              <div>
+                <div class="card-title" style="margin-bottom:4px;">League Settings <span id="settings-league-badge" class="badge badge-blue"></span></div>
+                <p class="text-muted" style="margin:0;">Gameplay sliders and rules for this league. Changes apply after you Save.</p>
+              </div>
+              <div class="settings-head-actions">
+                <button class="btn btn-ghost" onclick="resetLeagueSettings()">Reset to Defaults</button>
+                <button class="btn btn-ghost" onclick="saveLeagueSettings()">Save Settings</button>
+                <button id="settings-publish-btn" class="btn btn-primary" onclick="publishLeagueSettings()">Publish Settings</button>
+              </div>
+            </div>
+            <div id="settings-publish-status" class="settings-publish-status"></div>
+            <div id="settings-result" class="flash"></div>
+            <div id="settings-sections"></div>
+            <div class="settings-foot">
+              <button class="btn btn-primary" onclick="saveLeagueSettings()">Save Settings</button>
+            </div>
+          </div>
+        </div>
       </main>
     </div>
 
@@ -509,6 +533,11 @@
           <label>User Channel (optional)</label>
           <select id="league-user-channel"></select>
           <small class="text-muted">User scheduling updates.</small>
+        </div>
+        <div class="form-field">
+          <label>Settings Channel (optional)</label>
+          <select id="league-settings-channel"></select>
+          <small class="text-muted">Where the league settings post is published.</small>
         </div>
         <div class="form-field">
           <label>Staff Role (optional)</label>

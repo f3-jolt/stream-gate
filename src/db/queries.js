@@ -188,7 +188,7 @@ function addLeague(guildId, name, abbr, ppvChannelId, categoryId = null, pingRol
   ).run(guildId, name, abbr.toUpperCase(), ppvChannelId, categoryId, pingRoleId, advanceChannelId, userChannelId, scheduleUrl, staffRoleId);
 }
 
-function updateLeague(leagueId, { pingRoleId, ppvChannelId, name, categoryId, advanceChannelId, userChannelId, scheduleUrl, staffRoleId } = {}) {
+function updateLeague(leagueId, { pingRoleId, ppvChannelId, name, categoryId, advanceChannelId, userChannelId, scheduleUrl, staffRoleId, settingsChannelId } = {}) {
   if (pingRoleId !== undefined) {
     db.prepare('UPDATE leagues SET ping_role_id = ? WHERE id = ?').run(pingRoleId, leagueId);
   }
@@ -213,6 +213,9 @@ function updateLeague(leagueId, { pingRoleId, ppvChannelId, name, categoryId, ad
   if (staffRoleId !== undefined) {
     db.prepare('UPDATE leagues SET staff_role_id = ? WHERE id = ?').run(staffRoleId, leagueId);
   }
+  if (settingsChannelId !== undefined) {
+    db.prepare('UPDATE leagues SET settings_channel_id = ? WHERE id = ?').run(settingsChannelId, leagueId);
+  }
 }
 
 // Soft delete: membership, seasons, and stream history are all preserved so the
@@ -223,6 +226,58 @@ function setLeagueActive(leagueId, active) {
 
 function setLeagueAdvanceTemplate(leagueId, template) {
   return db.prepare('UPDATE leagues SET advance_template = ? WHERE id = ?').run(template, leagueId);
+}
+
+// Gameplay settings overrides, stored as a JSON blob (see utils/leagueSettings).
+// Returns the parsed override object ({} when unset or corrupt).
+function getLeagueSettings(leagueId) {
+  const row = db.prepare('SELECT settings FROM leagues WHERE id = ?').get(leagueId);
+  if (!row || !row.settings) return {};
+  try {
+    const parsed = JSON.parse(row.settings);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function setLeagueSettings(leagueId, settings) {
+  const json = settings && Object.keys(settings).length ? JSON.stringify(settings) : null;
+  return db.prepare('UPDATE leagues SET settings = ? WHERE id = ?').run(json, leagueId);
+}
+
+// ── Settings post tracking (the canonical embed we edit in place) ──────────────
+
+// Returns { league_id, channel_id, message_id, posted_settings (parsed), updated_at }
+// or null when the league has never published.
+function getSettingsPost(leagueId) {
+  const row = db.prepare('SELECT * FROM league_settings_post WHERE league_id = ?').get(leagueId);
+  if (!row) return null;
+  let posted = {};
+  try { posted = row.posted_settings ? JSON.parse(row.posted_settings) : {}; } catch { posted = {}; }
+  return { ...row, posted_settings: posted };
+}
+
+// Insert or replace the canonical-message pointer + the snapshot it now shows.
+function upsertSettingsPost(leagueId, channelId, messageId, postedSettings) {
+  return db.prepare(`
+    INSERT INTO league_settings_post (league_id, channel_id, message_id, posted_settings, updated_at)
+    VALUES (@league_id, @channel_id, @message_id, @posted_settings, CURRENT_TIMESTAMP)
+    ON CONFLICT(league_id) DO UPDATE SET
+      channel_id      = excluded.channel_id,
+      message_id      = excluded.message_id,
+      posted_settings = excluded.posted_settings,
+      updated_at      = CURRENT_TIMESTAMP
+  `).run({
+    league_id: leagueId,
+    channel_id: channelId,
+    message_id: messageId,
+    posted_settings: postedSettings ? JSON.stringify(postedSettings) : null,
+  });
+}
+
+function deleteSettingsPost(leagueId) {
+  return db.prepare('DELETE FROM league_settings_post WHERE league_id = ?').run(leagueId);
 }
 
 function getUsersInLeague(leagueId) {
@@ -887,6 +942,11 @@ module.exports = {
   updateLeague,
   setLeagueActive,
   setLeagueAdvanceTemplate,
+  getLeagueSettings,
+  setLeagueSettings,
+  getSettingsPost,
+  upsertSettingsPost,
+  deleteSettingsPost,
   getUsersInLeague,
   updateUserPlatformUsername,
   getLastStreams,

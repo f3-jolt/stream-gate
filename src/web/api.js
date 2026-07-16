@@ -22,6 +22,9 @@ const {
   removeUserFromLeague,
   getUsersInLeague,
   setLeagueAdvanceTemplate,
+  getLeagueSettings,
+  setLeagueSettings,
+  getSettingsPost,
   // Dynasty
   createSeason,
   cloneSeasonData,
@@ -120,6 +123,7 @@ router.post('/guilds/:guildId/leagues', requireGuildAccess, (req, res) => {
       advanceChannelId: snowflake(req.body.advanceChannelId),
       userChannelId: snowflake(req.body.userChannelId),
       staffRoleId: snowflake(req.body.staffRoleId),
+      settingsChannelId: snowflake(req.body.settingsChannelId),
     };
   } catch (err) {
     return res.status(400).json({ error: err.message });
@@ -135,6 +139,10 @@ router.post('/guilds/:guildId/leagues', requireGuildAccess, (req, res) => {
       guildId, name, abbr, ids.ppvChannelId, ids.categoryId, ids.pingRoleId,
       ids.advanceChannelId, ids.userChannelId, scheduleUrl, ids.staffRoleId,
     );
+    // settings_channel_id isn't in addLeague's positional signature — set it after.
+    if (ids.settingsChannelId) {
+      updateLeague(Number(result.lastInsertRowid), { settingsChannelId: ids.settingsChannelId });
+    }
     logger.info('Web portal created league', { adminId: req.session.user.id, guildId, name, abbr });
     res.json({ ok: true, league: getLeagueById(Number(result.lastInsertRowid)) });
   } catch (err) {
@@ -161,6 +169,7 @@ router.put('/guilds/:guildId/leagues/:leagueId', requireGuildAccess, (req, res) 
       advanceChannelId: snowflake(req.body.advanceChannelId),
       userChannelId: snowflake(req.body.userChannelId),
       staffRoleId: snowflake(req.body.staffRoleId),
+      settingsChannelId: snowflake(req.body.settingsChannelId),
       scheduleUrl: String(req.body.scheduleUrl ?? '').trim() || null,
     };
   } catch (err) {
@@ -1112,6 +1121,52 @@ router.put('/guilds/:guildId/leagues/:leagueId/advance-template', requireGuildAc
   if (!league) return res.status(404).json({ error: 'League not found' });
   setLeagueAdvanceTemplate(league.id, req.body.template ?? null);
   res.json({ ok: true });
+});
+
+// ── League gameplay settings (sliders/toggles) ─────────────────────────────────
+
+router.get('/guilds/:guildId/leagues/:leagueId/settings', requireGuildAccess, (req, res) => {
+  const league = leagueInGuild(req.params.leagueId, req.params.guildId);
+  if (!league) return res.status(404).json({ error: 'League not found' });
+  const { SECTIONS, resolveSettings } = require('../utils/leagueSettings');
+  res.json({
+    sections: SECTIONS,
+    values: resolveSettings(getLeagueSettings(league.id)),
+    // Publish state drives the Publish/Update button and its enablement.
+    channelConfigured: Boolean(league.settings_channel_id),
+    published: Boolean(getSettingsPost(league.id)),
+  });
+});
+
+router.put('/guilds/:guildId/leagues/:leagueId/settings', requireGuildAccess, (req, res) => {
+  const league = leagueInGuild(req.params.leagueId, req.params.guildId);
+  if (!league) return res.status(404).json({ error: 'League not found' });
+  const { sanitizeSettings, resolveSettings } = require('../utils/leagueSettings');
+  const overrides = sanitizeSettings(req.body.values);
+  setLeagueSettings(league.id, overrides);
+  // Saving never posts to Discord — publishing is an explicit, separate action.
+  res.json({ ok: true, values: resolveSettings(overrides) });
+});
+
+// Publish the settings post (or update the existing one + post a changelog).
+router.post('/guilds/:guildId/leagues/:leagueId/settings/publish', requireGuildAccess, async (req, res) => {
+  const league = leagueInGuild(req.params.leagueId, req.params.guildId);
+  if (!league) return res.status(404).json({ error: 'League not found' });
+  if (!league.settings_channel_id) {
+    return res.status(400).json({ error: 'No settings channel is configured for this league. Set one in Configure.' });
+  }
+  try {
+    const { publishOrUpdateSettingsPost } = require('../utils/settingsPost');
+    const actorName = req.session.user?.username || 'Staff';
+    const result = await publishOrUpdateSettingsPost(league, actorName);
+    logger.info('Web portal published settings', {
+      adminId: req.session.user.id, guildId: req.params.guildId, leagueId: league.id, action: result.action,
+    });
+    res.json({ ok: true, ...result, published: true });
+  } catch (err) {
+    logger.error('Web portal settings publish error', { error: err.message, leagueId: league.id });
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

@@ -35,7 +35,7 @@ let coachAssignSort = { col: 'coach', dir: 1 };
 
 const DYNASTY_TABS = new Set(['season', 'schedule', 'results', 'summary', 'coaches']);
 // Tabs that act on one specific league and can't operate on "All Leagues".
-const SINGLE_LEAGUE_TABS = new Set(['advance', 'season', 'schedule', 'results', 'summary', 'coaches']);
+const SINGLE_LEAGUE_TABS = new Set(['advance', 'season', 'schedule', 'results', 'summary', 'coaches', 'settings']);
 const WEEK_LABELS = {
   0:'Week 0',1:'Week 1',2:'Week 2',3:'Week 3',4:'Week 4',5:'Week 5',6:'Week 6',7:'Week 7',
   8:'Week 8',9:'Week 9',10:'Week 10',11:'Week 11',12:'Week 12',13:'Week 13',14:'Week 14',
@@ -153,6 +153,8 @@ function renderActiveTab() {
   const showDynBar = DYNASTY_TABS.has(activeTab) && !needsLeague;
   document.getElementById('dynasty-bar').style.display = showDynBar ? 'flex' : 'none';
   if (showDynBar) onDynastyTabShown(activeTab);
+
+  if (activeTab === 'settings' && !needsLeague) loadLeagueSettings();
 }
 
 function currentLeague() {
@@ -722,6 +724,7 @@ async function openLeagueModal(leagueId = null) {
   fillPicker('league-ppv-channel', chanOpts, chanIds, league?.ppv_channel_id, 'Select a channel…');
   fillPicker('league-advance-channel', chanOpts, chanIds, league?.advance_channel_id, '— None —');
   fillPicker('league-user-channel', chanOpts, chanIds, league?.user_channel_id, '— None —');
+  fillPicker('league-settings-channel', chanOpts, chanIds, league?.settings_channel_id, '— None —');
   fillPicker('league-category', catOpts, catIds, league?.category_id, '— None —');
   fillPicker('league-ping-role', roleOpts, roleIds, league?.ping_role_id, '— None —');
   fillPicker('league-staff-role', roleOpts, roleIds, league?.staff_role_id, '— None —');
@@ -743,6 +746,7 @@ async function submitLeague() {
     pingRoleId: document.getElementById('league-ping-role').value.trim(),
     advanceChannelId: document.getElementById('league-advance-channel').value.trim(),
     userChannelId: document.getElementById('league-user-channel').value.trim(),
+    settingsChannelId: document.getElementById('league-settings-channel').value.trim(),
     staffRoleId: document.getElementById('league-staff-role').value.trim(),
     scheduleUrl: document.getElementById('league-schedule-url').value.trim(),
   };
@@ -1812,6 +1816,217 @@ async function saveAdvanceTemplate() {
   const data = await res.json();
   if (data.ok) flash('Template saved', 'success', 'tmpl-result');
   else flash(data.error || 'Failed', 'error', 'tmpl-result');
+}
+
+// ── League settings (sliders) ──
+let settingsSections = [];        // schema from the server
+let settingsValues = {};          // key -> current (resolved) value, edited in place
+let settingsPublished = false;    // a settings post already exists in Discord
+let settingsChannelConfigured = false; // league has a settings channel set
+let settingsDirty = false;        // UI edited since the last Save/load
+
+async function loadLeagueSettings() {
+  const leagueId = currentLeagueId;
+  if (!leagueId) return;
+  const lg = currentLeague();
+  document.getElementById('settings-league-badge').textContent = lg ? `${lg.name} (${lg.abbr})` : '';
+  const res = await fetch(`/api/guilds/${currentGuildId}/leagues/${leagueId}/settings`);
+  const data = await res.json();
+  settingsSections = data.sections || [];
+  settingsValues = data.values || {};
+  settingsPublished = Boolean(data.published);
+  settingsChannelConfigured = Boolean(data.channelConfigured);
+  settingsDirty = false;
+  renderSettings();
+  renderSettingsPublishState();
+}
+
+// The publish button is "Publish Settings" until a post exists, then becomes
+// "Update Settings". It's disabled without a configured channel or while there
+// are unsaved edits (publishing always posts the SAVED state).
+function renderSettingsPublishState() {
+  const btn = document.getElementById('settings-publish-btn');
+  const status = document.getElementById('settings-publish-status');
+  if (!btn) return;
+  btn.textContent = settingsPublished ? 'Update Settings' : 'Publish Settings';
+
+  let disabled = false;
+  let note = '';
+  if (!settingsChannelConfigured) {
+    disabled = true;
+    note = 'Set a Settings Channel in ⚙ Configure to publish.';
+  } else if (settingsDirty) {
+    disabled = true;
+    note = 'You have unsaved changes — Save Settings before publishing.';
+  } else if (settingsPublished) {
+    note = 'Published. Update edits the pinned post and adds a changelog message.';
+  } else {
+    note = 'Not published yet. Publishing posts the pinned settings message.';
+  }
+  btn.disabled = disabled;
+  btn.classList.toggle('btn-disabled', disabled);
+  status.textContent = note;
+}
+
+function markSettingsDirty() {
+  if (!settingsDirty) {
+    settingsDirty = true;
+    renderSettingsPublishState();
+  }
+}
+
+function renderSettings() {
+  const root = document.getElementById('settings-sections');
+  root.innerHTML = settingsSections.map(section => `
+    <section class="settings-section">
+      <h4 class="settings-section-title">${esc(section.title)}</h4>
+      <div class="settings-grid">
+        ${section.settings.map(renderSettingRow).join('')}
+      </div>
+    </section>
+  `).join('');
+}
+
+function renderSettingRow(s) {
+  const val = settingsValues[s.key];
+  let control;
+  if (s.type === 'range') {
+    control = `
+      <input type="range" class="setting-slider" id="setting-slider-${esc(s.key)}" min="${s.min}" max="${s.max}" step="1"
+             value="${esc(val)}" data-key="${esc(s.key)}"
+             oninput="onSettingSlider('${esc(s.key)}', this.value)">
+      <input type="number" class="setting-value-input" id="setting-num-${esc(s.key)}"
+             min="${s.min}" max="${s.max}" step="1" inputmode="numeric" value="${esc(val)}"
+             oninput="onSettingNumber('${esc(s.key)}', this.value)"
+             onchange="commitSettingNumber('${esc(s.key)}')" onfocus="this.select()">
+      ${s.unit ? `<span class="setting-unit">${esc(s.unit)}</span>` : ''}`;
+  } else {
+    const opts = (s.type === 'toggle' ? ['OFF', 'ON'] : s.options)
+      .map(o => `<option value="${esc(o)}"${String(o) === String(val) ? ' selected' : ''}>${esc(o)}</option>`)
+      .join('');
+    control = `
+      <select class="setting-select" data-key="${esc(s.key)}"
+              onchange="onSettingSelect('${esc(s.key)}', this.value)">${opts}</select>`;
+  }
+  return `
+    <div class="setting-row">
+      <label class="setting-label">${esc(s.label)}</label>
+      <div class="setting-control">${control}</div>
+    </div>`;
+}
+
+// Dragging the slider drives state and mirrors into the number box.
+function onSettingSlider(key, value) {
+  settingsValues[key] = Number(value);
+  const num = document.getElementById(`setting-num-${key}`);
+  if (num) num.value = value;
+  markSettingsDirty();
+}
+
+// Typing in the number box drives state and the slider. Values are clamped for
+// state/slider but the field text is left as typed until blur/Enter (see
+// commitSettingNumber) so mid-typing isn't fought.
+function onSettingNumber(key, value) {
+  if (value === '' || value === '-') return; // let the user keep typing
+  const n = Number(value);
+  if (!Number.isFinite(n)) return;
+  const setting = findSetting(key);
+  const clamped = Math.min(setting.max, Math.max(setting.min, Math.round(n)));
+  settingsValues[key] = clamped;
+  const slider = document.getElementById(`setting-slider-${key}`);
+  if (slider) slider.value = clamped;
+  markSettingsDirty();
+}
+
+// On blur/Enter, snap the field text to the clamped integer (falling back to the
+// current value when the box was left empty or invalid).
+function commitSettingNumber(key) {
+  const setting = findSetting(key);
+  const num = document.getElementById(`setting-num-${key}`);
+  const text = num.value.trim();
+  const raw = Number(text);
+  // Empty box ('' coerces to 0) or non-numeric text restores the current value.
+  const clamped = (text === '' || !Number.isFinite(raw))
+    ? settingsValues[key]
+    : Math.min(setting.max, Math.max(setting.min, Math.round(raw)));
+  settingsValues[key] = clamped;
+  num.value = clamped;
+  const slider = document.getElementById(`setting-slider-${key}`);
+  if (slider) slider.value = clamped;
+  markSettingsDirty();
+}
+
+function onSettingSelect(key, value) {
+  settingsValues[key] = value;
+  markSettingsDirty();
+}
+
+function findSetting(key) {
+  for (const section of settingsSections) {
+    const found = section.settings.find(s => s.key === key);
+    if (found) return found;
+  }
+  return null;
+}
+
+async function saveLeagueSettings() {
+  const leagueId = currentLeagueId;
+  if (!leagueId) { flash('Select a league first', 'error', 'settings-result'); return; }
+  const res = await fetch(`/api/guilds/${currentGuildId}/leagues/${leagueId}/settings`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ values: settingsValues }),
+  });
+  const data = await res.json();
+  if (data.ok) {
+    settingsValues = data.values || settingsValues; // reflect server-clamped values
+    settingsDirty = false;
+    renderSettings();
+    renderSettingsPublishState();
+    flash('Settings saved', 'success', 'settings-result');
+  } else {
+    flash(data.error || 'Failed to save', 'error', 'settings-result');
+  }
+}
+
+// Reset every control to its schema default (client-side only until Save).
+function resetLeagueSettings() {
+  for (const section of settingsSections) {
+    for (const s of section.settings) settingsValues[s.key] = s.default;
+  }
+  renderSettings();
+  markSettingsDirty();
+  flash('Reset to defaults — Save to apply', 'success', 'settings-result');
+}
+
+// Publish (first time) or update the pinned Discord post. Operates on the SAVED
+// state, so we require a clean (saved) editor first.
+async function publishLeagueSettings() {
+  const leagueId = currentLeagueId;
+  if (!leagueId) { flash('Select a league first', 'error', 'settings-result'); return; }
+  if (!settingsChannelConfigured) {
+    flash('Set a Settings Channel in Configure first', 'error', 'settings-result');
+    return;
+  }
+  if (settingsDirty) {
+    flash('Save your changes before publishing', 'error', 'settings-result');
+    return;
+  }
+  const verb = settingsPublished ? 'update the pinned settings post and post a changelog' : 'publish the settings post';
+  if (!confirm(`This will ${verb} in the league's settings channel. Continue?`)) return;
+
+  const res = await fetch(`/api/guilds/${currentGuildId}/leagues/${leagueId}/settings/publish`, { method: 'POST' });
+  const data = await res.json();
+  if (data.ok) {
+    settingsPublished = true;
+    renderSettingsPublishState();
+    const msg = data.action === 'published' ? 'Settings published'
+      : data.action === 'republished' ? 'Post was missing — republished'
+      : data.action === 'unchanged' ? 'Post refreshed (no value changes)'
+      : `Settings updated — ${data.changed.length} change${data.changed.length === 1 ? '' : 's'} logged`;
+    flash(msg, 'success', 'settings-result');
+  } else {
+    flash(data.error || 'Publish failed', 'error', 'settings-result');
+  }
 }
 
 // ── Sort / filter helpers ──────────────────────────────────────────────────────
