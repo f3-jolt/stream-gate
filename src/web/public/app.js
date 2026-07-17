@@ -2029,6 +2029,103 @@ async function publishLeagueSettings() {
   }
 }
 
+// Coerce one imported value to a valid value for its setting (mirrors the
+// server's sanitizer), or null if it can't be salvaged.
+function coerceSettingValue(setting, value) {
+  if (value === undefined || value === null) return null;
+  if (setting.type === 'range') {
+    const n = Math.round(Number(value));
+    if (!Number.isFinite(n)) return null;
+    return Math.min(setting.max, Math.max(setting.min, n));
+  }
+  if (setting.type === 'toggle') {
+    const v = String(value).toUpperCase();
+    return (v === 'ON' || v === 'OFF') ? v : null;
+  }
+  if (setting.type === 'enum') {
+    const v = String(value);
+    return setting.options.includes(v) ? v : null;
+  }
+  return null;
+}
+
+// Download the current league's full (resolved) settings as a JSON file.
+function exportLeagueSettings() {
+  if (!settingsSections.length) { flash('Load a league first', 'error', 'settings-result'); return; }
+  const lg = currentLeague();
+  const payload = {
+    app: 'streamgate',
+    type: 'league-settings',
+    version: 1,
+    league: lg ? { name: lg.name, abbr: lg.abbr } : null,
+    exportedAt: new Date().toISOString(),
+    values: { ...settingsValues },
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const tag = lg ? lg.abbr.toLowerCase() : 'league';
+  a.href = url;
+  a.download = `league-settings-${tag}-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  flash('Exported settings JSON', 'success', 'settings-result');
+}
+
+function triggerSettingsImport() {
+  if (!settingsSections.length) { flash('Load a league first', 'error', 'settings-result'); return; }
+  document.getElementById('settings-import-file').click();
+}
+
+// Read a JSON file, validate each value against the schema, and load it into the
+// editor. Nothing is saved or posted — the user reviews and clicks Save.
+function onSettingsImportFile(event) {
+  const input = event.target;
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    input.value = ''; // allow re-importing the same file later
+    let parsed;
+    try {
+      parsed = JSON.parse(reader.result);
+    } catch {
+      flash('Import failed: file is not valid JSON', 'error', 'settings-result');
+      return;
+    }
+    // Accept our export shape ({ values: {...} }) or a bare { key: value } map.
+    const incoming = parsed && typeof parsed === 'object' && parsed.values && typeof parsed.values === 'object'
+      ? parsed.values
+      : parsed;
+    if (!incoming || typeof incoming !== 'object') {
+      flash('Import failed: no settings found in file', 'error', 'settings-result');
+      return;
+    }
+    let applied = 0;
+    let skipped = 0;
+    for (const [key, raw] of Object.entries(incoming)) {
+      const setting = findSetting(key);
+      if (!setting) { skipped++; continue; }
+      const val = coerceSettingValue(setting, raw);
+      if (val === null) { skipped++; continue; }
+      settingsValues[key] = val;
+      applied++;
+    }
+    if (!applied) {
+      flash('Import failed: no recognized settings in file', 'error', 'settings-result');
+      return;
+    }
+    renderSettings();
+    markSettingsDirty();
+    const extra = skipped ? ` (${skipped} ignored)` : '';
+    flash(`Imported ${applied} setting${applied === 1 ? '' : 's'}${extra} — review and Save`, 'success', 'settings-result');
+  };
+  reader.onerror = () => flash('Import failed: could not read file', 'error', 'settings-result');
+  reader.readAsText(file);
+}
+
 // ── Sort / filter helpers ──────────────────────────────────────────────────────
 
 function sortData(arr, col, dir) {

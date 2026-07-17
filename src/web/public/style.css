@@ -405,7 +405,7 @@ tr:hover td { background: rgba(255,255,255,.02); }
   display: flex; align-items: flex-start; justify-content: space-between;
   gap: 16px; flex-wrap: wrap; margin-bottom: 12px;
 }
-.settings-head-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.settings-head-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .settings-foot { display: flex; justify-content: flex-end; margin-top: 20px; }
 .settings-publish-status { font-size: 12px; color: var(--text-muted); margin: 0 0 12px; min-height: 16px; }
 .btn.btn-disabled, .btn:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }

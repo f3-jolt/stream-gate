@@ -18,6 +18,9 @@ const OFF_ON = ['OFF', 'ON'];
 // A 1–100 slider defaulting to 50 — by far the most common shape.
 const scale = (key, label) => ({ key, label, type: 'range', min: 1, max: 100, default: 50 });
 
+// A position XP slider: 0–300, defaulting to 100 (in-game "normal").
+const xp = (key, label) => ({ key, label, type: 'range', min: 0, max: 300, default: 100 });
+
 const SECTIONS = [
   {
     title: 'League Settings',
@@ -140,6 +143,38 @@ const SECTIONS = [
       { key: 'pen_roughing_kicker', label: 'Roughing Kicker', type: 'toggle', default: 'ON' },
       { key: 'pen_running_into_the_kicker', label: 'Running Into The Kicker', type: 'toggle', default: 'ON' },
       { key: 'pen_illegal_contact', label: 'Illegal Contact', type: 'toggle', default: 'ON' },
+    ],
+  },
+  {
+    title: 'Offensive XP',
+    settings: [
+      xp('xp_off_quarterbacks', 'Quarterbacks'),
+      xp('xp_off_halfbacks', 'Halfbacks'),
+      xp('xp_off_tight_ends', 'Tight Ends'),
+      xp('xp_off_wide_receivers', 'Wide Receivers'),
+      xp('xp_off_full_backs', 'Full Backs'),
+      xp('xp_off_tackles', 'Tackles'),
+      xp('xp_off_guards', 'Guards'),
+      xp('xp_off_centers', 'Centers'),
+    ],
+  },
+  {
+    title: 'Defensive XP',
+    settings: [
+      xp('xp_def_edge_defenders', 'EDGE Defenders'),
+      xp('xp_def_defensive_tackles', 'Defensive Tackles'),
+      xp('xp_def_middle_linebackers', 'Middle Linebackers'),
+      xp('xp_def_outside_linebackers', 'Outside Linebackers'),
+      xp('xp_def_cornerbacks', 'Cornerbacks'),
+      xp('xp_def_free_safeties', 'Free Safeties'),
+      xp('xp_def_strong_safeties', 'Strong Safeties'),
+    ],
+  },
+  {
+    title: 'Special Teams XP',
+    settings: [
+      xp('xp_st_kickers', 'Kickers'),
+      xp('xp_st_punters', 'Punters'),
     ],
   },
 ];

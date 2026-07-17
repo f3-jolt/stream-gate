@@ -362,6 +362,9 @@
                 <p class="text-muted" style="margin:0;">Gameplay sliders and rules for this league. Changes apply after you Save.</p>
               </div>
               <div class="settings-head-actions">
+                <button class="btn btn-ghost" onclick="exportLeagueSettings()">Export JSON</button>
+                <button class="btn btn-ghost" onclick="triggerSettingsImport()">Import JSON</button>
+                <input id="settings-import-file" type="file" accept="application/json,.json" style="display:none;" onchange="onSettingsImportFile(event)">
                 <button class="btn btn-ghost" onclick="resetLeagueSettings()">Reset to Defaults</button>
                 <button class="btn btn-ghost" onclick="saveLeagueSettings()">Save Settings</button>
                 <button id="settings-publish-btn" class="btn btn-primary" onclick="publishLeagueSettings()">Publish Settings</button>
