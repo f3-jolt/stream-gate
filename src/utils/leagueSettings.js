@@ -16,7 +16,11 @@
 const OFF_ON = ['OFF', 'ON'];
 
 // A 1–100 slider defaulting to 50 — by far the most common shape.
-const scale = (key, label) => ({ key, label, type: 'range', min: 1, max: 100, default: 50 });
+// `short` is an optional compact label used only in the narrow Discord embed
+// columns; the admin UI always shows the full `label`.
+const scale = (key, label, short) => ({
+  key, label, type: 'range', min: 1, max: 100, default: 50, ...(short ? { short } : {}),
+});
 
 // A position XP slider: 0–300, defaulting to 100 (in-game "normal").
 const xp = (key, label) => ({ key, label, type: 'range', min: 0, max: 300, default: 100 });
@@ -29,26 +33,27 @@ const SECTIONS = [
       { key: 'coach_firing', label: 'Coach Firing', type: 'enum', options: ['OFF', 'ON', 'CPU ONLY'], default: 'ON' },
       { key: 'coach_xp', label: 'Coach XP Setting', type: 'enum', options: ['CAREER', 'SIMULATION', 'CASUAL'], default: 'CASUAL' },
       { key: 'injury', label: 'Injury', type: 'toggle', default: 'ON' },
-      { key: 'manual_progression_xp_penalty', label: 'Manual Progression XP Penalty', type: 'range', min: 1, max: 100, default: 25, unit: '%' },
-      { key: 'preorder_membership_bonuses', label: 'Pre-Order & Membership Bonuses', type: 'toggle', default: 'OFF' },
+      { key: 'manual_progression_xp_penalty', label: 'Manual Progression XP Penalty', short: 'Manual XP Penalty', type: 'range', min: 1, max: 100, default: 25, unit: '%' },
+      { key: 'preorder_membership_bonuses', label: 'Pre-Order & Membership Bonuses', short: 'Pre-Order Bonuses', type: 'toggle', default: 'OFF' },
       { key: 'recruit_flipping', label: 'Recruit Flipping', type: 'toggle', default: 'ON' },
-      { key: 'verbal_commit_influence', label: 'Verbal Commit Influence', type: 'range', min: 1, max: 100, default: 25, unit: '%' },
+      { key: 'verbal_commit_influence', label: 'Verbal Commit Influence', short: 'Verbal Commit Infl.', type: 'range', min: 1, max: 100, default: 25, unit: '%' },
     ],
   },
   {
     title: 'Clock Management Settings',
+    short: 'Clock Management',
     settings: [
       { key: 'quarter_length', label: 'Quarter Length', type: 'range', min: 1, max: 15, default: 9, unit: 'min' },
       { key: 'accelerated_clock', label: 'Accelerated Clock', type: 'toggle', default: 'ON' },
-      { key: 'min_play_clock_time', label: 'Minimum Play Clock Time', type: 'enum', options: ['OFF', '10', '15', '20', '25', '30', '35', '40'], default: '15' },
+      { key: 'min_play_clock_time', label: 'Minimum Play Clock Time', short: 'Min Play Clock', type: 'enum', options: ['OFF', '10', '15', '20', '25', '30', '35', '40'], default: '15' },
     ],
   },
   {
     title: 'Transfer Portal',
     settings: [
-      { key: 'max_transfers_per_team', label: 'Max Transfers Per Team', type: 'range', min: 0, max: 20, default: 10 },
-      { key: 'user_player_transfer_chance', label: 'User Player Transfer Chance', type: 'range', min: 0, max: 100, default: 35 },
-      { key: 'cpu_player_transfer_chance', label: 'CPU Player Transfer Chance', type: 'range', min: 0, max: 100, default: 35 },
+      { key: 'max_transfers_per_team', label: 'Max Transfers Per Team', short: 'Max Transfers/Team', type: 'range', min: 0, max: 20, default: 10 },
+      { key: 'user_player_transfer_chance', label: 'User Player Transfer Chance', short: 'User Transfer Chance', type: 'range', min: 0, max: 100, default: 35 },
+      { key: 'cpu_player_transfer_chance', label: 'CPU Player Transfer Chance', short: 'CPU Transfer Chance', type: 'range', min: 0, max: 100, default: 35 },
     ],
   },
   {
@@ -56,39 +61,41 @@ const SECTIONS = [
     settings: [
       { key: 'game_injuries', label: 'Injuries', type: 'range', min: 1, max: 100, default: 10 },
       { key: 'game_fatigue', label: 'Fatigue', type: 'range', min: 1, max: 100, default: 50 },
-      { key: 'game_min_player_speed_threshold', label: 'Min Player Speed Threshold', type: 'range', min: 1, max: 100, default: 50 },
+      { key: 'game_min_player_speed_threshold', label: 'Min Player Speed Threshold', short: 'Min Speed Threshold', type: 'range', min: 1, max: 100, default: 50 },
     ],
   },
   {
     title: 'Precipitation Options',
+    short: 'Precipitation',
     settings: [
-      scale('precip_catch_chance', 'Catch Chance Scale'),
-      scale('precip_pass_accuracy', 'Pass Accuracy Scale'),
-      scale('precip_pass_strength', 'Pass Strength Scale'),
-      scale('precip_broken_tackle', 'Broken Tackle Scale'),
-      scale('precip_kicking_accuracy', 'Kicking Accuracy Scale'),
-      scale('precip_kicking_strength', 'Kicking Strength Scale'),
-      scale('precip_slip', 'Slip Scale'),
-      scale('precip_movement_penalties', 'Movement Penalties'),
+      scale('precip_catch_chance', 'Catch Chance Scale', 'Catch Chance'),
+      scale('precip_pass_accuracy', 'Pass Accuracy Scale', 'Pass Accuracy'),
+      scale('precip_pass_strength', 'Pass Strength Scale', 'Pass Strength'),
+      scale('precip_broken_tackle', 'Broken Tackle Scale', 'Broken Tackle'),
+      scale('precip_kicking_accuracy', 'Kicking Accuracy Scale', 'Kicking Accuracy'),
+      scale('precip_kicking_strength', 'Kicking Strength Scale', 'Kicking Strength'),
+      scale('precip_slip', 'Slip Scale', 'Slip'),
+      scale('precip_movement_penalties', 'Movement Penalties', 'Movement'),
     ],
   },
   {
     title: 'Wear and Tear Options',
+    short: 'Wear & Tear',
     settings: [
       { key: 'wear_and_tear', label: 'Wear and Tear', type: 'toggle', default: 'ON' },
-      scale('wt_normal_tackle_impact', 'Normal Tackle Impact'),
-      scale('wt_catch_tackle_impact', 'Catch Tackle Impact'),
-      scale('wt_hit_stick_impact', 'Hit Stick Impact'),
-      scale('wt_cut_stick_impact', 'Cut Stick Impact'),
-      scale('wt_defender_tackle_advantage_impact', 'Defender Tackle Advantage Impact'),
-      scale('wt_sack_impact', 'Sack Impact'),
-      scale('wt_block_impact', 'Block Impact'),
-      scale('wt_impact_block_impact', 'Impact Block Impact'),
-      scale('wt_per_play_recovery', 'Per-Play Recovery'),
-      scale('wt_per_timeout_recovery', 'Per-Timeout Recovery'),
-      scale('wt_between_quarter_recovery', 'Between-Quarter Recovery'),
-      scale('wt_halftime_recovery', 'Halftime Recovery'),
-      scale('wt_ingame_healing_reserve_pool', 'In-Game Healing Reserve Pool'),
+      scale('wt_normal_tackle_impact', 'Normal Tackle Impact', 'Normal Tackle'),
+      scale('wt_catch_tackle_impact', 'Catch Tackle Impact', 'Catch Tackle'),
+      scale('wt_hit_stick_impact', 'Hit Stick Impact', 'Hit Stick'),
+      scale('wt_cut_stick_impact', 'Cut Stick Impact', 'Cut Stick'),
+      scale('wt_defender_tackle_advantage_impact', 'Defender Tackle Advantage Impact', 'Def. Tackle Adv.'),
+      scale('wt_sack_impact', 'Sack Impact', 'Sack'),
+      scale('wt_block_impact', 'Block Impact', 'Block'),
+      scale('wt_impact_block_impact', 'Impact Block Impact', 'Impact Block'),
+      scale('wt_per_play_recovery', 'Per-Play Recovery', 'Per-Play Rec.'),
+      scale('wt_per_timeout_recovery', 'Per-Timeout Recovery', 'Per-Timeout Rec.'),
+      scale('wt_between_quarter_recovery', 'Between-Quarter Recovery', 'Between-Qtr Rec.'),
+      scale('wt_halftime_recovery', 'Halftime Recovery', 'Halftime Rec.'),
+      scale('wt_ingame_healing_reserve_pool', 'In-Game Healing Reserve Pool', 'Healing Reserve'),
     ],
   },
   {
@@ -134,14 +141,14 @@ const SECTIONS = [
       scale('pen_false_start', 'False Start'),
       scale('pen_holding', 'Holding'),
       scale('pen_face_mask', 'Face Mask'),
-      scale('pen_defensive_pass_interference', 'Defensive Pass Interference'),
-      { key: 'pen_offensive_pass_interference', label: 'Offensive Pass Interference', type: 'toggle', default: 'ON' },
-      { key: 'pen_kick_catch_interference', label: 'Kick Catch Interference', type: 'toggle', default: 'ON' },
-      scale('pen_illegal_block_in_the_back', 'Illegal Block In The Back'),
-      { key: 'pen_intentional_grounding', label: 'Intentional Grounding', type: 'toggle', default: 'ON' },
+      scale('pen_defensive_pass_interference', 'Defensive Pass Interference', 'Def. Pass Interference'),
+      { key: 'pen_offensive_pass_interference', label: 'Offensive Pass Interference', short: 'Off. Pass Interference', type: 'toggle', default: 'ON' },
+      { key: 'pen_kick_catch_interference', label: 'Kick Catch Interference', short: 'Kick Catch Int.', type: 'toggle', default: 'ON' },
+      scale('pen_illegal_block_in_the_back', 'Illegal Block In The Back', 'Illegal Block Back'),
+      { key: 'pen_intentional_grounding', label: 'Intentional Grounding', short: 'Int. Grounding', type: 'toggle', default: 'ON' },
       scale('pen_roughing_passer', 'Roughing Passer'),
       { key: 'pen_roughing_kicker', label: 'Roughing Kicker', type: 'toggle', default: 'ON' },
-      { key: 'pen_running_into_the_kicker', label: 'Running Into The Kicker', type: 'toggle', default: 'ON' },
+      { key: 'pen_running_into_the_kicker', label: 'Running Into The Kicker', short: 'Into The Kicker', type: 'toggle', default: 'ON' },
       { key: 'pen_illegal_contact', label: 'Illegal Contact', type: 'toggle', default: 'ON' },
     ],
   },

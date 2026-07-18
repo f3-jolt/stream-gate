@@ -20,11 +20,24 @@ const logger = require('./logger');
 const ACCENT = 0x6798ff;   // StreamGate blue (matches the admin portal)
 const CHANGE = 0x5bd98f;   // green for the changelog
 
+// Discord lays inline fields out 3-up and sizes each row to its tallest field,
+// so a 14-line section beside a 3-line one leaves a wall of dead space. Cap the
+// lines per field and spill the remainder into a "(cont.)" field instead.
+const MAX_FIELD_LINES = 8;
+
 // Human-facing value: toggles read On/Off, ranges carry their unit, enums as-is.
 function displayValue(setting, value) {
   if (setting.type === 'toggle') return value === 'ON' ? 'On' : 'Off';
+  if (setting.unit === '%') return `${value}%`;   // no space before a percent sign
   if (setting.unit) return `${value} ${setting.unit}`;
   return String(value);
+}
+
+// Embed columns are narrow (~1/3 width), so a long label wraps and strands its
+// value on the next line. Settings/sections can carry a compact `short` label
+// used only here; the admin UI keeps the full name.
+function displayLabel(setting) {
+  return setting.short || setting.label;
 }
 
 // The canonical embed titled by LEAGUE name (not the season).
@@ -38,10 +51,16 @@ function buildSettingsEmbed(league, values) {
 
   for (const section of SECTIONS) {
     const lines = section.settings
-      .map(s => `${s.label}: **${displayValue(s, resolved[s.key])}**`)
-      .join('\n');
-    // Field values cap at 1024 chars; our largest section is well under that.
-    embed.addFields({ name: section.title, value: lines.slice(0, 1024), inline: true });
+      .map(s => `${displayLabel(s)}: **${displayValue(s, resolved[s.key])}**`);
+    const title = section.short || section.title;
+    for (let i = 0; i < lines.length; i += MAX_FIELD_LINES) {
+      const chunk = lines.slice(i, i + MAX_FIELD_LINES);
+      embed.addFields({
+        name: i === 0 ? title : `${title} (cont.)`,
+        value: chunk.join('\n').slice(0, 1024),   // field values cap at 1024
+        inline: true,
+      });
+    }
   }
   return embed;
 }
