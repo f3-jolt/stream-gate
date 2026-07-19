@@ -188,7 +188,7 @@ function addLeague(guildId, name, abbr, ppvChannelId, categoryId = null, pingRol
   ).run(guildId, name, abbr.toUpperCase(), ppvChannelId, categoryId, pingRoleId, advanceChannelId, userChannelId, scheduleUrl, staffRoleId);
 }
 
-function updateLeague(leagueId, { pingRoleId, ppvChannelId, name, categoryId, advanceChannelId, userChannelId, scheduleUrl, staffRoleId, settingsChannelId } = {}) {
+function updateLeague(leagueId, { pingRoleId, ppvChannelId, name, categoryId, advanceChannelId, userChannelId, scheduleUrl, staffRoleId, settingsChannelId, rosterChannelId } = {}) {
   if (pingRoleId !== undefined) {
     db.prepare('UPDATE leagues SET ping_role_id = ? WHERE id = ?').run(pingRoleId, leagueId);
   }
@@ -215,6 +215,9 @@ function updateLeague(leagueId, { pingRoleId, ppvChannelId, name, categoryId, ad
   }
   if (settingsChannelId !== undefined) {
     db.prepare('UPDATE leagues SET settings_channel_id = ? WHERE id = ?').run(settingsChannelId, leagueId);
+  }
+  if (rosterChannelId !== undefined) {
+    db.prepare('UPDATE leagues SET roster_channel_id = ? WHERE id = ?').run(rosterChannelId, leagueId);
   }
 }
 
@@ -278,6 +281,77 @@ function upsertSettingsPost(leagueId, channelId, messageId, postedSettings) {
 
 function deleteSettingsPost(leagueId) {
   return db.prepare('DELETE FROM league_settings_post WHERE league_id = ?').run(leagueId);
+}
+
+// ── Season roster post tracking (one canonical embed per SEASON) ───────────────
+
+// Returns { season_id, channel_id, message_ids (parsed array), posted_roster
+// (parsed), updated_at } or null when this season has never been published.
+// A null row is what makes a new season publish a new message instead of
+// editing the previous season's.
+function getRosterPost(seasonId) {
+  const row = db.prepare('SELECT * FROM season_roster_post WHERE season_id = ?').get(seasonId);
+  if (!row) return null;
+  let posted = {};
+  try { posted = row.posted_roster ? JSON.parse(row.posted_roster) : {}; } catch { posted = {}; }
+  let ids = [];
+  try { ids = row.message_ids ? JSON.parse(row.message_ids) : []; } catch { ids = []; }
+  return { ...row, message_ids: Array.isArray(ids) ? ids : [], posted_roster: posted };
+}
+
+function upsertRosterPost(seasonId, channelId, messageIds, postedRoster) {
+  return db.prepare(`
+    INSERT INTO season_roster_post (season_id, channel_id, message_ids, posted_roster, updated_at)
+    VALUES (@season_id, @channel_id, @message_ids, @posted_roster, CURRENT_TIMESTAMP)
+    ON CONFLICT(season_id) DO UPDATE SET
+      channel_id    = excluded.channel_id,
+      message_ids   = excluded.message_ids,
+      posted_roster = excluded.posted_roster,
+      updated_at    = CURRENT_TIMESTAMP
+  `).run({
+    season_id: seasonId,
+    channel_id: channelId,
+    message_ids: JSON.stringify(messageIds),
+    posted_roster: postedRoster ? JSON.stringify(postedRoster) : null,
+  });
+}
+
+function deleteRosterPost(seasonId) {
+  return db.prepare('DELETE FROM season_roster_post WHERE season_id = ?').run(seasonId);
+}
+
+// Drop pointers for seasons that no longer exist. SQLite reuses rowids after
+// the highest row is deleted, so without this a newly created season could
+// inherit a dead season's pointer and edit ITS post instead of publishing a
+// fresh one — silently overwriting the older season's permanent record.
+function pruneOrphanedRosterPosts() {
+  return db.prepare(
+    'DELETE FROM season_roster_post WHERE season_id NOT IN (SELECT id FROM seasons)'
+  ).run();
+}
+
+// ── Team logo emoji, uploaded per guild ───────────────────────────────────────
+
+function getTeamEmoji(guildId, teamAbbrev) {
+  return db.prepare(
+    'SELECT * FROM guild_team_emoji WHERE guild_id = ? AND team_abbrev = ?'
+  ).get(guildId, teamAbbrev.toUpperCase());
+}
+
+function upsertTeamEmoji(guildId, teamAbbrev, emojiId, emojiName) {
+  return db.prepare(`
+    INSERT INTO guild_team_emoji (guild_id, team_abbrev, emoji_id, emoji_name)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(guild_id, team_abbrev) DO UPDATE SET
+      emoji_id = excluded.emoji_id, emoji_name = excluded.emoji_name
+  `).run(guildId, teamAbbrev.toUpperCase(), emojiId, emojiName);
+}
+
+// Called when Discord reports the emoji is gone, so the next publish re-uploads.
+function deleteTeamEmoji(guildId, teamAbbrev) {
+  return db.prepare(
+    'DELETE FROM guild_team_emoji WHERE guild_id = ? AND team_abbrev = ?'
+  ).run(guildId, teamAbbrev.toUpperCase());
 }
 
 function getUsersInLeague(leagueId) {
@@ -467,6 +541,9 @@ function getHealthStats(guildId) {
 // ── Dynasty: seasons ──────────────────────────────────────────────────────────
 
 function createSeason(leagueId, year, label = null) {
+  // Clear dead pointers before we mint an id, so a reused rowid can't inherit a
+  // deleted season's Discord roster post. See pruneOrphanedRosterPosts.
+  pruneOrphanedRosterPosts();
   const result = db.prepare(
     'INSERT INTO seasons (league_id, year, label) VALUES (?, ?, ?)'
   ).run(leagueId, year, label);
@@ -947,6 +1024,13 @@ module.exports = {
   getSettingsPost,
   upsertSettingsPost,
   deleteSettingsPost,
+  getRosterPost,
+  upsertRosterPost,
+  deleteRosterPost,
+  pruneOrphanedRosterPosts,
+  getTeamEmoji,
+  upsertTeamEmoji,
+  deleteTeamEmoji,
   getUsersInLeague,
   updateUserPlatformUsername,
   getLastStreams,

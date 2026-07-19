@@ -25,6 +25,7 @@ const {
   getLeagueSettings,
   setLeagueSettings,
   getSettingsPost,
+  getRosterPost,
   // Dynasty
   createSeason,
   cloneSeasonData,
@@ -124,6 +125,7 @@ router.post('/guilds/:guildId/leagues', requireGuildAccess, (req, res) => {
       userChannelId: snowflake(req.body.userChannelId),
       staffRoleId: snowflake(req.body.staffRoleId),
       settingsChannelId: snowflake(req.body.settingsChannelId),
+      rosterChannelId: snowflake(req.body.rosterChannelId),
     };
   } catch (err) {
     return res.status(400).json({ error: err.message });
@@ -139,9 +141,12 @@ router.post('/guilds/:guildId/leagues', requireGuildAccess, (req, res) => {
       guildId, name, abbr, ids.ppvChannelId, ids.categoryId, ids.pingRoleId,
       ids.advanceChannelId, ids.userChannelId, scheduleUrl, ids.staffRoleId,
     );
-    // settings_channel_id isn't in addLeague's positional signature — set it after.
-    if (ids.settingsChannelId) {
-      updateLeague(Number(result.lastInsertRowid), { settingsChannelId: ids.settingsChannelId });
+    // These aren't in addLeague's positional signature — set them after.
+    if (ids.settingsChannelId || ids.rosterChannelId) {
+      updateLeague(Number(result.lastInsertRowid), {
+        settingsChannelId: ids.settingsChannelId,
+        rosterChannelId: ids.rosterChannelId,
+      });
     }
     logger.info('Web portal created league', { adminId: req.session.user.id, guildId, name, abbr });
     res.json({ ok: true, league: getLeagueById(Number(result.lastInsertRowid)) });
@@ -170,6 +175,7 @@ router.put('/guilds/:guildId/leagues/:leagueId', requireGuildAccess, (req, res) 
       userChannelId: snowflake(req.body.userChannelId),
       staffRoleId: snowflake(req.body.staffRoleId),
       settingsChannelId: snowflake(req.body.settingsChannelId),
+      rosterChannelId: snowflake(req.body.rosterChannelId),
       scheduleUrl: String(req.body.scheduleUrl ?? '').trim() || null,
     };
   } catch (err) {
@@ -1165,6 +1171,44 @@ router.post('/guilds/:guildId/leagues/:leagueId/settings/publish', requireGuildA
     res.json({ ok: true, ...result, published: true });
   } catch (err) {
     logger.error('Web portal settings publish error', { error: err.message, leagueId: league.id });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Season roster post (coach assignments per season) ─────────────────────────
+
+// Publish state for the Season screen's button. Keyed by season, so switching
+// seasons flips the button back to "Publish" until that season is posted.
+router.get('/guilds/:guildId/leagues/:leagueId/seasons/:seasonId/roster-post', requireGuildAccess, (req, res) => {
+  const league = leagueInGuild(req.params.leagueId, req.params.guildId);
+  if (!league) return res.status(404).json({ error: 'League not found' });
+  const season = getSeasonById(Number(req.params.seasonId));
+  if (!season || season.league_id !== league.id) return res.status(404).json({ error: 'Season not found' });
+  res.json({
+    channelConfigured: Boolean(league.roster_channel_id),
+    published: Boolean(getRosterPost(season.id)),
+  });
+});
+
+// Publish this season's roster (or update it + post a changelog of coach moves).
+router.post('/guilds/:guildId/leagues/:leagueId/seasons/:seasonId/roster/publish', requireGuildAccess, async (req, res) => {
+  const league = leagueInGuild(req.params.leagueId, req.params.guildId);
+  if (!league) return res.status(404).json({ error: 'League not found' });
+  const season = getSeasonById(Number(req.params.seasonId));
+  if (!season || season.league_id !== league.id) return res.status(404).json({ error: 'Season not found' });
+  if (!league.roster_channel_id) {
+    return res.status(400).json({ error: 'No roster channel is configured for this league. Set one in Configure.' });
+  }
+  try {
+    const { publishOrUpdateRosterPost } = require('../utils/rosterPost');
+    const actorName = req.session.user?.username || 'Staff';
+    const result = await publishOrUpdateRosterPost(league, season, actorName);
+    logger.info('Web portal published season roster', {
+      adminId: req.session.user.id, guildId: req.params.guildId, seasonId: season.id, action: result.action,
+    });
+    res.json({ ok: true, ...result, published: true });
+  } catch (err) {
+    logger.error('Web portal roster publish error', { error: err.message, seasonId: season.id });
     res.status(500).json({ error: err.message });
   }
 });

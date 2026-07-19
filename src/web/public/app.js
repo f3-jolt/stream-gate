@@ -725,6 +725,7 @@ async function openLeagueModal(leagueId = null) {
   fillPicker('league-advance-channel', chanOpts, chanIds, league?.advance_channel_id, '— None —');
   fillPicker('league-user-channel', chanOpts, chanIds, league?.user_channel_id, '— None —');
   fillPicker('league-settings-channel', chanOpts, chanIds, league?.settings_channel_id, '— None —');
+  fillPicker('league-roster-channel', chanOpts, chanIds, league?.roster_channel_id, '— None —');
   fillPicker('league-category', catOpts, catIds, league?.category_id, '— None —');
   fillPicker('league-ping-role', roleOpts, roleIds, league?.ping_role_id, '— None —');
   fillPicker('league-staff-role', roleOpts, roleIds, league?.staff_role_id, '— None —');
@@ -747,6 +748,7 @@ async function submitLeague() {
     advanceChannelId: document.getElementById('league-advance-channel').value.trim(),
     userChannelId: document.getElementById('league-user-channel').value.trim(),
     settingsChannelId: document.getElementById('league-settings-channel').value.trim(),
+    rosterChannelId: document.getElementById('league-roster-channel').value.trim(),
     staffRoleId: document.getElementById('league-staff-role').value.trim(),
     scheduleUrl: document.getElementById('league-schedule-url').value.trim(),
   };
@@ -1029,11 +1031,85 @@ function refreshActiveDynastyTab() {
 }
 
 function onDynastyTabShown(name) {
-  if (name === 'season') { loadSeasonTeams(); loadCoaches(); }
+  if (name === 'season') { loadSeasonTeams(); loadCoaches(); loadRosterPublishState(); }
   else if (name === 'schedule') loadScheduleTab();
   else if (name === 'results') loadResults();
   else if (name === 'summary') loadSummary();
   else if (name === 'coaches') loadCoachHistory();
+}
+
+// ── Season roster → Discord ──
+// Publish state is per SEASON: a new season starts unpublished, so the button
+// reads "Publish Roster" and posts a new message rather than editing last
+// season's post.
+let rosterPublished = false;
+let rosterChannelConfigured = false;
+
+async function loadRosterPublishState() {
+  if (!currentDynLeagueId || !currentSeasonId) { renderRosterPublishState(); return; }
+  const res = await fetch(`/api/guilds/${currentGuildId}/leagues/${currentDynLeagueId}/seasons/${currentSeasonId}/roster-post`);
+  const data = await res.json();
+  rosterPublished = Boolean(data.published);
+  rosterChannelConfigured = Boolean(data.channelConfigured);
+  renderRosterPublishState();
+}
+
+function renderRosterPublishState() {
+  const btn = document.getElementById('roster-publish-btn');
+  const status = document.getElementById('roster-publish-status');
+  if (!btn) return;
+  btn.textContent = rosterPublished ? 'Update Roster' : 'Publish Roster';
+
+  let disabled = false;
+  let note = '';
+  if (!currentSeasonId) {
+    disabled = true;
+    note = 'Select a season to publish its roster.';
+  } else if (!rosterChannelConfigured) {
+    disabled = true;
+    note = 'Set a Roster Channel in ⚙ Configure to publish.';
+  } else if (rosterPublished) {
+    note = 'Published. Update edits this season’s pinned post and logs coach changes.';
+  } else {
+    note = 'Not published yet. Publishing posts a new pinned message for this season.';
+  }
+  btn.disabled = disabled;
+  btn.classList.toggle('btn-disabled', disabled);
+  status.textContent = note;
+}
+
+async function publishSeasonRoster() {
+  if (!currentSeasonId) { flash('Select a season first', 'error', 'roster-result'); return; }
+  if (!rosterChannelConfigured) {
+    flash('Set a Roster Channel in Configure first', 'error', 'roster-result');
+    return;
+  }
+  const verb = rosterPublished
+    ? 'update this season’s pinned roster post and log the coach changes'
+    : 'publish a new roster post for this season';
+  if (!confirm(`This will ${verb} in the league's roster channel. Continue?`)) return;
+
+  const res = await fetch(
+    `/api/guilds/${currentGuildId}/leagues/${currentDynLeagueId}/seasons/${currentSeasonId}/roster/publish`,
+    { method: 'POST' },
+  );
+  const data = await res.json();
+  if (data.ok) {
+    rosterPublished = true;
+    renderRosterPublishState();
+    let msg = data.action === 'published' ? 'Roster published'
+      : data.action === 'republished' ? 'Post was missing — republished'
+      : data.action === 'unchanged' ? 'Post refreshed (no coach changes)'
+      : `Roster updated — ${data.changed.length} change${data.changed.length === 1 ? '' : 's'} logged`;
+    // Crests are best-effort. The two causes need different fixes, so name them
+    // separately instead of lumping both under a vague warning.
+    const e = data.emoji || {};
+    if (e.noLogo) msg += ` · ${e.noLogo} team${e.noLogo === 1 ? '' : 's'} have no logo on file`;
+    if (e.uploadFailed) msg += ` · ${e.uploadFailed} logo${e.uploadFailed === 1 ? '' : 's'} shown as text (out of emoji slots, or missing Manage Expressions)`;
+    flash(msg, 'success', 'roster-result');
+  } else {
+    flash(data.error || 'Publish failed', 'error', 'roster-result');
+  }
 }
 
 // ── Season modal ──

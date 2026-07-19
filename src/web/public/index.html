@@ -235,8 +235,17 @@
           <div id="season-empty" class="text-muted" style="display:none; padding:24px;">Select or create a season above to manage its coaches.</div>
           <div id="season-content">
             <div class="card">
-              <div class="card-title">Conference Breakdown</div>
-              <p class="text-muted" style="margin:-6px 0 12px;">Teams in each conference for this season.</p>
+              <div class="settings-head">
+                <div>
+                  <div class="card-title" style="margin-bottom:4px;">Conference Breakdown</div>
+                  <p class="text-muted" style="margin:0;">Teams in each conference for this season.</p>
+                </div>
+                <div class="settings-head-actions">
+                  <button id="roster-publish-btn" class="btn btn-primary" onclick="publishSeasonRoster()">Publish Roster</button>
+                </div>
+              </div>
+              <div id="roster-publish-status" class="settings-publish-status"></div>
+              <div id="roster-result" class="flash"></div>
               <div id="conf-breakdown" class="conf-breakdown"></div>
             </div>
             <div class="card">
@@ -541,6 +550,11 @@
           <label>Settings Channel (optional)</label>
           <select id="league-settings-channel"></select>
           <small class="text-muted">Where the league settings post is published.</small>
+        </div>
+        <div class="form-field">
+          <label>Roster Channel (optional)</label>
+          <select id="league-roster-channel"></select>
+          <small class="text-muted">Where season coach assignments are published.</small>
         </div>
         <div class="form-field">
           <label>Staff Role (optional)</label>

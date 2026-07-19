@@ -209,6 +209,35 @@ function initSchema() {
       posted_settings  TEXT,
       updated_at       DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- The canonical "coach assignments" embed, keyed by SEASON rather than
+    -- league: a new season has no row, so it publishes a brand-new message
+    -- instead of editing last season's. Within a season we edit in place and
+    -- send a changelog for each add/drop/move. posted_roster is the snapshot
+    -- last shown ({ ABBREV: { conference, coach } }), used as the diff source.
+    --
+    -- message_ids is a JSON array, not a single id: a full-catalog league blows
+    -- past Discord's 6000-char embed cap, so the roster pages across however
+    -- many messages it needs and we edit each page in place.
+    CREATE TABLE IF NOT EXISTS season_roster_post (
+      season_id      INTEGER PRIMARY KEY REFERENCES seasons(id),
+      channel_id     TEXT NOT NULL,
+      message_ids    TEXT NOT NULL,
+      posted_roster  TEXT,
+      updated_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Team logos uploaded to a guild as custom emoji so roster rows can show a
+    -- real crest inline. Scoped per guild because an emoji id is only usable in
+    -- the guild that owns it.
+    CREATE TABLE IF NOT EXISTS guild_team_emoji (
+      guild_id    TEXT NOT NULL,
+      team_abbrev TEXT NOT NULL,
+      emoji_id    TEXT NOT NULL,
+      emoji_name  TEXT NOT NULL,
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (guild_id, team_abbrev)
+    );
   `);
 
   runMigrations();
@@ -377,6 +406,7 @@ function runMigrations() {
     `ALTER TABLE leagues ADD COLUMN active INTEGER NOT NULL DEFAULT 1`,
     `ALTER TABLE leagues ADD COLUMN settings TEXT`,
     `ALTER TABLE leagues ADD COLUMN settings_channel_id TEXT`,
+    `ALTER TABLE leagues ADD COLUMN roster_channel_id TEXT`,
   ];
 
   for (const sql of migrations) {
