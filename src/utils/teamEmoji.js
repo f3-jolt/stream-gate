@@ -44,11 +44,19 @@ function logoBytes(team) {
 // once per team, on every publish.
 const GIVE_UP_CODES = new Set([30008, 50013]);
 
+// Discord rate-limits emoji creation aggressively, so a first publish for a
+// large league can spend minutes uploading. That has to stay well inside the
+// hosting proxy's request timeout (~60s on Fly), or the HTTP request dies and
+// the roster never posts. We upload within a time budget and leave the rest for
+// the next publish — crests accumulate across runs instead of blocking one.
+const UPLOAD_BUDGET_MS = 20_000;
+
 // Resolve emoji markup for every abbrev, uploading what's missing.
-// Returns { markup: Map<abbrev, string|null>, uploaded, noLogo, uploadFailed }.
-// The two failure counts are kept apart because they need different fixes:
-// noLogo means "give this team a logo", uploadFailed means "check slots/perms".
-async function ensureTeamEmojis(guild, abbrevs) {
+// Returns { markup, uploaded, noLogo, uploadFailed, pending }.
+// The failure counts are kept apart because they need different fixes: noLogo
+// means "give this team a logo", uploadFailed means "check slots/perms", and
+// pending just means "run it again to finish".
+async function ensureTeamEmojis(guild, abbrevs, budgetMs = UPLOAD_BUDGET_MS) {
   const markup = new Map();
   let uploaded = 0;
   let noLogo = 0;
@@ -67,6 +75,8 @@ async function ensureTeamEmojis(guild, abbrevs) {
   }
 
   let canUpload = true;
+  let pending = 0;
+  const deadline = Date.now() + budgetMs;
   for (const abbrev of abbrevs) {
     const known = getTeamEmoji(guild.id, abbrev);
     if (known && (live === null || live.has(known.emoji_id))) {
@@ -83,6 +93,8 @@ async function ensureTeamEmojis(guild, abbrevs) {
       continue;
     }
     if (!canUpload) { markup.set(abbrev, null); uploadFailed++; continue; }
+    // Out of time — render this team as text and pick it up next publish.
+    if (Date.now() > deadline) { markup.set(abbrev, null); pending++; continue; }
 
     try {
       const emoji = await guild.emojis.create({
@@ -103,7 +115,10 @@ async function ensureTeamEmojis(guild, abbrevs) {
       uploadFailed++;
     }
   }
-  return { markup, uploaded, noLogo, uploadFailed };
+  if (pending) {
+    logger.info('Emoji upload budget reached; remaining crests deferred', { guild: guild.id, pending });
+  }
+  return { markup, uploaded, noLogo, uploadFailed, pending };
 }
 
 module.exports = { ensureTeamEmojis, emojiNameFor };

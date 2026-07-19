@@ -200,11 +200,14 @@ function syncDynastyLeague() {
 
 // ── Flash ──────────────────────────────────────────────────────────────────────
 
-function flash(msg, type = 'success', targetId = 'flash') {
+// sticky keeps the message up until the next flash on the same target. Use it
+// for errors the user has to act on — a 4-second auto-hide loses them.
+function flash(msg, type = 'success', targetId = 'flash', sticky = false) {
   const el = document.getElementById(targetId);
   el.textContent = msg;
   el.className = `flash ${type} show`;
-  setTimeout(() => { el.className = 'flash'; }, 4000);
+  clearTimeout(el._flashTimer);
+  if (!sticky) el._flashTimer = setTimeout(() => { el.className = 'flash'; }, 4000);
 }
 
 // ── Users ──────────────────────────────────────────────────────────────────────
@@ -1089,11 +1092,38 @@ async function publishSeasonRoster() {
     : 'publish a new roster post for this season';
   if (!confirm(`This will ${verb} in the league's roster channel. Continue?`)) return;
 
-  const res = await fetch(
-    `/api/guilds/${currentGuildId}/leagues/${currentDynLeagueId}/seasons/${currentSeasonId}/roster/publish`,
-    { method: 'POST' },
-  );
-  const data = await res.json();
+  // Publishing can take a while (Discord rate-limits emoji uploads), so say so
+  // rather than leaving the button looking inert.
+  const btn = document.getElementById('roster-publish-btn');
+  const restore = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Publishing…';
+
+  let data;
+  try {
+    const res = await fetch(
+      `/api/guilds/${currentGuildId}/leagues/${currentDynLeagueId}/seasons/${currentSeasonId}/roster/publish`,
+      { method: 'POST' },
+    );
+    // A proxy timeout or a restart returns HTML, not JSON. Parsing that throws,
+    // and an unguarded throw here rejects silently — no error, nothing happens.
+    const body = await res.text();
+    try {
+      data = JSON.parse(body);
+    } catch {
+      throw new Error(res.status === 502 || res.status === 504
+        ? 'The request timed out on the server. The roster may still have posted — check the channel, then press Update Roster to reconcile.'
+        : `Server returned ${res.status} instead of JSON: ${body.slice(0, 200)}`);
+    }
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = restore;
+    flash(err.message || 'Publish failed', 'error', 'roster-result', true);
+    return;
+  }
+  btn.disabled = false;
+  btn.textContent = restore;
+
   if (data.ok) {
     rosterPublished = true;
     renderRosterPublishState();
@@ -1106,9 +1136,11 @@ async function publishSeasonRoster() {
     const e = data.emoji || {};
     if (e.noLogo) msg += ` · ${e.noLogo} team${e.noLogo === 1 ? '' : 's'} have no logo on file`;
     if (e.uploadFailed) msg += ` · ${e.uploadFailed} logo${e.uploadFailed === 1 ? '' : 's'} shown as text (out of emoji slots, or missing Manage Expressions)`;
+    if (e.pending) msg += ` · ${e.pending} crest${e.pending === 1 ? '' : 's'} still to upload — press Update Roster again to finish`;
     flash(msg, 'success', 'roster-result');
   } else {
-    flash(data.error || 'Publish failed', 'error', 'roster-result');
+    // Sticky: an actionable error shouldn't vanish before it's been read.
+    flash(data.error || 'Publish failed', 'error', 'roster-result', true);
   }
 }
 

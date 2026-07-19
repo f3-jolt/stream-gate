@@ -301,17 +301,19 @@ async function publishOrUpdateRosterPost(league, season, actorName) {
   let emojiMarkup = null;
   let noLogo = 0;
   let uploadFailed = 0;
+  let pending = 0;
   try {
     const guild = channel.guild || await client.guilds.fetch(league.guild_id);
     const result = await ensureTeamEmojis(guild, Object.keys(snapshot));
     emojiMarkup = result.markup;
     noLogo = result.noLogo;
     uploadFailed = result.uploadFailed;
+    pending = result.pending;
   } catch (err) {
     logger.warn('Team emoji step failed; posting text-only roster', { error: err.message });
     uploadFailed = Object.keys(snapshot).length;
   }
-  const emoji = { noLogo, uploadFailed };
+  const emoji = { noLogo, uploadFailed, pending };
 
   const existing = getRosterPost(season.id);
 
