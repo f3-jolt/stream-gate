@@ -142,7 +142,9 @@ function buildRosterEmbeds(league, season, snapshot) {
 // are the point of the changelog, but roster and conference edits are reported
 // too — otherwise a staffer who only moved a team between conferences would be
 // told "no changes" while the post visibly changed under them.
-// Returns [{ type: 'added'|'dropped'|'changed'|'joined'|'left'|'moved', ... }].
+// A coach moving between teams is then collapsed into a single 'switched'
+// entry — see mergeSwitches.
+// Returns [{ type: 'added'|'dropped'|'changed'|'switched'|'joined'|'left'|'moved', ... }].
 function diffRoster(oldSnapshot, newSnapshot) {
   const changes = [];
   const abbrevs = new Set([...Object.keys(oldSnapshot || {}), ...Object.keys(newSnapshot || {})]);
@@ -167,12 +169,56 @@ function diffRoster(oldSnapshot, newSnapshot) {
       changes.push({ type: 'moved', team, from: before.conference, to: after.conference, entry: after });
     }
   }
-  return changes.sort((a, b) => a.team.localeCompare(b.team));
+  return mergeSwitches(changes, newSnapshot).sort((a, b) => a.team.localeCompare(b.team));
+}
+
+// Identity for pairing a departure with an arrival. The Discord id is the
+// reliable key; fall back to the display name for coaches with no linked
+// account (the name is unique per league by getOrCreateCoach).
+function coachKey(entry, fallbackName) {
+  return entry?.discordId ? `id:${entry.discordId}` : `name:${entry?.coach || fallbackName}`;
+}
+
+// A coach changing teams shows up as two independent per-team changes: dropped
+// from the old, added to the new. Reported raw that reads as a contradiction
+// ("X left" / "X joined"), so collapse each matching pair into one switch.
+function mergeSwitches(changes, newSnapshot) {
+  const droppedByCoach = new Map();
+  for (const c of changes) {
+    if (c.type === 'dropped') droppedByCoach.set(coachKey(c.entry, c.from), c);
+  }
+
+  const consumed = new Set();
+  const merged = [];
+  for (const c of changes) {
+    if (c.type !== 'added') continue;
+    const key = coachKey(c.entry, c.to);
+    const drop = droppedByCoach.get(key);
+    if (!drop || consumed.has(drop)) continue;
+
+    consumed.add(drop);
+    consumed.add(c);
+    // The vacated team is only "open" if nobody else took it in this same
+    // update — if they did, that team has its own 'changed'/'added' entry.
+    const vacatedAbbrev = Object.keys(newSnapshot || {}).find(a => newSnapshot[a].teamName === drop.team);
+    const vacatedOpen = vacatedAbbrev ? !newSnapshot[vacatedAbbrev].coach : true;
+    merged.push({
+      type: 'switched',
+      team: c.team,              // sorts under the new team
+      fromTeam: drop.team,
+      toTeam: c.team,
+      vacatedOpen,
+      entry: c.entry,
+    });
+  }
+  return [...changes.filter(c => !consumed.has(c)), ...merged];
 }
 
 function changeLine(c) {
   const who = c.entry && c.type !== 'dropped' ? coachDisplay(c.entry) : c.from;
   switch (c.type) {
+    case 'switched': return `🔀 ${who} switched teams — ${c.fromTeam} → **${c.toTeam}**`
+      + (c.vacatedOpen ? ` · ${c.fromTeam} now open` : '');
     case 'added':   return `➕ **${c.team}** — ${who} joined`;
     case 'dropped': return `➖ **${c.team}** — ${c.from} left (now open)`;
     case 'changed': return `🔄 **${c.team}** — ${c.from} → ${who}`;
