@@ -330,30 +330,6 @@ function pruneOrphanedRosterPosts() {
   ).run();
 }
 
-// ── Team logo emoji, uploaded per guild ───────────────────────────────────────
-
-function getTeamEmoji(guildId, teamAbbrev) {
-  return db.prepare(
-    'SELECT * FROM guild_team_emoji WHERE guild_id = ? AND team_abbrev = ?'
-  ).get(guildId, teamAbbrev.toUpperCase());
-}
-
-function upsertTeamEmoji(guildId, teamAbbrev, emojiId, emojiName) {
-  return db.prepare(`
-    INSERT INTO guild_team_emoji (guild_id, team_abbrev, emoji_id, emoji_name)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(guild_id, team_abbrev) DO UPDATE SET
-      emoji_id = excluded.emoji_id, emoji_name = excluded.emoji_name
-  `).run(guildId, teamAbbrev.toUpperCase(), emojiId, emojiName);
-}
-
-// Called when Discord reports the emoji is gone, so the next publish re-uploads.
-function deleteTeamEmoji(guildId, teamAbbrev) {
-  return db.prepare(
-    'DELETE FROM guild_team_emoji WHERE guild_id = ? AND team_abbrev = ?'
-  ).run(guildId, teamAbbrev.toUpperCase());
-}
-
 function getUsersInLeague(leagueId) {
   return db.prepare(`
     SELECT u.discord_id, u.discord_username, ul.team_name, ul.team_abbrev,
@@ -1028,9 +1004,6 @@ module.exports = {
   upsertRosterPost,
   deleteRosterPost,
   pruneOrphanedRosterPosts,
-  getTeamEmoji,
-  upsertTeamEmoji,
-  deleteTeamEmoji,
   getUsersInLeague,
   updateUserPlatformUsername,
   getLastStreams,

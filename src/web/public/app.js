@@ -1127,16 +1127,10 @@ async function publishSeasonRoster() {
   if (data.ok) {
     rosterPublished = true;
     renderRosterPublishState();
-    let msg = data.action === 'published' ? 'Roster published'
+    const msg = data.action === 'published' ? 'Roster published'
       : data.action === 'republished' ? 'Post was missing — republished'
       : data.action === 'unchanged' ? 'Post refreshed (no coach changes)'
       : `Roster updated — ${data.changed.length} change${data.changed.length === 1 ? '' : 's'} logged`;
-    // Crests are best-effort. The two causes need different fixes, so name them
-    // separately instead of lumping both under a vague warning.
-    const e = data.emoji || {};
-    if (e.noLogo) msg += ` · ${e.noLogo} team${e.noLogo === 1 ? '' : 's'} have no logo on file`;
-    if (e.uploadFailed) msg += ` · ${e.uploadFailed} logo${e.uploadFailed === 1 ? '' : 's'} shown as text (out of emoji slots, or missing Manage Expressions)`;
-    if (e.pending) msg += ` · ${e.pending} crest${e.pending === 1 ? '' : 's'} still to upload — press Update Roster again to finish`;
     flash(msg, 'success', 'roster-result');
   } else {
     // Sticky: an actionable error shouldn't vanish before it's been read.

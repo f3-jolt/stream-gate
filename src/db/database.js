@@ -226,18 +226,6 @@ function initSchema() {
       posted_roster  TEXT,
       updated_at     DATETIME DEFAULT CURRENT_TIMESTAMP
     );
-
-    -- Team logos uploaded to a guild as custom emoji so roster rows can show a
-    -- real crest inline. Scoped per guild because an emoji id is only usable in
-    -- the guild that owns it.
-    CREATE TABLE IF NOT EXISTS guild_team_emoji (
-      guild_id    TEXT NOT NULL,
-      team_abbrev TEXT NOT NULL,
-      emoji_id    TEXT NOT NULL,
-      emoji_name  TEXT NOT NULL,
-      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (guild_id, team_abbrev)
-    );
   `);
 
   runMigrations();

@@ -15,7 +15,6 @@
 const { EmbedBuilder } = require('discord.js');
 const { getSeasonTeams, getRosterPost, upsertRosterPost } = require('../db/queries');
 const { getTeamByAbbrev } = require('./teams');
-const { ensureTeamEmojis } = require('./teamEmoji');
 const logger = require('./logger');
 
 const ACCENT = 0x6798ff;   // StreamGate blue (matches the admin portal)
@@ -71,18 +70,16 @@ function groupByConference(snapshot) {
   return new Map([...groups.entries()].sort((a, b) => a[0].localeCompare(b[0])));
 }
 
-function rowLine(row, emojiMarkup) {
-  const crest = emojiMarkup?.get(row.abbrev);
-  const prefix = crest ? `${crest} ` : '';
-  return `${prefix}**${row.teamName}** — ${coachDisplay(row)}`;
+function rowLine(row) {
+  return `**${row.teamName}** — ${coachDisplay(row)}`;
 }
 
 // Flatten the roster into ready-to-add fields: one per conference, split into
 // "(cont.)" fields wherever a conference exceeds Discord's 1024-char field cap.
-function buildFields(snapshot, emojiMarkup) {
+function buildFields(snapshot) {
   const fields = [];
   for (const [conference, rows] of groupByConference(snapshot)) {
-    const lines = rows.map(r => rowLine(r, emojiMarkup));
+    const lines = rows.map(r => rowLine(r));
     const chunks = [];
     let current = [];
     let len = 0;
@@ -104,7 +101,7 @@ function buildFields(snapshot, emojiMarkup) {
 // The canonical roster, as one embed per message. A ~32-team league is a single
 // page; a full 143-team catalog overflows Discord's 6000-char embed cap, so we
 // page rather than drop rows. Returns an array of embeds, one per message.
-function buildRosterEmbeds(league, season, snapshot, emojiMarkup) {
+function buildRosterEmbeds(league, season, snapshot) {
   const coached = Object.values(snapshot).filter(e => e.coach).length;
   const total = Object.keys(snapshot).length;
   const title = `Coach Assignments — ${league.name} ${seasonLabel(season)}`;
@@ -115,7 +112,7 @@ function buildRosterEmbeds(league, season, snapshot, emojiMarkup) {
   const pages = [];
   let current = [];
   let used = 0;
-  for (const field of buildFields(snapshot, emojiMarkup)) {
+  for (const field of buildFields(snapshot)) {
     const cost = field.name.length + field.value.length;
     // A page also carries the title (+ description on page 1); reserve for both.
     const overChars = used + cost > MAX_EMBED_CHARS - title.length - 120;
@@ -227,8 +224,8 @@ async function deletePages(channel, ids) {
   }
 }
 
-async function sendFreshPost(channel, league, season, snapshot, emojiMarkup) {
-  const embeds = buildRosterEmbeds(league, season, snapshot, emojiMarkup);
+async function sendFreshPost(channel, league, season, snapshot) {
+  const embeds = buildRosterEmbeds(league, season, snapshot);
   const ids = [];
   for (const [i, embed] of embeds.entries()) {
     const msg = await channel.send({ embeds: [embed] });
@@ -244,8 +241,8 @@ async function sendFreshPost(channel, league, season, snapshot, emojiMarkup) {
 // Returns the new id list, or null if a page we expected to edit is gone — the
 // caller treats that as "repost from scratch" rather than leaving a half-edited
 // roster split across stale messages.
-async function editExistingPost(channel, league, season, snapshot, emojiMarkup, existingIds) {
-  const embeds = buildRosterEmbeds(league, season, snapshot, emojiMarkup);
+async function editExistingPost(channel, league, season, snapshot, existingIds) {
+  const embeds = buildRosterEmbeds(league, season, snapshot);
   const ids = [];
 
   for (let i = 0; i < embeds.length; i++) {
@@ -279,8 +276,7 @@ async function editExistingPost(channel, league, season, snapshot, emojiMarkup, 
 }
 
 // Publish (first time this season) or update (edit-in-place + changelog).
-// Returns { action: 'published'|'updated'|'republished'|'unchanged',
-//           changed: [...], emoji: { noLogo, uploadFailed } }.
+// Returns { action: 'published'|'updated'|'republished'|'unchanged', changed }.
 async function publishOrUpdateRosterPost(league, season, actorName) {
   if (!league.roster_channel_id) {
     throw new Error('No roster channel configured for this league.');
@@ -295,54 +291,34 @@ async function publishOrUpdateRosterPost(league, season, actorName) {
   const channel = await client.channels.fetch(league.roster_channel_id);
   if (!channel) throw new Error('Configured roster channel could not be found.');
 
-  // Crests are best-effort; a guild out of emoji slots still gets a text roster.
-  // noLogo and uploadFailed stay separate because they point staff at different
-  // fixes — upload a logo for that team, vs. free emoji slots / grant perms.
-  let emojiMarkup = null;
-  let noLogo = 0;
-  let uploadFailed = 0;
-  let pending = 0;
-  try {
-    const guild = channel.guild || await client.guilds.fetch(league.guild_id);
-    const result = await ensureTeamEmojis(guild, Object.keys(snapshot));
-    emojiMarkup = result.markup;
-    noLogo = result.noLogo;
-    uploadFailed = result.uploadFailed;
-    pending = result.pending;
-  } catch (err) {
-    logger.warn('Team emoji step failed; posting text-only roster', { error: err.message });
-    uploadFailed = Object.keys(snapshot).length;
-  }
-  const emoji = { noLogo, uploadFailed, pending };
-
   const existing = getRosterPost(season.id);
 
   // First publish for this season, or the channel was reconfigured → fresh post.
   if (!existing || existing.channel_id !== league.roster_channel_id || !existing.message_ids.length) {
-    await sendFreshPost(channel, league, season, snapshot, emojiMarkup);
+    await sendFreshPost(channel, league, season, snapshot);
     logger.info('Published roster post', { seasonId: season.id, channel: channel.id });
-    return { action: 'published', changed: [], emoji };
+    return { action: 'published', changed: [] };
   }
 
   const changes = diffRoster(existing.posted_roster, snapshot);
-  const edited = await editExistingPost(channel, league, season, snapshot, emojiMarkup, existing.message_ids);
+  const edited = await editExistingPost(channel, league, season, snapshot, existing.message_ids);
   if (!edited) {
     // Someone deleted a page — self-heal by reposting, but announce nothing.
     // Clear whatever pages survived first, or they'd linger beside the new set
     // showing stale assignments with no record tying them back to us.
     await deletePages(channel, existing.message_ids);
-    await sendFreshPost(channel, league, season, snapshot, emojiMarkup);
+    await sendFreshPost(channel, league, season, snapshot);
     logger.info('Roster post was missing; republished', { seasonId: season.id });
-    return { action: 'republished', changed: [], emoji };
+    return { action: 'republished', changed: [] };
   }
 
   if (changes.length) {
     await channel.send({ embeds: [buildChangelogEmbed(league, season, changes, actorName)] });
     logger.info('Updated roster post + changelog', { seasonId: season.id, changes: changes.length });
-    return { action: 'updated', changed: changes, emoji };
+    return { action: 'updated', changed: changes };
   }
   logger.info('Roster post refreshed with no assignment changes', { seasonId: season.id });
-  return { action: 'unchanged', changed: [], emoji };
+  return { action: 'unchanged', changed: [] };
 }
 
 module.exports = {
