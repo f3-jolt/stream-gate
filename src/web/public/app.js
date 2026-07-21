@@ -1556,6 +1556,7 @@ function renderScheduleDetail() {
   const t = allTeams.find(x => x.team_abbrev === selectedScheduleTeam);
   if (!t) { detail.innerHTML = ''; return; }
   detail.innerHTML = scheduleCardHtml(t);
+  refreshCardWarnings(t.team_abbrev);
 }
 
 // Inline person glyph used to mark user games (row marker + toggle label).
@@ -1630,6 +1631,7 @@ function scheduleCardHtml(t) {
       <div class="sched-stat"><span class="sched-stat-num">${homeGames}</span><span class="sched-stat-lbl">Home</span></div>
       <div class="sched-stat"><span class="sched-stat-num">${userGames}</span><span class="sched-stat-lbl">User</span></div>
     </div>
+    <div class="sched-warn" id="cardwarn-${abbr}" hidden></div>
     <table class="sched-card-table"><tbody>${rows}</tbody></table>
     <div class="sched-card-foot">
       <button class="btn btn-primary btn-sm" onclick="saveCard('${abbr}')">Save ${esc(abbr)}</button>
@@ -1651,20 +1653,13 @@ function bookedThatWeek(abbr, w) {
   return set;
 }
 
-// Abbrevs not selectable for (abbr, w): self (rule 1), busy that week (rule 2),
-// and — for regular-season rows only — anyone already on another regular-season
-// row (rule 3, no rematch). Postseason rows (15+) may rematch, so they only
-// exclude self and teams busy that week.
+// Abbrevs not selectable for (abbr, w): self (rule 1) and any team already busy
+// that week (rule 2) — both are genuine impossibilities. Rematches (an opponent
+// already on another regular-season row) stay selectable; they're allowed now
+// and flagged as a warning instead of being blocked.
 function excludedForRow(abbr, w) {
   const set = new Set([abbr]);
   bookedThatWeek(abbr, w).forEach(a => set.add(a));
-  if (w <= 14) {
-    for (let i = 0; i <= 14; i++) {
-      if (i === w) continue;
-      const v = (gid('opp', abbr, i)?.value || '').trim().toUpperCase();
-      if (v) set.add(v);
-    }
-  }
   return set;
 }
 
@@ -1689,6 +1684,7 @@ function onOppChange(abbr, w) {
   gid('sidewrap', abbr, w).style.display = has ? '' : 'none';
   gid('userwrap', abbr, w).style.display = has ? '' : 'none';
   syncUserMark(abbr, w);
+  refreshCardWarnings(abbr);
   const img = gid('opplogo', abbr, w);
   const cell = gid('oppcell', abbr, w);
   if (!has) { img.style.visibility = 'hidden'; cell.style.background = 'transparent'; return; }
@@ -1735,28 +1731,62 @@ function markUserDefault(abbr, w) {
   cb.checked = coached.has(abbr) && coached.has(opp);
 }
 
-// Validate one card against the scheduling rules before sending (the server also
-// enforces them, but catching here keeps the in-progress edits from being lost).
+// Regular-season rematches on this card: the same opponent scheduled in two or
+// more weeks (weeks 0–14). Postseason weeks (15+) may rematch freely and are not
+// reported. Returns [{ opp, firstWeek, week }] for each repeat occurrence.
+function cardRematches(abbr) {
+  const seen = new Map(); // opponent abbrev -> first regular-season week seen
+  const out = [];
+  for (let w = 0; w <= 14; w++) {
+    const opp = (gid('opp', abbr, w)?.value || '').trim().toUpperCase();
+    if (!opp) continue;
+    if (seen.has(opp)) out.push({ opp, firstWeek: seen.get(opp), week: w });
+    else seen.set(opp, w);
+  }
+  return out;
+}
+
+// Surface rematches inline: outline the affected rows and show a warning banner
+// on the card. Rematches are allowed now, so this only informs — it never blocks.
+function refreshCardWarnings(abbr) {
+  const rematches = cardRematches(abbr);
+  const flagged = new Set();
+  rematches.forEach(r => { flagged.add(r.firstWeek); flagged.add(r.week); });
+  for (let w = 0; w <= SCHED_MAX_WEEK; w++) {
+    gid('oppcell', abbr, w)?.classList.toggle('rematch', flagged.has(w));
+  }
+  const banner = document.getElementById(`cardwarn-${abbr}`);
+  if (!banner) return;
+  if (!rematches.length) { banner.hidden = true; banner.textContent = ''; return; }
+  const parts = rematches.map(r => `${esc(r.opp)} (${weekShort(r.firstWeek)} & ${weekShort(r.week)})`);
+  banner.hidden = false;
+  banner.innerHTML = `<strong>⚠ Rematch:</strong> ${parts.join(' · ')} — allowed, but double-check it's intended.`;
+}
+
+// Validate one card before sending. Hard errors (a team playing itself, or an
+// opponent double-booked in the same week) block the save. Regular-season
+// rematches are returned separately as warnings — the caller confirms them
+// rather than blocking. The server enforces the hard rules too.
 function validateCard(abbr) {
   const T = abbr.toUpperCase();
-  const seenRegular = new Map(); // regular-season opponent abbrev -> week
   for (let w = 0; w <= SCHED_MAX_WEEK; w++) {
     const opp = (gid('opp', abbr, w).value || '').trim().toUpperCase();
     if (!opp) continue;
-    if (opp === T) return `${weekShort(w)}: a team can't play itself.`;
-    if (bookedThatWeek(abbr, w).has(opp)) return `${opp} is already booked in ${weekShort(w)}.`;
-    // No-rematch applies to the regular season only; postseason weeks may rematch.
-    if (w <= 14) {
-      if (seenRegular.has(opp)) return `${opp} scheduled twice (${weekShort(seenRegular.get(opp))} & ${weekShort(w)}) — no rematches.`;
-      seenRegular.set(opp, w);
-    }
+    if (opp === T) return { error: `${weekShort(w)}: a team can't play itself.` };
+    if (bookedThatWeek(abbr, w).has(opp)) return { error: `${opp} is already booked in ${weekShort(w)}.` };
   }
-  return null;
+  const warnings = cardRematches(abbr).map(r =>
+    `${r.opp} is scheduled twice (${weekShort(r.firstWeek)} & ${weekShort(r.week)}).`);
+  return { error: null, warnings };
 }
 
 async function saveCard(abbr) {
-  const err = validateCard(abbr);
-  if (err) { flashCard(abbr, err, 'error'); return; }
+  const { error, warnings } = validateCard(abbr);
+  if (error) { flashCard(abbr, error, 'error'); return; }
+  if (warnings.length) {
+    const ok = confirm(`This schedule has regular-season rematches:\n\n${warnings.join('\n')}\n\nRematches are unusual but allowed. Save anyway?`);
+    if (!ok) { flashCard(abbr, 'Save cancelled', 'warn'); return; }
+  }
   const weeks = [];
   for (let w = 0; w <= SCHED_MAX_WEEK; w++) {
     const opp = (gid('opp', abbr, w).value || '').trim().toUpperCase();
@@ -1772,7 +1802,11 @@ async function saveCard(abbr) {
     body: JSON.stringify({ team: abbr, weeks }),
   });
   const data = await res.json();
-  if (data.ok) { flashCard(abbr, 'Saved', 'success'); await loadScheduleTab(); }
+  if (data.ok) {
+    const msg = warnings.length ? `Saved with ${warnings.length} rematch warning${warnings.length > 1 ? 's' : ''}` : 'Saved';
+    flashCard(abbr, msg, warnings.length ? 'warn' : 'success');
+    await loadScheduleTab();
+  }
   else flashCard(abbr, data.error || 'Failed', 'error');
 }
 

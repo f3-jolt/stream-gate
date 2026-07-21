@@ -781,24 +781,17 @@ function _isWeekBusy(seasonId, week, abbrev) {
   return !!db.prepare('SELECT 1 FROM games WHERE season_id = ? AND week = ? AND (home_abbrev = ? OR away_abbrev = ?)')
     .get(seasonId, week, abbrev, abbrev);
 }
-// The no-rematch rule only applies to the regular season (weeks 0–14). Postseason
-// weeks (15+) routinely rematch regular-season opponents (conference title games,
-// bowls, the national championship), so those are excluded here.
-function _alreadyPlaysRegular(seasonId, a, b) {
-  return !!db.prepare(`SELECT 1 FROM games WHERE season_id = ? AND week <= 14
-    AND ((home_abbrev = ? AND away_abbrev = ?) OR (home_abbrev = ? AND away_abbrev = ?))`)
-    .get(seasonId, a, b, b, a);
-}
-
-// Enforces the scheduling rules (after clearing the subject's own game that week):
-// 1) can't play itself, 2) opponent must be open that week, 3) no rematch during
-// the regular season (postseason weeks may rematch).
+// Enforces the hard scheduling rules (after clearing the subject's own game that
+// week): 1) a team can't play itself, and 2) an opponent can't already be booked
+// in another game that same week. Regular-season rematches (the same two teams
+// scheduled twice) are NOT blocked here — they're allowed but surfaced as a
+// warning in the schedule builder so a deliberate double-up can be saved without
+// slipping through unnoticed.
 function _placeGame(seasonId, week, T, opponentAbbrev, isHome, isUserGame) {
   if (!opponentAbbrev) return; // BYE
   const opp = opponentAbbrev.toUpperCase();
   if (opp === T) throw new Error('A team cannot play itself.');
   if (_isWeekBusy(seasonId, week, opp)) throw new Error(`${opp} is already scheduled in week ${week}.`);
-  if (week <= 14 && _alreadyPlaysRegular(seasonId, T, opp)) throw new Error(`${T} already plays ${opp} this season (no rematches).`);
   const home = isHome ? T : opp;
   const away = isHome ? opp : T;
   insertGame(seasonId, week, home, away, week >= 15 ? 1 : 0, isUserGame);

@@ -16,6 +16,7 @@
   /* Functional status (kept restrained) */
   --danger: #ff5c5c;
   --success: #5bd98f;
+  --warning: #ffce4d;
 
   /* Text */
   --text: #ededed;
@@ -339,6 +340,7 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .card-flash { font-size: 12px; }
 .card-flash.success { color: var(--success); }
 .card-flash.error { color: var(--danger); }
+.card-flash.warn { color: var(--warning); }
 
 /* ── Schedule team picker (left nav + loaded card) ── */
 .sched-layout { display: flex; gap: 16px; align-items: flex-start; }
@@ -392,6 +394,14 @@ tr:hover td { background: rgba(255,255,255,.02); }
 }
 .sched-stat-num { font-size: 17px; font-weight: 700; line-height: 1.1; }
 .sched-stat-lbl { font-size: 10px; letter-spacing: .6px; text-transform: uppercase; color: var(--text-muted); }
+
+/* Rematch warning: allowed, but flagged so it isn't scheduled unnoticed. */
+.sched-warn {
+  padding: 8px 12px; font-size: 12px; line-height: 1.4; color: var(--warning);
+  background: rgba(255,200,0,.1); border-bottom: 1px solid rgba(255,200,0,.28);
+}
+.sched-warn strong { font-weight: 700; }
+.opp-cell.rematch { outline: 1px solid rgba(255,200,0,.75); outline-offset: -1px; }
 
 /* User-game toggle (in the grid) + the person marker beside the opponent logo. */
 .user-toggle { display: inline-flex; align-items: center; gap: 6px; }
