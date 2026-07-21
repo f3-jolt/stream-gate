@@ -364,6 +364,12 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .sched-nav-abbr { font-weight: 600; flex: none; min-width: 42px; }
 .sched-nav-name { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sched-nav-item.active .sched-nav-name { color: var(--text); }
+.sched-nav-count {
+  flex: none; margin-left: auto; min-width: 20px; text-align: center;
+  padding: 1px 6px; border-radius: 999px; font-size: 11px; font-weight: 600;
+  color: var(--text-muted); background: var(--surface2);
+}
+.sched-nav-item.active .sched-nav-count { color: var(--text); }
 .sched-detail { flex: 1 1 auto; min-width: 0; }
 .sched-card-solo { max-width: 560px; }
 @media (max-width: 720px) {

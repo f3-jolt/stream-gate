@@ -1503,6 +1503,11 @@ function filterScheduleCards(v) { scheduleFilter = (v || '').toLowerCase(); rend
 // uncoached roster teams are still selectable as opponents, just not listed here.
 function coachedScheduleTeams() { return allTeams.filter(t => t.is_user_team); }
 
+// How many games flagged as user games this team plays in (home or away).
+function userGameCount(abbr) {
+  return seasonGames.filter(g => g.is_user_game === 1 && (g.home_abbrev === abbr || g.away_abbrev === abbr)).length;
+}
+
 // Entry render: ensure a valid selection, then draw the team nav + detail card.
 function renderScheduleCards() {
   const nav = document.getElementById('schedule-nav-list');
@@ -1529,10 +1534,12 @@ function renderScheduleNav() {
   if (!teams.length) { nav.innerHTML = '<p class="text-muted" style="padding:12px;">No teams match.</p>'; return; }
   nav.innerHTML = teams.map(t => {
     const active = t.team_abbrev === selectedScheduleTeam;
+    const userGames = userGameCount(t.team_abbrev);
     return `<button class="sched-nav-item${active ? ' active' : ''}" onclick="selectScheduleTeam('${t.team_abbrev}')" title="${esc(t.team_name)}">`
       + `<img class="sched-nav-logo" src="${logoUrl(t.team_abbrev)}" alt="" onerror="this.style.display='none'">`
       + `<span class="sched-nav-abbr">${esc(t.team_abbrev)}</span>`
-      + `<span class="sched-nav-name">${esc(t.team_name)}</span></button>`;
+      + `<span class="sched-nav-name">${esc(t.team_name)}</span>`
+      + `<span class="sched-nav-count" title="${userGames} user game${userGames === 1 ? '' : 's'} assigned">${userGames}</span></button>`;
   }).join('');
 }
 
