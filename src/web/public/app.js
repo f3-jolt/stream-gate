@@ -1558,11 +1558,21 @@ function renderScheduleDetail() {
   detail.innerHTML = scheduleCardHtml(t);
 }
 
+// Inline person glyph used to mark user games (row marker + toggle label).
+const USER_ICON = '<svg class="user-svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5z"/></svg>';
+
 function scheduleCardHtml(t) {
   const abbr = t.team_abbrev;
   const byWeek = new Map();
   for (const g of seasonGames) {
     if (g.home_abbrev === abbr || g.away_abbrev === abbr) byWeek.set(g.week, g);
+  }
+  // Quick-glance totals for the header (reflect the last saved schedule).
+  let gamesScheduled = 0, homeGames = 0, userGames = 0;
+  for (const g of byWeek.values()) {
+    gamesScheduled++;
+    if (g.home_abbrev === abbr) homeGames++;
+    if (g.is_user_game === 1) userGames++;
   }
   const headerBg = (t.colors && t.colors.length)
     ? `linear-gradient(90deg, ${hexToRgba(t.colors[0], 0.9)}, ${hexToRgba(t.colors[1] || t.colors[0], 0.55)})`
@@ -1580,6 +1590,7 @@ function scheduleCardHtml(t) {
       <td class="wk${w > 14 ? ' wk-post' : ''}">${weekShort(w)}</td>
       <td>
         <div class="opp-cell" id="oppcell-${abbr}-${w}" style="background:${has ? shadeFor(colors) : 'transparent'};">
+          <span class="user-mark" id="usermark-${abbr}-${w}" title="User game" style="${user && has ? '' : 'display:none;'}">${USER_ICON}</span>
           <img class="opp-logo" id="opplogo-${abbr}-${w}" alt="" ${has ? `src="${logoUrl(opp)}"` : ''}
                onerror="this.style.visibility='hidden'" style="${has ? '' : 'visibility:hidden;'}">
           <input class="grid-input opp-input" list="team-options" id="opp-${abbr}-${w}" value="${esc(opp || '')}"
@@ -1593,8 +1604,11 @@ function scheduleCardHtml(t) {
           <span class="side-label ${!isHome ? 'active' : ''}" id="sideaway-${abbr}-${w}">A</span>
         </div>
       </td>
-      <td style="text-align:center;">
-        <input type="checkbox" id="user-${abbr}-${w}" ${user ? 'checked' : ''} onchange="this.dataset.touched='1'" style="${has ? '' : 'display:none;'}">
+      <td>
+        <div class="user-toggle" id="userwrap-${abbr}-${w}" style="${has ? '' : 'display:none;'}">
+          <span class="user-toggle-icon ${user ? 'active' : ''}" id="usericon-${abbr}-${w}">${USER_ICON}</span>
+          <label class="switch"><input type="checkbox" id="user-${abbr}-${w}" ${user ? 'checked' : ''} onchange="onUserToggle('${abbr}',${w})"><span class="slider"></span></label>
+        </div>
       </td>
     </tr>`;
   }
@@ -1611,6 +1625,11 @@ function scheduleCardHtml(t) {
       ${t.is_user_team ? '<span class="badge badge-yellow" style="margin-left:auto;">user</span>' : ''}
     </div>
     <div class="sched-card-meta">${confInfo} ${coachInfo}</div>
+    <div class="sched-summary">
+      <div class="sched-stat"><span class="sched-stat-num">${gamesScheduled}</span><span class="sched-stat-lbl">Games</span></div>
+      <div class="sched-stat"><span class="sched-stat-num">${homeGames}</span><span class="sched-stat-lbl">Home</span></div>
+      <div class="sched-stat"><span class="sched-stat-num">${userGames}</span><span class="sched-stat-lbl">User</span></div>
+    </div>
     <table class="sched-card-table"><tbody>${rows}</tbody></table>
     <div class="sched-card-foot">
       <button class="btn btn-primary btn-sm" onclick="saveCard('${abbr}')">Save ${esc(abbr)}</button>
@@ -1668,7 +1687,8 @@ function onOppChange(abbr, w) {
   markUserDefault(abbr, w);
   const has = !!val;
   gid('sidewrap', abbr, w).style.display = has ? '' : 'none';
-  gid('user', abbr, w).style.display = has ? '' : 'none';
+  gid('userwrap', abbr, w).style.display = has ? '' : 'none';
+  syncUserMark(abbr, w);
   const img = gid('opplogo', abbr, w);
   const cell = gid('oppcell', abbr, w);
   if (!has) { img.style.visibility = 'hidden'; cell.style.background = 'transparent'; return; }
@@ -1686,6 +1706,23 @@ function onSideToggle(abbr, w) {
   const away = gid('side', abbr, w).checked;
   gid('sidehome', abbr, w).classList.toggle('active', !away);
   gid('sideaway', abbr, w).classList.toggle('active', away);
+}
+
+// User-game toggle: mark it manually set, then refresh the row's user marker.
+function onUserToggle(abbr, w) {
+  gid('user', abbr, w).dataset.touched = '1';
+  syncUserMark(abbr, w);
+}
+
+// Reflect the user-game state: highlight the toggle icon and show/hide the
+// person marker to the left of the opponent logo (hidden when there's no game).
+function syncUserMark(abbr, w) {
+  const cb = gid('user', abbr, w);
+  if (!cb) return;
+  const on = cb.checked && !!(gid('opp', abbr, w).value || '').trim();
+  const mark = gid('usermark', abbr, w);
+  if (mark) mark.style.display = on ? '' : 'none';
+  gid('usericon', abbr, w).classList.toggle('active', cb.checked);
 }
 
 // Default the user-game checkbox when an opponent is entered (unless manually set).

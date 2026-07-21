@@ -384,6 +384,23 @@ tr:hover td { background: rgba(255,255,255,.02); }
 }
 .sched-card-table .wk.wk-post { color: var(--accent); font-weight: 600; }
 
+/* Header quick-glance totals (games / home / user). */
+.sched-summary { display: flex; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.sched-stat {
+  display: flex; flex-direction: column; align-items: center; flex: 1;
+  padding: 5px 4px; border-radius: var(--radius); background: var(--surface2);
+}
+.sched-stat-num { font-size: 17px; font-weight: 700; line-height: 1.1; }
+.sched-stat-lbl { font-size: 10px; letter-spacing: .6px; text-transform: uppercase; color: var(--text-muted); }
+
+/* User-game toggle (in the grid) + the person marker beside the opponent logo. */
+.user-toggle { display: inline-flex; align-items: center; gap: 6px; }
+.user-toggle-icon { display: inline-flex; color: var(--text-muted); opacity: .55; transition: color .15s, opacity .15s; }
+.user-toggle-icon.active { color: var(--accent); opacity: 1; }
+.user-svg { width: 14px; height: 14px; }
+.user-mark { display: inline-flex; flex: none; color: var(--accent); }
+.opp-cell .user-mark .user-svg { width: 15px; height: 15px; }
+
 /* ── Typeahead (Discord user search) ── */
 .typeahead { position: relative; }
 .typeahead-results {
