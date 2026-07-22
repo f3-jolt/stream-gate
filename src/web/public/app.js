@@ -1685,13 +1685,22 @@ function scheduleCardHtml(t) {
 
 const gid = (prefix, abbr, w) => document.getElementById(`${prefix}-${abbr}-${w}`);
 
-// Teams playing another matchup in week w — not selectable as this team's opponent (rule 2).
+// "FCS" is a generic non-user placeholder opponent — many teams schedule it, so
+// it's the one team exempt from the double-booking and rematch checks. It never
+// counts as busy and is never flagged for a repeat.
+const GENERIC_OPPONENT = 'FCS';
+function isGenericOpponent(abbr) { return (abbr || '').toUpperCase() === GENERIC_OPPONENT; }
+
+// Teams playing another matchup in week w — not selectable as this team's opponent
+// (rule 2). The generic opponent is exempt: it can be booked in multiple games
+// the same week, so it's never added to the busy set.
 function bookedThatWeek(abbr, w) {
   const set = new Set();
   for (const g of seasonGames) {
     if (g.week !== w) continue;
     if (g.home_abbrev === abbr || g.away_abbrev === abbr) continue;
-    set.add(g.home_abbrev); set.add(g.away_abbrev);
+    if (!isGenericOpponent(g.home_abbrev)) set.add(g.home_abbrev);
+    if (!isGenericOpponent(g.away_abbrev)) set.add(g.away_abbrev);
   }
   return set;
 }
@@ -1782,7 +1791,7 @@ function cardRematches(abbr) {
   const out = [];
   for (let w = 0; w <= 14; w++) {
     const opp = (gid('opp', abbr, w)?.value || '').trim().toUpperCase();
-    if (!opp) continue;
+    if (!opp || isGenericOpponent(opp)) continue; // generic opponent may repeat
     if (seen.has(opp)) out.push({ opp, firstWeek: seen.get(opp), week: w });
     else seen.set(opp, w);
   }

@@ -781,17 +781,25 @@ function _isWeekBusy(seasonId, week, abbrev) {
   return !!db.prepare('SELECT 1 FROM games WHERE season_id = ? AND week = ? AND (home_abbrev = ? OR away_abbrev = ?)')
     .get(seasonId, week, abbrev, abbrev);
 }
+
+// "FCS" is a generic non-user placeholder opponent that many teams schedule, so
+// it's the one team exempt from the double-booking rule — it may appear in
+// multiple games in the same week.
+const GENERIC_OPPONENT = 'FCS';
+
 // Enforces the hard scheduling rules (after clearing the subject's own game that
 // week): 1) a team can't play itself, and 2) an opponent can't already be booked
-// in another game that same week. Regular-season rematches (the same two teams
-// scheduled twice) are NOT blocked here — they're allowed but surfaced as a
-// warning in the schedule builder so a deliberate double-up can be saved without
-// slipping through unnoticed.
+// in another game that same week (the generic opponent is exempt). Regular-season
+// rematches (the same two teams scheduled twice) are NOT blocked here — they're
+// allowed but surfaced as a warning in the schedule builder so a deliberate
+// double-up can be saved without slipping through unnoticed.
 function _placeGame(seasonId, week, T, opponentAbbrev, isHome, isUserGame) {
   if (!opponentAbbrev) return; // BYE
   const opp = opponentAbbrev.toUpperCase();
   if (opp === T) throw new Error('A team cannot play itself.');
-  if (_isWeekBusy(seasonId, week, opp)) throw new Error(`${opp} is already scheduled in week ${week}.`);
+  if (opp !== GENERIC_OPPONENT && _isWeekBusy(seasonId, week, opp)) {
+    throw new Error(`${opp} is already scheduled in week ${week}.`);
+  }
   const home = isHome ? T : opp;
   const away = isHome ? opp : T;
   insertGame(seasonId, week, home, away, week >= 15 ? 1 : 0, isUserGame);
