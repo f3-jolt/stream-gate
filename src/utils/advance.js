@@ -61,12 +61,16 @@ const DEFAULT_TEMPLATE = [
   '> You Must Stream : The expectation is that you stream/record ALL OF YOUR GAMES. If you do not stream/record, then you could be awarded a FORCE LOSS.',
 ].join('\n');
 
-function buildDbAdvanceMessage(league, weekValue, { dateOverride = null } = {}) {
+// allowEmpty: when true, a week with no scheduled games still builds a message
+// (both sections render "*No Games Scheduled*") instead of returning null. Used
+// for a confirmed "advance anyway" on an empty week. A missing current season
+// still returns null regardless — there's nothing to build against.
+function buildDbAdvanceMessage(league, weekValue, { dateOverride = null, allowEmpty = false } = {}) {
   const season = getCurrentSeason(league.id);
   if (!season) return null;
 
   const games = getGamesByWeek(season.id, Number(weekValue));
-  if (!games.length) return null;
+  if (!games.length && !allowEmpty) return null;
 
   const weekLabel = WEEK_LABELS[Number(weekValue)] ?? `Week ${weekValue}`;
 

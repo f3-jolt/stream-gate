@@ -938,24 +938,42 @@ function formatDateOverride() {
   return `${weekday}, ${monthStr} ${day}${suffix} at ${h}:${m} ${ampm} ${tz}`;
 }
 
+// Label of the currently selected week, e.g. "Week 5" or "CCW", for prompts.
+function selectedWeekLabel() {
+  const sel = document.getElementById('advance-week');
+  return sel.selectedOptions[0]?.textContent || `Week ${sel.value}`;
+}
+
 async function previewAdvance() {
   const leagueAbbr   = currentLeague()?.abbr;
   const week         = document.getElementById('advance-week').value;
   const dateOverride = formatDateOverride();
   if (!leagueAbbr) return;
 
-  const params = new URLSearchParams({ leagueAbbr, week });
-  if (dateOverride) params.set('dateOverride', dateOverride);
-  const res = await fetch(`/api/guilds/${currentGuildId}/advance/preview?${params}`);
-  const data = await res.json();
-
   const box = document.getElementById('advance-preview-box');
   const content = document.getElementById('advance-preview-content');
+
+  const load = async (allowEmpty) => {
+    const params = new URLSearchParams({ leagueAbbr, week });
+    if (dateOverride) params.set('dateOverride', dateOverride);
+    if (allowEmpty) params.set('allowEmpty', '1');
+    const res = await fetch(`/api/guilds/${currentGuildId}/advance/preview?${params}`);
+    return res.json();
+  };
+
+  let data = await load(false);
+  // Empty week: previewing has no side effects, so render the placeholder anyway
+  // so it can be reviewed before deciding whether to post.
+  if (!data.ok && data.code === 'no-games') data = await load(true);
 
   if (data.ok) {
     content.textContent = data.message;
     box.style.display = 'block';
-    document.getElementById('advance-result').classList.remove('show');
+    if (data.source === 'empty') {
+      flash(`No games scheduled for ${selectedWeekLabel()} — placeholder shown below.`, 'warn', 'advance-result');
+    } else {
+      document.getElementById('advance-result').classList.remove('show');
+    }
   } else {
     box.style.display = 'none';
     flash(data.error || 'Failed to load preview', 'error', 'advance-result');
@@ -968,15 +986,26 @@ async function postAdvance() {
   const dateOverride = formatDateOverride();
   if (!leagueAbbr) return;
 
-  const body = { leagueAbbr, week: Number(week) };
-  if (dateOverride) body.dateOverride = dateOverride;
+  const post = async (allowEmpty) => {
+    const body = { leagueAbbr, week: Number(week) };
+    if (dateOverride) body.dateOverride = dateOverride;
+    if (allowEmpty) body.allowEmpty = true;
+    const res = await fetch(`/api/guilds/${currentGuildId}/advance`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return res.json();
+  };
 
-  const res = await fetch(`/api/guilds/${currentGuildId}/advance`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json();
+  let data = await post(false);
+  // Empty week: don't silently block — confirm, then post a placeholder advancement.
+  if (!data.ok && data.code === 'no-games') {
+    const ok = confirm(`No games are scheduled for ${selectedWeekLabel()}.\n\nPost an advancement anyway? The USER GAMES and CPU GAMES sections will show "No Games Scheduled".`);
+    if (!ok) { flash('Advancement cancelled', 'warn', 'advance-result'); return; }
+    data = await post(true);
+  }
+
   if (data.ok) {
     const threadMsg = data.threadCount > 0 ? ` ${data.threadCount} scheduling thread(s) created.` : '';
     flash(`Advancement posted.${threadMsg}`, 'success', 'advance-result');

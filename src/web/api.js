@@ -455,6 +455,34 @@ router.put('/guilds/:guildId/users/:discordId/platforms', requireGuildAccess, as
   }
 });
 
+// Resolve the advancement message for a week. Precedence: DB games → CSV schedule
+// sheet → (only when allowEmpty) an explicit empty-week placeholder. Returns
+// { message, source } on success, or { code } when it can't build one:
+//   'no-season' — league has no current season (nothing to build against)
+//   'no-games'  — a season exists but the week is empty and no sheet supplied it;
+//                 the caller may re-request with allowEmpty to force a placeholder.
+async function resolveAdvanceMessage(league, week, { dateOverride = null, allowEmpty = false } = {}) {
+  const w = Number(week);
+
+  const dbMessage = buildDbAdvanceMessage(league, w, { dateOverride });
+  if (dbMessage) return { message: dbMessage, source: 'database' };
+
+  // No DB message — distinguish "no season at all" from "season, but empty week".
+  if (!getCurrentSeason(league.id)) return { code: 'no-season' };
+
+  // Empty week: try the CSV schedule sheet before giving up.
+  if (league.schedule_url) {
+    const decodedUrl = league.schedule_url.replace(/&amp;/g, '&');
+    const response = await axios.get(decodedUrl, { responseType: 'text' });
+    const csvRaw = parseScheduleCell(response.data, 5, w);
+    if (csvRaw) return { message: applyDateOverride(csvRaw, dateOverride), source: 'sheet' };
+  }
+
+  // Nothing scheduled anywhere. Only build a placeholder if the caller confirmed.
+  if (!allowEmpty) return { code: 'no-games' };
+  return { message: buildDbAdvanceMessage(league, w, { dateOverride, allowEmpty: true }), source: 'empty' };
+}
+
 // ── GET /api/guilds/:guildId/advance/preview ──────────────────────────────────
 
 router.get('/guilds/:guildId/advance/preview', requireGuildAccess, async (req, res) => {
@@ -469,22 +497,16 @@ router.get('/guilds/:guildId/advance/preview', requireGuildAccess, async (req, r
   if (!league) return res.status(404).json({ error: 'League not found' });
 
   try {
-    // DB-first, CSV fallback (non-breaking).
-    let message = buildDbAdvanceMessage(league, Number(week), { dateOverride: dateOverride || null });
-    let source = 'database';
-    if (!message) {
-      if (!league.schedule_url) {
-        return res.status(400).json({ error: 'No games scheduled in the database for this week, and no schedule URL configured for this league' });
-      }
-      const decodedUrl = league.schedule_url.replace(/&amp;/g, '&');
-      const response = await axios.get(decodedUrl, { responseType: 'text' });
-      const csvRaw = parseScheduleCell(response.data, 5, Number(week));
-      if (!csvRaw) return res.status(404).json({ error: 'No data found for that week in the database or schedule sheet' });
-      message = applyDateOverride(csvRaw, dateOverride || null);
-      source = 'sheet';
+    const allowEmpty = req.query.allowEmpty === '1' || req.query.allowEmpty === 'true';
+    const resolved = await resolveAdvanceMessage(league, week, { dateOverride: dateOverride || null, allowEmpty });
+    if (resolved.code === 'no-season') {
+      return res.status(400).json({ error: 'No current season is set for this league' });
     }
-
-    res.json({ ok: true, message, source });
+    if (resolved.code === 'no-games') {
+      // Empty week — signal the client to confirm, then re-request with allowEmpty.
+      return res.status(409).json({ error: 'No games are scheduled for this week', code: 'no-games' });
+    }
+    res.json({ ok: true, message: resolved.message, source: resolved.source });
   } catch (err) {
     logger.error('Web portal advance preview error', { error: err.message });
     res.status(500).json({ error: err.message });
@@ -506,18 +528,16 @@ router.post('/guilds/:guildId/advance', requireGuildAccess, async (req, res) => 
   if (!league.advance_channel_id) return res.status(400).json({ error: 'No advance channel configured for this league' });
 
   try {
-    // DB-first, CSV fallback (non-breaking).
-    let message = buildDbAdvanceMessage(league, Number(week), { dateOverride: dateOverride || null });
-    if (!message) {
-      if (!league.schedule_url) {
-        return res.status(400).json({ error: 'No games scheduled in the database for this week, and no schedule URL configured for this league' });
-      }
-      const decodedUrl = league.schedule_url.replace(/&amp;/g, '&');
-      const response = await axios.get(decodedUrl, { responseType: 'text' });
-      const csvRaw = parseScheduleCell(response.data, 5, Number(week));
-      if (!csvRaw) return res.status(404).json({ error: 'No data found for that week in the database or schedule sheet' });
-      message = applyDateOverride(csvRaw, dateOverride || null);
+    const allowEmpty = req.body.allowEmpty === true;
+    const resolved = await resolveAdvanceMessage(league, week, { dateOverride: dateOverride || null, allowEmpty });
+    if (resolved.code === 'no-season') {
+      return res.status(400).json({ error: 'No current season is set for this league' });
     }
+    if (resolved.code === 'no-games') {
+      // Empty week — signal the client to confirm, then re-post with allowEmpty.
+      return res.status(409).json({ error: 'No games are scheduled for this week', code: 'no-games' });
+    }
+    const message = resolved.message;
 
     const client = require('../bot/client');
     const channel = await client.channels.fetch(league.advance_channel_id);
