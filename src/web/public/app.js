@@ -1537,6 +1537,17 @@ function userGameCount(abbr) {
   return seasonGames.filter(g => g.is_user_game === 1 && (g.home_abbrev === abbr || g.away_abbrev === abbr)).length;
 }
 
+// A "full" slate is 12 games scheduled across weeks 0–16. Teams short of that
+// get their nav count tinted red to flag an incomplete schedule.
+const FULL_SCHEDULE_MAX_WEEK = 16;
+const FULL_SCHEDULE_GAMES = 12;
+
+// Total games (user or CPU) this team has scheduled within weeks 0–16.
+function scheduledGameCount(abbr) {
+  return seasonGames.filter(g => g.week <= FULL_SCHEDULE_MAX_WEEK
+    && (g.home_abbrev === abbr || g.away_abbrev === abbr)).length;
+}
+
 // Entry render: ensure a valid selection, then draw the team nav + detail card.
 function renderScheduleCards() {
   const nav = document.getElementById('schedule-nav-list');
@@ -1564,11 +1575,14 @@ function renderScheduleNav() {
   nav.innerHTML = teams.map(t => {
     const active = t.team_abbrev === selectedScheduleTeam;
     const userGames = userGameCount(t.team_abbrev);
+    const scheduled = scheduledGameCount(t.team_abbrev);
+    const incomplete = scheduled < FULL_SCHEDULE_GAMES;
+    const countTitle = `${userGames} user game${userGames === 1 ? '' : 's'} · ${scheduled}/${FULL_SCHEDULE_GAMES} games scheduled (W0–W16)${incomplete ? ' — incomplete' : ''}`;
     return `<button class="sched-nav-item${active ? ' active' : ''}" onclick="selectScheduleTeam('${t.team_abbrev}')" title="${esc(t.team_name)}">`
       + `<img class="sched-nav-logo" src="${logoUrl(t.team_abbrev)}" alt="" onerror="this.style.display='none'">`
       + `<span class="sched-nav-abbr">${esc(t.team_abbrev)}</span>`
       + `<span class="sched-nav-name">${esc(t.team_name)}</span>`
-      + `<span class="sched-nav-count" title="${userGames} user game${userGames === 1 ? '' : 's'} assigned">${userGames}</span></button>`;
+      + `<span class="sched-nav-count${incomplete ? ' low' : ''}" title="${countTitle}">${userGames}</span></button>`;
   }).join('');
 }
 
@@ -1630,14 +1644,14 @@ function scheduleCardHtml(t) {
       <td>
         <div class="side-toggle" id="sidewrap-${abbr}-${w}" style="${has ? '' : 'display:none;'}">
           <span class="side-label ${isHome ? 'active' : ''}" id="sidehome-${abbr}-${w}">H</span>
-          <label class="switch"><input type="checkbox" id="side-${abbr}-${w}" ${!isHome ? 'checked' : ''} onchange="onSideToggle('${abbr}',${w})"><span class="slider"></span></label>
+          <label class="switch"><input type="checkbox" id="side-${abbr}-${w}" ${!isHome ? 'checked' : ''} tabindex="-1" onchange="onSideToggle('${abbr}',${w})"><span class="slider"></span></label>
           <span class="side-label ${!isHome ? 'active' : ''}" id="sideaway-${abbr}-${w}">A</span>
         </div>
       </td>
       <td>
         <div class="user-toggle" id="userwrap-${abbr}-${w}" style="${has ? '' : 'display:none;'}">
           <span class="user-toggle-icon ${user ? 'active' : ''}" id="usericon-${abbr}-${w}">${USER_ICON}</span>
-          <label class="switch"><input type="checkbox" id="user-${abbr}-${w}" ${user ? 'checked' : ''} onchange="onUserToggle('${abbr}',${w})"><span class="slider"></span></label>
+          <label class="switch"><input type="checkbox" id="user-${abbr}-${w}" ${user ? 'checked' : ''} tabindex="-1" onchange="onUserToggle('${abbr}',${w})"><span class="slider"></span></label>
         </div>
       </td>
     </tr>`;

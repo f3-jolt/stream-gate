@@ -372,6 +372,9 @@ tr:hover td { background: rgba(255,255,255,.02); }
   color: var(--text-muted); background: var(--surface2);
 }
 .sched-nav-item.active .sched-nav-count { color: var(--text); }
+/* Incomplete schedule (< 12 games in W0–W16) — red tint on the count. */
+.sched-nav-count.low { color: var(--danger); background: rgba(255,92,92,.14); }
+.sched-nav-item.active .sched-nav-count.low { color: var(--danger); }
 .sched-detail { flex: 1 1 auto; min-width: 0; }
 .sched-card-solo { max-width: 560px; }
 @media (max-width: 720px) {
