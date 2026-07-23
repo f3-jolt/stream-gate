@@ -42,6 +42,18 @@ describe('parseStreamTitle — default keyword (GOI)', () => {
   test('matches GOI mid-title', () => {
     expect(parseStreamTitle('Playing ranked | GOI BETA | !discord')).toEqual({ isMatch: true, abbr: 'BETA' });
   });
+
+  test('matches underscore-delimited title (team_GOI_league)', () => {
+    expect(parseStreamTitle('TxState_GOI_TCM')).toEqual({ isMatch: true, abbr: 'TCM' });
+  });
+
+  test('matches GOI_abbr with no leading team', () => {
+    expect(parseStreamTitle('GOI_TCM')).toEqual({ isMatch: true, abbr: 'TCM' });
+  });
+
+  test('underscore format is case-insensitive', () => {
+    expect(parseStreamTitle('txstate_goi_tcm')).toEqual({ isMatch: true, abbr: 'TCM' });
+  });
 });
 
 describe('parseStreamTitle — custom keyword', () => {
