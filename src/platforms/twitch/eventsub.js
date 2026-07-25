@@ -74,26 +74,27 @@ async function handleStreamOnline(event) {
   const { twitchApiGet } = require('./api');
   let streamData;
   try {
-    const MAX_RETRIES = 3;
+    // Twitch fires stream.online BEFORE Helix /streams reflects the live stream
+    // (typically a 30s–2min lag), so the first lookup often returns nothing. Retry
+    // the not-found case as well as the no-title-yet case, rather than bailing on the
+    // first empty response. ~3 min total, matching the observed /streams lag.
+    const MAX_RETRIES = 6;
     const RETRY_DELAY_MS = 30_000;
+    let stream = null;
 
-    let data = await twitchApiGet('/streams', { user_id: event.broadcaster_user_id });
-    let stream = data.data?.[0];
-
-    if (!stream) {
-      logger.warn('Twitch stream not found after online event', { userId: event.broadcaster_user_id });
-      return;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (attempt > 0) {
+        logger.info('Twitch stream not ready yet, retrying', { userId: event.broadcaster_user_id, attempt });
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+      }
+      const data = await twitchApiGet('/streams', { user_id: event.broadcaster_user_id });
+      const s = data.data?.[0];
+      if (s?.title) { stream = s; break; }  // live AND has a title → ready to post
+      stream = s || stream;                 // keep a partial (no-title) hit across retries
     }
 
-    for (let attempt = 1; !stream.title && attempt <= MAX_RETRIES; attempt++) {
-      logger.info('Twitch stream has no title yet, retrying', { userId: event.broadcaster_user_id, attempt });
-      await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
-      const retry = await twitchApiGet('/streams', { user_id: event.broadcaster_user_id });
-      stream = retry.data?.[0] || stream;
-    }
-
-    if (!stream.title) {
-      logger.warn('Twitch stream still has no title after retries, skipping', { userId: event.broadcaster_user_id });
+    if (!stream?.title) {
+      logger.warn('Twitch stream not found/ready after online event', { userId: event.broadcaster_user_id });
       return;
     }
 
