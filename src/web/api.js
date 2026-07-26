@@ -235,16 +235,22 @@ router.get('/guilds/:guildId/health', requireGuildAccess, (req, res) => {
 });
 
 router.get('/guilds/:guildId/users', requireGuildAccess, (req, res) => {
+  const includeInactive = req.query.includeInactive === '1';
+  // When archived leagues are included, drop the active-league filter. The same
+  // clause is applied to the "unassigned" NOT EXISTS check below so a user who is
+  // only in archived leagues isn't mislabeled unassigned (or listed twice).
+  const activeLeague = includeInactive ? '' : 'AND l.active = 1';
+
   const rows = db.prepare(`
     SELECT u.discord_id, u.discord_username, u.active,
            ul.team_name, ul.team_abbrev,
-           l.name AS league_name, l.abbr AS league_abbr, l.id AS league_id,
+           l.name AS league_name, l.abbr AS league_abbr, l.id AS league_id, l.active AS league_active,
            up.platform, up.platform_username, up.subscription_id
     FROM users u
     JOIN user_leagues ul ON ul.user_id = u.id
     JOIN leagues l ON l.id = ul.league_id
     LEFT JOIN user_platforms up ON up.user_id = u.id
-    WHERE l.guild_id = ? AND u.active = 1 AND l.active = 1
+    WHERE l.guild_id = ? AND u.active = 1 ${activeLeague}
     ORDER BY u.discord_username
   `).all(req.params.guildId);
 
@@ -259,6 +265,7 @@ router.get('/guilds/:guildId/users', requireGuildAccess, (req, res) => {
         league_id: row.league_id,
         league_name: row.league_name,
         league_abbr: row.league_abbr,
+        league_active: row.league_active,
         team_name: row.team_name,
         team_abbrev: row.team_abbrev,
         platforms: [],
@@ -285,7 +292,7 @@ router.get('/guilds/:guildId/users', requireGuildAccess, (req, res) => {
       AND NOT EXISTS (
         SELECT 1 FROM user_leagues ul
         JOIN leagues l ON l.id = ul.league_id
-        WHERE ul.user_id = u.id AND l.guild_id = ? AND l.active = 1
+        WHERE ul.user_id = u.id AND l.guild_id = ? ${activeLeague}
       )
     ORDER BY u.discord_username
   `).all(req.params.guildId);

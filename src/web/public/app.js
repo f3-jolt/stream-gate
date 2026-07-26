@@ -18,6 +18,7 @@ let editingTeamAbbrev = null;   // null = add mode
 let teamLogoData = null;        // base64 data URL from a file upload, pending save
 let teamAssetVersion = 0;       // cache-buster for logo <img> after edits
 let userSort = { col: 'discord_username', dir: 1 };
+let showArchivedUsers = false;   // include memberships in deactivated leagues
 let streamSort = { col: 'posted_at', dir: -1 };
 let teamSort = { col: 'name', dir: 1 };
 
@@ -214,9 +215,17 @@ function flash(msg, type = 'success', targetId = 'flash', sticky = false) {
 // ── Users ──────────────────────────────────────────────────────────────────────
 
 async function loadUsers() {
-  const res = await fetch(`/api/guilds/${currentGuildId}/users`);
+  const qs = showArchivedUsers ? '?includeInactive=1' : '';
+  const res = await fetch(`/api/guilds/${currentGuildId}/users${qs}`);
   allUsers = await res.json();
   applyUserFilters();
+}
+
+function toggleArchivedUsers() {
+  showArchivedUsers = !showArchivedUsers;
+  document.getElementById('toggle-archived-users-btn').textContent =
+    showArchivedUsers ? 'Hide archived' : 'Show archived';
+  loadUsers();
 }
 
 function applyUserFilters() {
@@ -261,16 +270,19 @@ function renderUsers(users) {
     const platforms = u.platforms.map(p =>
       `<span class="badge badge-${p.platform === 'twitch' ? 'blue' : 'red'}">${p.platform}: ${p.platform_username}${p.subscription_id ? ' ✓' : ''}</span>`
     ).join(' ');
+    const isArchived = Boolean(u.league_id) && u.league_active === 0;
     const leagueCell = u.league_id
-      ? `<span class="badge badge-blue">${esc(u.league_abbr)}</span> ${esc(u.league_name)}`
+      ? `<span class="badge badge-blue">${esc(u.league_abbr)}</span> ${esc(u.league_name)}${isArchived ? ' <span class="badge">archived</span>' : ''}`
       : '<span class="badge">Unassigned</span>';
-    const removeBtn = u.league_id
+    // Archived-league memberships are read-only (the league is deactivated).
+    const removeBtn = (u.league_id && !isArchived)
       ? `<button class="btn btn-danger btn-sm"
           onclick="removeFromLeague('${esc(u.discord_id)}', ${u.league_id}, '${esc(u.discord_username)}', '${esc(u.league_name)}')">
           Remove
         </button>`
       : '';
     const tr = document.createElement('tr');
+    if (isArchived) tr.style.opacity = '0.55';
     tr.innerHTML = `
       <td>
         <div style="font-weight:600;">${esc(u.discord_username)}</div>
