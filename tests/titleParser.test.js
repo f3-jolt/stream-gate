@@ -73,3 +73,58 @@ describe('parseStreamTitle — custom keyword', () => {
     expect(parseStreamTitle('LEAGUE', 'LEAGUE')).toEqual({ isMatch: true, abbr: null });
   });
 });
+
+describe('parseStreamTitle — known league abbreviations (tight / glued forms)', () => {
+  const known = ['OPEN', 'REBUILD', 'TCM'];
+
+  test('glued keyword+abbr resolves against known list', () => {
+    expect(parseStreamTitle('GOIOPEN', 'GOI', known)).toEqual({ isMatch: true, abbr: 'OPEN' });
+  });
+
+  test('glued keyword+abbr with trailing text', () => {
+    expect(parseStreamTitle('GOIOPEN Week 3', 'GOI', known)).toEqual({ isMatch: true, abbr: 'OPEN' });
+  });
+
+  test('dash separator resolves the abbr', () => {
+    expect(parseStreamTitle('GOI-OPEN', 'GOI', known)).toEqual({ isMatch: true, abbr: 'OPEN' });
+  });
+
+  test('colon separator resolves the abbr', () => {
+    expect(parseStreamTitle('GOI:OPEN', 'GOI', known)).toEqual({ isMatch: true, abbr: 'OPEN' });
+  });
+
+  test('spaced dash before a known abbr resolves', () => {
+    expect(parseStreamTitle('GOI - REBUILD tonight', 'GOI', known)).toEqual({ isMatch: true, abbr: 'REBUILD' });
+  });
+
+  test('longest known abbr wins (REBUILD glued)', () => {
+    expect(parseStreamTitle('GOIREBUILD', 'GOI', known)).toEqual({ isMatch: true, abbr: 'REBUILD' });
+  });
+
+  test('case-insensitive glued form', () => {
+    expect(parseStreamTitle('goitcm', 'GOI', known)).toEqual({ isMatch: true, abbr: 'TCM' });
+  });
+
+  test('does NOT false-match a word that starts with the keyword (GOING)', () => {
+    expect(parseStreamTitle('GOING live tonight', 'GOI', known)).toEqual({ isMatch: false, abbr: null });
+  });
+
+  test('does NOT treat trailing prose as a glued abbr', () => {
+    // "Beta" is not a known league, so the spaced-dash prose stays abbr-less.
+    const r = parseStreamTitle('GOI - Beta League Finals', 'GOI', known);
+    expect(r.isMatch).toBe(true);
+    expect(r.abbr).toBeNull();
+  });
+
+  test('glued form does not partial-match inside a longer word (GOIOPENING)', () => {
+    expect(parseStreamTitle('GOIOPENING soon', 'GOI', known)).toEqual({ isMatch: false, abbr: null });
+  });
+
+  test('spaced known abbr still resolves (regression)', () => {
+    expect(parseStreamTitle('GOI OPEN', 'GOI', known)).toEqual({ isMatch: true, abbr: 'OPEN' });
+  });
+
+  test('unknown abbr falls back to free-form token capture', () => {
+    expect(parseStreamTitle('GOI ALPHA', 'GOI', known)).toEqual({ isMatch: true, abbr: 'ALPHA' });
+  });
+});

@@ -128,7 +128,7 @@ async function postToAllLeagues(platform, platformUser, streamData) {
   for (const { guildId, leagues } of guildGroups) {
     const settings = getGuildSettings(guildId);
     const keyword = settings?.trigger_keyword || 'GOI';
-    const { isMatch, abbr } = parseStreamTitle(streamData.title, keyword);
+    const { isMatch, abbr } = parseStreamTitle(streamData.title, keyword, leagues.map(l => l.abbr));
     if (!isMatch) {
       // logger.info('Startup: title does not match keyword, skipping guild', {
       //   username: platformUser.platform_username, guildId, keyword, title: streamData.title,

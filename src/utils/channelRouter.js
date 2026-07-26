@@ -30,7 +30,7 @@ async function routeStream(platform, platformUsername, streamData) {
   for (const { guildId, leagues } of guildGroups) {
     const settings = getGuildSettings(guildId);
     const keyword = settings?.trigger_keyword || 'GOI';
-    const { isMatch, abbr } = parseStreamTitle(streamData.title, keyword);
+    const { isMatch, abbr } = parseStreamTitle(streamData.title, keyword, leagues.map(l => l.abbr));
     if (!isMatch) {
       // The bot saw this live stream but the title carried no league keyword —
       // a common "why didn't it post?" case (e.g. a naming mistake).
