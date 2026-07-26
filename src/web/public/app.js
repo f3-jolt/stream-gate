@@ -947,6 +947,57 @@ async function loadHealth() {
       <div class="value" style="color:${h.stuckRoutes === 0 ? 'var(--success)' : 'var(--danger)'};">${h.stuckRoutes}</div>
     </div>
   `;
+  renderHealthDetails(h);
+}
+
+// Drill-down panels for any metric that isn't healthy, listing the specific
+// accounts/routes behind the number so an admin can act on them.
+function renderHealthDetails(h) {
+  const panels = [];
+
+  const missingSubPanel = (title, platform, missing) => {
+    if (!missing || !missing.length) return;
+    const rows = missing.map(m => `
+      <tr>
+        <td>${esc(m.discord_username || m.discord_id)}</td>
+        <td><span class="badge badge-${platform === 'twitch' ? 'blue' : 'red'}">${platform}: ${esc(m.platform_username)}</span></td>
+      </tr>`).join('');
+    panels.push(`
+      <div class="detail-panel">
+        <h3>${title} — ${missing.length} not subscribed</h3>
+        <p class="text-muted" style="font-size:12px;margin:0 0 8px;">
+          No active EventSub/WebSub subscription — the bot won't get a live notification for these accounts.
+          Try re-saving the user's stream details (Edit on the Users tab) to re-subscribe.
+        </p>
+        <div class="table-wrap"><table><thead><tr><th>User</th><th>Account</th></tr></thead><tbody>${rows}</tbody></table></div>
+      </div>`);
+  };
+
+  missingSubPanel('Twitch subscriptions', 'twitch', h.twitchMissing);
+  missingSubPanel('YouTube subscriptions', 'youtube', h.youtubeMissing);
+
+  if (h.stuckRouteDetails && h.stuckRouteDetails.length) {
+    const rows = h.stuckRouteDetails.map(r => `
+      <tr>
+        <td>${esc(r.discord_username || r.user_name || r.discord_user_id)}</td>
+        <td><span class="badge badge-${r.platform === 'twitch' ? 'blue' : 'red'}">${esc(r.platform)}</span></td>
+        <td>${r.stream_title ? esc(r.stream_title) : '<span class="text-muted">—</span>'}</td>
+        <td class="text-muted" style="white-space:nowrap;">${fmtDate(r.created_at)}</td>
+      </tr>`).join('');
+    panels.push(`
+      <div class="detail-panel">
+        <h3>Stuck routes — ${h.stuckRouteDetails.length}</h3>
+        <p class="text-muted" style="font-size:12px;margin:0 0 8px;">
+          The bot DM'd these streamers to pick a league and is still waiting (over 5 minutes). They haven't chosen yet.
+        </p>
+        <div class="table-wrap"><table><thead><tr><th>User</th><th>Platform</th><th>Stream</th><th>Waiting since</th></tr></thead><tbody>${rows}</tbody></table></div>
+      </div>`);
+  }
+
+  const container = document.getElementById('health-details');
+  container.innerHTML = panels.length
+    ? panels.join('')
+    : '<p class="text-muted" style="text-align:center;padding:16px;">Everything looks healthy — no issues to show.</p>';
 }
 
 // ── Advance ────────────────────────────────────────────────────────────────────

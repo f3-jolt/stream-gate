@@ -577,7 +577,33 @@ function getHealthStats(guildId) {
     WHERE guild_id = ? AND created_at <= datetime('now', '-5 minutes') AND expires_at > datetime('now')
   `).get(guildId).count;
 
-  return { totalUsers, twitchSubs, twitchTotal, youtubeSubs, youtubeTotal, stuckRoutes };
+  // Drill-down detail for the cards that aren't at 100%, so an admin can see
+  // exactly which accounts are unsubscribed (subs are per platform account, hence
+  // global — matching the counts above) and which routes are stuck.
+  const missingSub = (platform) => db.prepare(`
+    SELECT u.discord_id, u.discord_username, up.platform_username
+    FROM user_platforms up
+    JOIN users u ON u.id = up.user_id
+    WHERE up.platform = ? AND up.subscription_id IS NULL
+    ORDER BY u.discord_username
+  `).all(platform);
+
+  const stuckRouteDetails = db.prepare(`
+    SELECT pr.discord_user_id, pr.platform, pr.stream_title, pr.stream_url,
+           pr.user_name, pr.created_at, u.discord_username
+    FROM pending_routes pr
+    LEFT JOIN users u ON u.discord_id = pr.discord_user_id
+    WHERE pr.guild_id = ? AND pr.created_at <= datetime('now', '-5 minutes')
+      AND pr.expires_at > datetime('now')
+    ORDER BY pr.created_at
+  `).all(guildId);
+
+  return {
+    totalUsers, twitchSubs, twitchTotal, youtubeSubs, youtubeTotal, stuckRoutes,
+    twitchMissing: missingSub('twitch'),
+    youtubeMissing: missingSub('youtube'),
+    stuckRouteDetails,
+  };
 }
 
 // ── Dynasty: seasons ──────────────────────────────────────────────────────────
