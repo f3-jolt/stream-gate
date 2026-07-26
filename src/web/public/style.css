@@ -144,6 +144,7 @@ main { flex: 1; padding: 32px 24px; max-width: 1200px; width: 100%; margin: 0 au
 .btn-danger { background: transparent; border-color: rgba(255,92,92,.5); color: var(--danger); }
 .btn-danger:hover:not(:disabled) { background: rgba(255,92,92,.12); }
 .btn-sm { padding: 6px 12px; font-size: 13px; }
+.btn-group { display: inline-flex; gap: 6px; margin-right: 12px; }
 
 /* ── Cards ── */
 .card {

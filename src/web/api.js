@@ -12,6 +12,7 @@ const {
   updateLeague,
   setLeagueActive,
   getHealthStats,
+  getStreamFeed,
   getOrCreateUser,
   addUserPlatform,
   removeUserPlatform,
@@ -314,20 +315,8 @@ router.get('/guilds/:guildId/users', requireGuildAccess, (req, res) => {
 });
 
 router.get('/guilds/:guildId/streams', requireGuildAccess, (req, res) => {
-  const rows = db.prepare(`
-    SELECT sp.id, sp.platform, sp.platform_stream_id, sp.discord_user_id,
-           sp.stream_title, sp.posted_at,
-           u.discord_username,
-           l.id AS league_id, l.name AS league_name, l.abbr AS league_abbr
-    FROM stream_posts sp
-    JOIN leagues l ON l.id = sp.league_id
-    LEFT JOIN users u ON u.discord_id = sp.discord_user_id
-    WHERE l.guild_id = ?
-    ORDER BY sp.posted_at DESC
-    LIMIT 200
-  `).all(req.params.guildId);
-
-  res.json(rows);
+  const filter = ['all', 'posted', 'skipped'].includes(req.query.filter) ? req.query.filter : 'all';
+  res.json(getStreamFeed(req.params.guildId, filter));
 });
 
 // ── POST /api/guilds/:guildId/register ────────────────────────────────────────

@@ -369,6 +369,72 @@ function getStreamPostMessageIds(leagueId) {
   ).all(leagueId);
 }
 
+// ── Stream events (diagnostic log of observed-but-skipped streams) ─────────────
+
+// Records one skipped stream sighting. Self-guarding: a logging failure must never
+// break stream handling, so any error is swallowed with a warning.
+function recordStreamEvent({
+  platform, source = null, platformStreamId = null, streamer = null, title = null,
+  detectedKeyword = null, guildId = null, discordUserId = null, leagueId = null,
+  outcome = 'skipped', reason = null,
+}) {
+  try {
+    db.prepare(`
+      INSERT INTO stream_events
+        (platform, source, platform_stream_id, streamer, title, detected_keyword,
+         guild_id, discord_user_id, league_id, outcome, reason)
+      VALUES (@platform, @source, @platformStreamId, @streamer, @title, @detectedKeyword,
+              @guildId, @discordUserId, @leagueId, @outcome, @reason)
+    `).run({
+      platform: platform || 'unknown', source, platformStreamId, streamer, title,
+      detectedKeyword, guildId, discordUserId, leagueId, outcome, reason,
+    });
+  } catch (err) {
+    logger.warn('Failed to record stream event', { error: err.message, platform, reason });
+  }
+}
+
+// Unified feed for the Streams admin view. `filter` is 'all' | 'posted' | 'skipped'.
+// Posted rows come from stream_posts (preserving full history); skipped rows come
+// from stream_events. Both are projected to a common shape and merged by time.
+function getStreamFeed(guildId, filter = 'all', limit = 200) {
+  const posted = `
+    SELECT sp.posted_at AS posted_at, sp.platform AS platform,
+           u.discord_username AS streamer, u.discord_username AS discord_username,
+           sp.stream_title AS stream_title,
+           l.id AS league_id, l.abbr AS league_abbr, l.name AS league_name,
+           'posted' AS outcome, NULL AS reason
+    FROM stream_posts sp
+    JOIN leagues l ON l.id = sp.league_id
+    LEFT JOIN users u ON u.discord_id = sp.discord_user_id
+    WHERE l.guild_id = @guildId`;
+  const skipped = `
+    SELECT se.created_at AS posted_at, se.platform AS platform,
+           COALESCE(se.streamer, u.discord_username) AS streamer,
+           u.discord_username AS discord_username, se.title AS stream_title,
+           l.id AS league_id, l.abbr AS league_abbr, l.name AS league_name,
+           'skipped' AS outcome, se.reason AS reason
+    FROM stream_events se
+    LEFT JOIN leagues l ON l.id = se.league_id
+    LEFT JOIN users u ON u.discord_id = se.discord_user_id
+    WHERE se.guild_id = @guildId AND se.outcome = 'skipped'`;
+
+  let sql;
+  if (filter === 'posted') sql = posted;
+  else if (filter === 'skipped') sql = skipped;
+  else sql = `${posted}\n    UNION ALL\n    ${skipped}`;
+  sql += `\n    ORDER BY posted_at DESC\n    LIMIT @limit`;
+
+  return db.prepare(sql).all({ guildId, limit });
+}
+
+// Retention: drop stream_events older than `days` (default 30) so the log stays bounded.
+function pruneStreamEvents(days = 30) {
+  return db.prepare(
+    `DELETE FROM stream_events WHERE created_at < datetime('now', ?)`
+  ).run(`-${Number(days)} days`);
+}
+
 // ── Pending routes ────────────────────────────────────────────────────────────
 
 function savePendingRoute(discordUserId, guildId, platform, platformStreamId, streamUrl, streamTitle, userName = null) {
@@ -1013,6 +1079,9 @@ module.exports = {
   checkRecentStreamPostByTitle,
   saveStreamPost,
   getStreamPostMessageIds,
+  recordStreamEvent,
+  getStreamFeed,
+  pruneStreamEvents,
   savePendingRoute,
   getPendingRoute,
   clearPendingRoute,

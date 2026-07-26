@@ -11,6 +11,7 @@ let showDeactivatedLeagues = false; // Leagues tab hides deactivated ones until 
 let editingLeagueId = null;
 let discordMeta = null;         // { channels, categories, roles } for the current guild
 let allStreams = [];
+let streamFilter = 'all';   // all | posted | skipped
 let teamCatalog = [];
 let showDeactivatedTeams = false;
 let editingTeamAbbrev = null;   // null = add mode
@@ -817,8 +818,40 @@ async function restoreLeague(leagueId) {
 
 // ── Streams ────────────────────────────────────────────────────────────────────
 
+// Friendly labels for the skip-reason codes emitted by the bot.
+const STREAM_REASON_LABELS = {
+  title_no_keyword: 'Title had no league keyword',
+  user_not_registered: 'Streamer not registered',
+  discord_id_mismatch: 'Posted from a different Discord account',
+  not_league_member: 'Not a member of this league',
+  already_posted: 'Already posted',
+  disambiguation_sent: 'Awaiting league choice (DM sent)',
+  stream_not_found: 'Twitch stream not found (API lag)',
+  not_live_after_retries: "YouTube video wasn't live",
+  channel_not_registered: 'YouTube channel not linked',
+  youtube_channel_not_linked: 'YouTube channel not linked',
+  youtube_channel_not_found: 'YouTube channel not found',
+  youtube_no_video_id: 'No video ID in link',
+  twitch_vod_not_found: 'Twitch VOD not found',
+  stream_not_live: "Stream wasn't live",
+  resolve_error: 'Error resolving stream',
+};
+function reasonLabel(code) {
+  return code ? (STREAM_REASON_LABELS[code] || code) : '';
+}
+
+function setStreamFilter(f) {
+  streamFilter = f;
+  document.querySelectorAll('#stream-filter-group [data-filter]').forEach(b => {
+    const active = b.dataset.filter === f;
+    b.classList.toggle('btn-primary', active);
+    b.classList.toggle('btn-ghost', !active);
+  });
+  loadStreams();
+}
+
 async function loadStreams() {
-  const res = await fetch(`/api/guilds/${currentGuildId}/streams`);
+  const res = await fetch(`/api/guilds/${currentGuildId}/streams?filter=${streamFilter}`);
   allStreams = await res.json();
   applyStreamFilters();
 }
@@ -828,10 +861,13 @@ function applyStreamFilters() {
 
   let filtered = allStreams.filter(s => {
     const matchesText = !q ||
-      (s.discord_username || s.discord_user_id).toLowerCase().includes(q) ||
+      (s.streamer || s.discord_username || '').toLowerCase().includes(q) ||
       (s.stream_title || '').toLowerCase().includes(q) ||
-      s.platform.toLowerCase().includes(q);
-    const matchesLeague = !currentLeagueId || s.league_id === currentLeagueId;
+      (s.platform || '').toLowerCase().includes(q) ||
+      reasonLabel(s.reason).toLowerCase().includes(q);
+    // League-specific rows honor the nav league filter; rows with no league
+    // (e.g. an unregistered streamer's skip) always show.
+    const matchesLeague = !currentLeagueId || s.league_id === currentLeagueId || s.league_id == null;
     return matchesText && matchesLeague;
   });
 
@@ -853,18 +889,27 @@ function sortStreams(col) {
 function renderStreams(streams) {
   const tbody = document.getElementById('streams-tbody');
   if (!streams.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="text-muted" style="text-align:center;padding:24px;">No streams recorded</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="text-muted" style="text-align:center;padding:24px;">No streams recorded</td></tr>';
     return;
   }
-  tbody.innerHTML = streams.map(s => `
+  tbody.innerHTML = streams.map(s => {
+    const streamer = s.streamer || s.discord_username;
+    const league = s.league_abbr
+      ? `<span class="badge badge-blue">${esc(s.league_abbr)}</span>`
+      : '<span class="text-muted">—</span>';
+    const result = s.outcome === 'posted'
+      ? '<span class="badge badge-green">Posted</span>'
+      : `<span class="badge badge-red">Skipped</span> <span class="text-muted" style="font-size:12px;">${esc(reasonLabel(s.reason))}</span>`;
+    return `
     <tr>
       <td class="text-muted" style="white-space:nowrap;">${fmtDate(s.posted_at)}</td>
-      <td>${esc(s.discord_username || s.discord_user_id)}</td>
-      <td><span class="badge badge-blue">${esc(s.league_abbr)}</span></td>
+      <td>${streamer ? esc(streamer) : '<span class="text-muted">—</span>'}</td>
+      <td>${league}</td>
       <td><span class="badge badge-${s.platform === 'twitch' ? 'blue' : 'red'}">${esc(s.platform)}</span></td>
       <td>${s.stream_title ? esc(s.stream_title) : '<span class="text-muted">—</span>'}</td>
-    </tr>
-  `).join('');
+      <td style="white-space:nowrap;">${result}</td>
+    </tr>`;
+  }).join('');
 }
 
 // ── Health ─────────────────────────────────────────────────────────────────────

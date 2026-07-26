@@ -117,17 +117,27 @@
         <!-- STREAMS TAB -->
         <div id="tab-streams" class="tab-panel">
           <div class="search-row">
+            <div class="btn-group" id="stream-filter-group">
+              <button class="btn btn-sm btn-primary" data-filter="all" onclick="setStreamFilter('all')">All</button>
+              <button class="btn btn-sm btn-ghost" data-filter="posted" onclick="setStreamFilter('posted')">Posted</button>
+              <button class="btn btn-sm btn-ghost" data-filter="skipped" onclick="setStreamFilter('skipped')">Not picked up</button>
+            </div>
             <input id="stream-search" type="text" placeholder="Search streams..." oninput="applyStreamFilters()">
           </div>
+          <p class="text-muted" style="margin:0 0 10px; font-size:12px;">
+            Shows every stream the bot received a signal for — a webhook for a registered streamer, or any Twitch/YouTube
+            link posted in a channel. Streams from unsubscribed users who never post a link can't appear here.
+          </p>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
                   <th class="sortable sort-desc" data-col="posted_at" onclick="sortStreams('posted_at')">Time</th>
-                  <th class="sortable" data-col="discord_username" onclick="sortStreams('discord_username')">User</th>
+                  <th class="sortable" data-col="streamer" onclick="sortStreams('streamer')">Streamer</th>
                   <th class="sortable" data-col="league_abbr" onclick="sortStreams('league_abbr')">League</th>
                   <th class="sortable" data-col="platform" onclick="sortStreams('platform')">Platform</th>
                   <th>Title</th>
+                  <th class="sortable" data-col="outcome" onclick="sortStreams('outcome')">Result</th>
                 </tr>
               </thead>
               <tbody id="streams-tbody"></tbody>

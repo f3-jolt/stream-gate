@@ -95,6 +95,19 @@ async function handleStreamOnline(event) {
 
     if (!stream?.title) {
       logger.warn('Twitch stream not found/ready after online event', { userId: event.broadcaster_user_id });
+      // Surface this in the admin Streams view, attributed to the streamer's guild(s).
+      const { getUserByPlatform, getUserLeaguesByGuild, recordStreamEvent } = require('../../db/queries');
+      const u = getUserByPlatform('twitch', event.broadcaster_user_login);
+      const groups = u ? getUserLeaguesByGuild(u.discord_id) : [];
+      const base = {
+        platform: 'twitch', source: 'eventsub', streamer: event.broadcaster_user_login,
+        discordUserId: u?.discord_id || null, outcome: 'skipped', reason: 'stream_not_found',
+      };
+      if (groups.length) {
+        for (const g of groups) recordStreamEvent({ ...base, guildId: g.guildId });
+      } else {
+        recordStreamEvent(base);
+      }
       return;
     }
 

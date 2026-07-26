@@ -10,6 +10,7 @@ const {
   checkStreamPost,
   saveStreamPost,
   savePendingRoute,
+  recordStreamEvent,
 } = require('../db/queries');
 const logger = require('./logger');
 
@@ -30,7 +31,16 @@ async function routeStream(platform, platformUsername, streamData) {
     const settings = getGuildSettings(guildId);
     const keyword = settings?.trigger_keyword || 'GOI';
     const { isMatch, abbr } = parseStreamTitle(streamData.title, keyword);
-    if (!isMatch) continue;
+    if (!isMatch) {
+      // The bot saw this live stream but the title carried no league keyword —
+      // a common "why didn't it post?" case (e.g. a naming mistake).
+      recordStreamEvent({
+        platform, source: streamData.id?.startsWith?.('vod-') ? 'link' : 'eventsub',
+        platformStreamId: streamData.id, streamer: platformUsername, title: streamData.title,
+        guildId, discordUserId: user.discord_id, outcome: 'skipped', reason: 'title_no_keyword',
+      });
+      continue;
+    }
     try {
       await routeForGuild(guildId, leagues, user, platform, streamData, abbr);
     } catch (err) {
@@ -59,12 +69,22 @@ async function routeForGuild(guildId, leagues, user, platform, streamData, abbr)
 
   if (!targetLeague) {
     // Multiple leagues in this guild, no valid abbr — DM the user for this guild
+    recordStreamEvent({
+      platform, platformStreamId: streamData.id, streamer: streamData.user_login || streamData.user_name,
+      title: streamData.title, detectedKeyword: abbr || null, guildId, discordUserId: user.discord_id,
+      outcome: 'skipped', reason: 'disambiguation_sent',
+    });
     await sendDisambiguationDM(user.discord_id, guildId, leagues, platform, streamData);
     return;
   }
 
   if (checkStreamPost(platform, streamData.id, targetLeague.id)) {
     logger.info('Stream already posted to this league, skipping', { platform, streamId: streamData.id, leagueId: targetLeague.id });
+    recordStreamEvent({
+      platform, platformStreamId: streamData.id, streamer: streamData.user_login || streamData.user_name,
+      title: streamData.title, detectedKeyword: abbr || null, guildId, discordUserId: user.discord_id,
+      leagueId: targetLeague.id, outcome: 'skipped', reason: 'already_posted',
+    });
     return;
   }
 

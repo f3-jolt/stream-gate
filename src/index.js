@@ -10,7 +10,7 @@ const { initSchema } = require('./db/database');
 const { setClient } = require('./utils/channelRouter');
 const { registerTwitchWebhook } = require('./platforms/twitch/eventsub');
 const { registerYouTubeWebhook } = require('./platforms/youtube/websub');
-const { clearExpiredPendingRoutes } = require('./db/queries');
+const { clearExpiredPendingRoutes, pruneStreamEvents } = require('./db/queries');
 const logger = require('./utils/logger');
 const authRouter = require('./web/auth');
 const apiRouter = require('./web/api');
@@ -121,6 +121,7 @@ cron.schedule('0 3 * * *', async () => {
       await renewSubscriptions();
     }
     clearExpiredPendingRoutes();
+    pruneStreamEvents(30); // keep the diagnostic stream log bounded to ~30 days
     logger.info('Daily maintenance complete');
   } catch (err) {
     logger.error('Daily maintenance error', { error: err.message });

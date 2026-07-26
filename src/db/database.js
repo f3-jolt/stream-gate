@@ -77,6 +77,27 @@ function initSchema() {
       UNIQUE(platform, platform_stream_id, league_id)
     );
 
+    -- Diagnostic log of every stream the bot OBSERVES — posted or skipped — so the
+    -- admin portal can answer "did the bot see this stream, and why wasn't it posted?".
+    -- Skips are recorded here; posts stay in stream_posts (the Streams view unions both).
+    CREATE TABLE IF NOT EXISTS stream_events (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      platform           TEXT NOT NULL,          -- twitch | youtube
+      source             TEXT,                   -- eventsub | websub | link | startup
+      platform_stream_id TEXT,                   -- may be null when the stream never resolved
+      streamer           TEXT,                   -- twitch login / yt channel id / handle
+      title              TEXT,
+      detected_keyword   TEXT,                   -- league abbr parsed from the title, if any
+      guild_id           TEXT,                   -- null when the streamer maps to no guild
+      discord_user_id    TEXT,                   -- resolved registered user, if any
+      league_id          INTEGER,               -- target league, if one was determined
+      outcome            TEXT NOT NULL,          -- posted | skipped
+      reason             TEXT,                   -- skip-reason code when outcome = skipped
+      created_at         DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_stream_events_guild_time
+      ON stream_events (guild_id, created_at);
+
     -- Legacy custom-teams store (kept as a backup; seeded into the teams table below).
     CREATE TABLE IF NOT EXISTS custom_teams (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,

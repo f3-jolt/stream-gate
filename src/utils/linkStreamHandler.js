@@ -1,5 +1,5 @@
 const { db } = require('../db/database');
-const { getUserByPlatform, getUserLeagues, checkStreamPost } = require('../db/queries');
+const { getUserByPlatform, getUserLeagues, checkStreamPost, recordStreamEvent } = require('../db/queries');
 const { postStreamToChannel } = require('./channelRouter');
 const logger = require('./logger');
 
@@ -24,6 +24,20 @@ function logSkip(reason, message, extra = {}) {
     guild: message.guild?.id,
     authorId: message.author.id,
     ...extra,
+  });
+  // Persist for the admin Streams view so skipped links are diagnosable there,
+  // not only in the logs. Guild comes from the Discord message the link was in.
+  recordStreamEvent({
+    platform: extra.platform || 'unknown',
+    source: 'link',
+    platformStreamId: extra.vodId || extra.videoId || null,
+    streamer: extra.platformUsername || extra.handle || null,
+    title: extra.title || null,
+    guildId: message.guild?.id || null,
+    discordUserId: message.author?.id || null,
+    leagueId: extra.leagueId || null,
+    outcome: 'skipped',
+    reason,
   });
 }
 
@@ -52,9 +66,9 @@ async function handleStreamLinkMessage(message, league) {
 
       platformUsername = streamData.user_login;
       registeredUser = getUserByPlatform('twitch', platformUsername);
-      if (!registeredUser) { logSkip('user_not_registered', message, { platform, platformUsername }); return; }
+      if (!registeredUser) { logSkip('user_not_registered', message, { platform, platformUsername, title: streamData.title, vodId }); return; }
       if (registeredUser.discord_id !== message.author.id) {
-        logSkip('discord_id_mismatch', message, { platform, platformUsername, registeredDiscordId: registeredUser.discord_id });
+        logSkip('discord_id_mismatch', message, { platform, platformUsername, title: streamData.title, vodId, registeredDiscordId: registeredUser.discord_id });
         return;
       }
 
@@ -135,7 +149,7 @@ async function handleStreamLinkMessage(message, league) {
   // Get user's league membership to populate team_abbrev for the embed
   const userLeagues = getUserLeagues(registeredUser.discord_id, league.guild_id);
   const memberLeague = userLeagues.find(l => l.id === league.id);
-  if (!memberLeague) { logSkip('not_league_member', message, { platform, platformUsername, leagueId: league.id }); return; }
+  if (!memberLeague) { logSkip('not_league_member', message, { platform, platformUsername, leagueId: league.id, title: streamData.title }); return; }
 
   if (checkStreamPost(platform, streamData.id, memberLeague.id)) {
     logSkip('already_posted', message, { platform, streamId: streamData.id, leagueId: memberLeague.id });

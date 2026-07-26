@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const xml2js = require('xml2js');
 const { checkIfLiveStream, getLiveStreamDetails } = require('./api');
 const { routeStream } = require('../../utils/channelRouter');
-const { getUserByPlatform } = require('../../db/queries');
+const { getUserByPlatform, getUserLeaguesByGuild, recordStreamEvent } = require('../../db/queries');
 const logger = require('../../utils/logger');
 
 function verifySignature(req) {
@@ -83,24 +83,39 @@ async function handleYouTubeNotification(rawBody) {
     }
   }
 
+  // Find the registered user by channel ID (stored as platform_user_id). Done up
+  // front so skip events below can be attributed to the streamer's guild(s).
+  const { db } = require('../../db/database');
+  const platform_row = db.prepare(`
+    SELECT up.platform_username, u.discord_id
+    FROM user_platforms up
+    JOIN users u ON u.id = up.user_id
+    WHERE up.platform = 'youtube' AND up.platform_user_id = ?
+  `).get(channelId);
+
+  const recordYtSkip = (reason, title = null) => {
+    const groups = platform_row ? getUserLeaguesByGuild(platform_row.discord_id) : [];
+    const base = {
+      platform: 'youtube', source: 'websub', platformStreamId: videoId,
+      streamer: platform_row?.platform_username || channelId, title,
+      discordUserId: platform_row?.discord_id || null, outcome: 'skipped', reason,
+    };
+    if (groups.length) for (const g of groups) recordStreamEvent({ ...base, guildId: g.guildId });
+    else recordStreamEvent(base);
+  };
+
   if (!isLive) {
     logger.info('YouTube video is not live after retries, ignoring', { videoId });
+    recordYtSkip('not_live_after_retries');
     return;
   }
 
   const streamData = await getLiveStreamDetails(videoId);
   if (!streamData) return;
 
-  // Find the registered user by channel ID (stored as platform_user_id)
-  const { db } = require('../../db/database');
-  const platform_row = db.prepare(`
-    SELECT up.platform_username
-    FROM user_platforms up
-    WHERE up.platform = 'youtube' AND up.platform_user_id = ?
-  `).get(channelId);
-
   if (!platform_row) {
     logger.info('YouTube channel not registered, ignoring', { channelId });
+    recordYtSkip('channel_not_registered', streamData.title);
     return;
   }
 
