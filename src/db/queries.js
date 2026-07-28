@@ -701,12 +701,6 @@ function getSeasonTeam(seasonId, teamAbbrev) {
   ).get(seasonId, teamAbbrev.toUpperCase());
 }
 
-function removeSeasonTeam(seasonId, teamAbbrev) {
-  return db.prepare(
-    'DELETE FROM season_teams WHERE season_id = ? AND team_abbrev = ?'
-  ).run(seasonId, teamAbbrev.toUpperCase());
-}
-
 // ── Dynasty: coaches ──────────────────────────────────────────────────────────
 
 function getOrCreateCoach(leagueId, userId, displayName) {
@@ -836,6 +830,23 @@ const removeCoachAssignment = db.transaction((seasonId, coachId) => {
     `).run(seasonId, abbr, abbr);
   }
   return rows.length;
+});
+
+// Remove a team from a season entirely: clear any coach assignment for it,
+// detach that team's UNPLAYED games from their coaches (recomputing
+// is_user_game), then drop the season-roster row. Safe for coachless teams too
+// (the assignment/game cleanup is then a no-op). Coaches stay in the league;
+// the team can still be picked as a schedule opponent. Stream reg untouched.
+const removeTeamFromSeason = db.transaction((seasonId, teamAbbrev) => {
+  const abbr = teamAbbrev.toUpperCase();
+  db.prepare('DELETE FROM coach_team_assignments WHERE season_id = ? AND team_abbrev = ?').run(seasonId, abbr);
+  db.prepare('UPDATE games SET home_coach_id = NULL WHERE season_id = ? AND home_abbrev = ? AND played_at IS NULL').run(seasonId, abbr);
+  db.prepare('UPDATE games SET away_coach_id = NULL WHERE season_id = ? AND away_abbrev = ? AND played_at IS NULL').run(seasonId, abbr);
+  db.prepare(`
+    UPDATE games SET is_user_game = (home_coach_id IS NOT NULL AND away_coach_id IS NOT NULL)
+    WHERE season_id = ? AND played_at IS NULL AND (home_abbrev = ? OR away_abbrev = ?)
+  `).run(seasonId, abbr, abbr);
+  return db.prepare('DELETE FROM season_teams WHERE season_id = ? AND team_abbrev = ?').run(seasonId, abbr);
 });
 
 function getSeasonAssignments(seasonId) {
@@ -1162,7 +1173,6 @@ module.exports = {
   upsertSeasonTeam,
   getSeasonTeams,
   getSeasonTeam,
-  removeSeasonTeam,
   // Dynasty: coaches
   getOrCreateCoach,
   getCoachesByLeague,
@@ -1172,6 +1182,7 @@ module.exports = {
   getAssignmentCoachId,
   assignCoachTeam,
   removeCoachAssignment,
+  removeTeamFromSeason,
   getSeasonAssignments,
   getCoachAssignment,
   // Dynasty: games

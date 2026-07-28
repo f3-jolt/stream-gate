@@ -1400,8 +1400,8 @@ async function loadCoaches() {
 }
 
 // Roster teams with no coach assigned. Hidden behind a toggle; each can be
-// removed from the season (removeSeasonTeam only drops the roster row, so the
-// team stays usable as a schedule opponent).
+// removed from the season (drops the roster row; the team stays usable as a
+// schedule opponent).
 let showUnassignedTeams = false;
 function toggleUnassignedTeams() {
   showUnassignedTeams = !showUnassignedTeams;
@@ -1495,7 +1495,8 @@ function renderCoaches(rows) {
           <input id="assign-${c.id}" list="coach-team-options" autocomplete="off" placeholder="Team…" value="${esc(assigned)}" onchange="syncCoachConf('assign-${c.id}','conf-${c.id}')" oninput="syncCoachConf('assign-${c.id}','conf-${c.id}')">
           <select id="conf-${c.id}">${confOptions(c.conference)}</select>
           <button class="btn btn-primary btn-sm" onclick="assignCoach(${c.id})">Assign</button>
-          ${assigned ? `<button class="btn btn-danger btn-sm" onclick="unassignCoach(${c.id})">Remove</button>` : ''}
+          ${assigned ? `<button class="btn btn-ghost btn-sm" title="Drop this coach's team but keep the team on the season roster" onclick="unassignCoach(${c.id})">Unassign</button>
+          <button class="btn btn-danger btn-sm" title="Remove this team from the season entirely" onclick="removeTeamFromSeasonUi(${c.id})">Remove team</button>` : ''}
         </div>
       </td>
     </tr>`;
@@ -1595,6 +1596,20 @@ async function unassignCoach(coachId) {
   const res = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/assignments/${coachId}`, { method: 'DELETE' });
   const data = await res.json();
   if (data.ok) { flash(`Removed ${who} from season`); await loadSeasonTeams(); await loadCoaches(); }
+  else flash(data.error || 'Failed to remove', 'error');
+}
+// Remove a coach's team from the season entirely (drops the roster row and
+// unassigns the coach). The coach stays in the league; the team can still be a
+// schedule opponent. Reuses the season-team DELETE endpoint.
+async function removeTeamFromSeasonUi(coachId) {
+  const c = coachAssignRows.find(r => r.id === coachId);
+  if (!c || !c.assigned) return;
+  const abbrev = c.assigned;
+  const name = teamNameFor(abbrev) || abbrev;
+  if (!confirm(`Remove ${name} (${abbrev}) from this season? ${c.coach} will be unassigned; they stay in the league.`)) return;
+  const res = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/teams/${encodeURIComponent(abbrev)}`, { method: 'DELETE' });
+  const data = await res.json();
+  if (data.ok) { flash(`Removed ${abbrev} from season`); await loadSeasonTeams(); await loadCoaches(); }
   else flash(data.error || 'Failed to remove', 'error');
 }
 
