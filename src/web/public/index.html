@@ -261,8 +261,10 @@
               <div id="conf-breakdown" class="conf-breakdown"></div>
             </div>
             <div class="card">
-              <div class="card-title">Coaches &amp; Assignments</div>
-              <p class="text-muted" style="margin:-6px 0 12px;">Add a coach and optionally assign a team + conference now, or assign it later. Teams join the season when a coach is assigned to them.</p>
+              <div class="card-title">Coaches &amp; Assignments <span id="unassigned-coach-count" class="badge badge-yellow" style="display:none;"></span>
+                <button class="btn btn-ghost btn-sm" id="toggle-unassigned-coaches" style="margin-left:8px;" onclick="toggleUnassignedCoaches()">Show unassigned</button>
+              </div>
+              <p class="text-muted" style="margin:-6px 0 12px;">Add a coach and optionally assign a team + conference now, or assign it later. Teams join the season when a coach is assigned to them. Coaches with no team this season are hidden by default.</p>
               <div class="search-row">
                 <div class="typeahead">
                   <input id="coach-search" type="text" autocomplete="off" placeholder="Search Discord user…" oninput="onCoachSearchInput(this.value)">

@@ -1438,8 +1438,27 @@ async function removeSeasonTeamUi(abbrev) {
   if (data.ok) { flash(`Removed ${abbrev}`); await loadSeasonTeams(); await loadCoaches(); }
   else flash(data.error || 'Failed to remove', 'error');
 }
+// Coaches with no team this season are hidden by default (they persist across
+// seasons, so the list fills up with people not playing now). Toggle to show.
+let showUnassignedCoaches = false;
+function toggleUnassignedCoaches() {
+  showUnassignedCoaches = !showUnassignedCoaches;
+  applyCoachAssign();
+}
 function applyCoachAssign() {
-  renderCoaches(sortData(coachAssignRows, coachAssignSort.col, coachAssignSort.dir));
+  const unassignedCount = coachAssignRows.filter(c => !c.assigned).length;
+  const badge = document.getElementById('unassigned-coach-count');
+  if (badge) {
+    badge.textContent = unassignedCount;
+    badge.style.display = unassignedCount ? 'inline-block' : 'none';
+  }
+  const btn = document.getElementById('toggle-unassigned-coaches');
+  if (btn) {
+    btn.textContent = showUnassignedCoaches ? 'Hide unassigned' : 'Show unassigned';
+    btn.style.display = unassignedCount ? '' : 'none';
+  }
+  const rows = showUnassignedCoaches ? coachAssignRows : coachAssignRows.filter(c => c.assigned);
+  renderCoaches(sortData(rows, coachAssignSort.col, coachAssignSort.dir));
   updateSortHeaders('coaches-table', coachAssignSort);
 }
 function sortCoachAssign(col) {
@@ -1470,7 +1489,14 @@ function renderConfBreakdown() {
 }
 function renderCoaches(rows) {
   const tb = document.getElementById('coaches-tbody');
-  if (!rows.length) { tb.innerHTML = '<tr><td colspan="6" class="text-muted" style="text-align:center;padding:16px;">No coaches added</td></tr>'; return; }
+  if (!rows.length) {
+    const hidden = coachAssignRows.filter(c => !c.assigned).length;
+    const msg = (!showUnassignedCoaches && hidden)
+      ? `${hidden} unassigned coach${hidden === 1 ? '' : 'es'} hidden — use “Show unassigned” above.`
+      : 'No coaches added';
+    tb.innerHTML = `<tr><td colspan="6" class="text-muted" style="text-align:center;padding:16px;">${msg}</td></tr>`;
+    return;
+  }
   tb.innerHTML = rows.map(c => {
     const assigned = c.assigned;
     const teamCell = assigned
