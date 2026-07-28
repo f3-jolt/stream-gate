@@ -44,6 +44,7 @@ const {
   getOrCreateCoach,
   getSeasonAssignments,
   assignCoachTeam,
+  removeCoachAssignment,
   getGamesByWeek,
   getScheduledGames,
   bulkInsertGames,
@@ -979,6 +980,18 @@ router.post('/guilds/:guildId/seasons/:seasonId/assignments', requireGuildAccess
 
   logger.info('Coach assigned', { adminId: req.session.user.id, seasonId: info.season.id, coachId, team: teamAbbrev, conference: conferenceName || null });
   res.json({ ok: true });
+});
+
+// Unassign a coach from this season (season-scoped). Leaves the coach in the
+// league and the team on the roster; just clears their assignment + game links.
+router.delete('/guilds/:guildId/seasons/:seasonId/assignments/:coachId', requireGuildAccess, (req, res) => {
+  const info = seasonInGuild(req.params.seasonId, req.params.guildId);
+  if (!info) return res.status(404).json({ error: 'Season not found' });
+  const coach = getCoachById(Number(req.params.coachId));
+  if (!coach || coach.league_id !== info.league.id) return res.status(404).json({ error: 'Coach not found' });
+  const removed = removeCoachAssignment(info.season.id, Number(req.params.coachId));
+  logger.info('Coach unassigned from season', { adminId: req.session.user.id, seasonId: info.season.id, coachId: coach.id, assignmentsRemoved: removed });
+  res.json({ ok: true, removed });
 });
 
 // ── Games (schedule + results) ────────────────────────────────────────────────

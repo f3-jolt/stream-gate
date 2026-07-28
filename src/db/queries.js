@@ -814,6 +814,30 @@ const assignCoachTeam = db.transaction((seasonId, coachId, teamAbbrev, teamName 
   }
 });
 
+// Unassign a coach from their team for a season: drop the assignment row and
+// detach the coach from that team's UNPLAYED games (played games keep their
+// prior coach), then recompute is_user_game. Mirrors the "vacate" half of
+// assignCoachTeam. The team stays on the season roster (now unassigned); the
+// coach stays in the league. Does not touch stream registration.
+const removeCoachAssignment = db.transaction((seasonId, coachId) => {
+  const rows = db.prepare(
+    'SELECT team_abbrev FROM coach_team_assignments WHERE season_id = ? AND coach_id = ?'
+  ).all(seasonId, coachId);
+  for (const { team_abbrev: abbr } of rows) {
+    db.prepare('DELETE FROM coach_team_assignments WHERE season_id = ? AND coach_id = ? AND team_abbrev = ?')
+      .run(seasonId, coachId, abbr);
+    db.prepare('UPDATE games SET home_coach_id = NULL WHERE season_id = ? AND home_abbrev = ? AND home_coach_id = ? AND played_at IS NULL')
+      .run(seasonId, abbr, coachId);
+    db.prepare('UPDATE games SET away_coach_id = NULL WHERE season_id = ? AND away_abbrev = ? AND away_coach_id = ? AND played_at IS NULL')
+      .run(seasonId, abbr, coachId);
+    db.prepare(`
+      UPDATE games SET is_user_game = (home_coach_id IS NOT NULL AND away_coach_id IS NOT NULL)
+      WHERE season_id = ? AND played_at IS NULL AND (home_abbrev = ? OR away_abbrev = ?)
+    `).run(seasonId, abbr, abbr);
+  }
+  return rows.length;
+});
+
 function getSeasonAssignments(seasonId) {
   return db.prepare(`
     SELECT cta.team_abbrev, cta.coach_id, co.display_name AS coach_name, u.discord_id AS coach_discord_id
@@ -1147,6 +1171,7 @@ module.exports = {
   // Dynasty: assignments
   getAssignmentCoachId,
   assignCoachTeam,
+  removeCoachAssignment,
   getSeasonAssignments,
   getCoachAssignment,
   // Dynasty: games

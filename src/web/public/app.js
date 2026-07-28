@@ -1495,6 +1495,7 @@ function renderCoaches(rows) {
           <input id="assign-${c.id}" list="coach-team-options" autocomplete="off" placeholder="Team…" value="${esc(assigned)}" onchange="syncCoachConf('assign-${c.id}','conf-${c.id}')" oninput="syncCoachConf('assign-${c.id}','conf-${c.id}')">
           <select id="conf-${c.id}">${confOptions(c.conference)}</select>
           <button class="btn btn-primary btn-sm" onclick="assignCoach(${c.id})">Assign</button>
+          ${assigned ? `<button class="btn btn-danger btn-sm" onclick="unassignCoach(${c.id})">Remove</button>` : ''}
         </div>
       </td>
     </tr>`;
@@ -1583,6 +1584,18 @@ async function assignCoach(coachId) {
   const data = await res.json();
   if (data.ok) { flash('Coach assigned'); await loadSeasonTeams(); await loadCoaches(); }
   else flash(data.error || 'Failed', 'error');
+}
+// Unassign a coach from this season: clears their team + unplayed-game links.
+// The coach stays in the league and the team stays on the roster (unassigned).
+async function unassignCoach(coachId) {
+  const c = coachAssignRows.find(r => r.id === coachId);
+  const who = c ? c.coach : 'this coach';
+  const team = c && c.assigned ? ` (${c.assigned})` : '';
+  if (!confirm(`Remove ${who}${team} from this season? They stay in the league and can be reassigned later.`)) return;
+  const res = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/assignments/${coachId}`, { method: 'DELETE' });
+  const data = await res.json();
+  if (data.ok) { flash(`Removed ${who} from season`); await loadSeasonTeams(); await loadCoaches(); }
+  else flash(data.error || 'Failed to remove', 'error');
 }
 
 // ── Schedule (team picker + one detail card) ──
