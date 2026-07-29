@@ -1060,6 +1060,9 @@ function getSeasonSummary(seasonId) {
     FROM sides s
     LEFT JOIN season_teams st ON st.season_id = @seasonId AND st.team_abbrev = s.team
     LEFT JOIN conferences c ON c.id = st.conference_id
+    -- User teams only: a team is user-controlled this season if a coach is
+    -- assigned to it. CPU teams (e.g. a CPU opponent of a user game) are excluded.
+    WHERE s.team IN (SELECT team_abbrev FROM coach_team_assignments WHERE season_id = @seasonId)
     GROUP BY s.team
     ORDER BY wins DESC, point_diff DESC
   `).all({ seasonId });
