@@ -2060,10 +2060,10 @@ function renderResults(games) {
     const rt = g.result_type || 'normal';
     const sim = rt === 'FR' || rt === 'FS'; // forfeit / fair sim → no attempts
     return `<tr data-game="${g.id}">
-      <td>${resultTeamCell(g.home_abbrev, g.home_colors, g.home_coach_id != null)}</td>
-      <td><input class="grid-input" type="number" id="hs-${g.id}" value="${g.home_score ?? ''}"></td>
       <td>${resultTeamCell(g.away_abbrev, g.away_colors, g.away_coach_id != null)}</td>
       <td><input class="grid-input" type="number" id="as-${g.id}" value="${g.away_score ?? ''}"></td>
+      <td>${resultTeamCell(g.home_abbrev, g.home_colors, g.home_coach_id != null)}</td>
+      <td><input class="grid-input" type="number" id="hs-${g.id}" value="${g.home_score ?? ''}"></td>
       <td><input class="grid-input" type="number" id="at-${g.id}" value="${g.attempts_taken ?? ''}" ${sim ? 'disabled' : ''}></td>
       <td><select class="grid-input wide" id="rt-${g.id}" onchange="toggleWinner(${g.id})">
         <option value="normal" ${rt === 'normal' ? 'selected' : ''}>Normal</option>
@@ -2072,8 +2072,8 @@ function renderResults(games) {
       </select></td>
       <td><select class="grid-input wide" id="wn-${g.id}" ${rt === 'FR' ? '' : 'disabled'}>
         <option value="">—</option>
-        <option value="home" ${g.winner_side === 'home' ? 'selected' : ''}>${esc(g.home_abbrev)}</option>
         <option value="away" ${g.winner_side === 'away' ? 'selected' : ''}>${esc(g.away_abbrev)}</option>
+        <option value="home" ${g.winner_side === 'home' ? 'selected' : ''}>${esc(g.home_abbrev)}</option>
       </select></td>
       <td><button class="btn btn-primary btn-sm" onclick="saveResult(${g.id})">Save</button></td>
     </tr>`;
