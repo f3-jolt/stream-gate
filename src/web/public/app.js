@@ -1710,6 +1710,26 @@ function scheduledGameCount(abbr) {
     && (g.home_abbrev === abbr || g.away_abbrev === abbr)).length;
 }
 
+// Season W-L(-T) record per team, derived from resolved games in seasonGames.
+// A game is resolved the same way the server counts it: a forfeit with a forced
+// winner, or a normal/fair-sim game with both scores. Keyed by team abbrev.
+function computeSeasonRecords() {
+  const rec = new Map();
+  const get = a => { if (!rec.has(a)) rec.set(a, { w: 0, l: 0, t: 0 }); return rec.get(a); };
+  for (const g of seasonGames) {
+    const resolved = (g.result_type === 'FR' && g.winner_side) || (g.home_score != null && g.away_score != null);
+    if (!resolved) continue;
+    const h = get(g.home_abbrev), a = get(g.away_abbrev);
+    if (g.result_type === 'FR') {
+      if (g.winner_side === 'home') { h.w++; a.l++; } else { a.w++; h.l++; }
+    } else if (g.home_score > g.away_score) { h.w++; a.l++; }
+    else if (g.away_score > g.home_score) { a.w++; h.l++; }
+    else { h.t++; a.t++; }
+  }
+  return rec;
+}
+function recStr(r) { return r ? `${r.w}-${r.l}${r.t ? `-${r.t}` : ''}` : '0-0'; }
+
 // Entry render: ensure a valid selection, then draw the team nav + detail card.
 function renderScheduleCards() {
   const nav = document.getElementById('schedule-nav-list');
@@ -1769,6 +1789,8 @@ const USER_ICON = '<svg class="user-svg" viewBox="0 0 24 24" fill="currentColor"
 
 function scheduleCardHtml(t) {
   const abbr = t.team_abbrev;
+  const records = computeSeasonRecords();
+  const myRec = records.get(abbr);
   const byWeek = new Map();
   for (const g of seasonGames) {
     if (g.home_abbrev === abbr || g.away_abbrev === abbr) byWeek.set(g.week, g);
@@ -1785,13 +1807,34 @@ function scheduleCardHtml(t) {
     : 'var(--surface2)';
   let rows = '';
   for (let w = 0; w <= SCHED_MAX_WEEK; w++) {
-    if (w === 15) rows += `<tr class="sched-sep"><td colspan="4">Postseason</td></tr>`;
+    if (w === 15) rows += `<tr class="sched-sep"><td colspan="7">Postseason</td></tr>`;
     const g = byWeek.get(w);
     const isHome = g ? g.home_abbrev === abbr : true;
     const opp = g ? (isHome ? g.away_abbrev : g.home_abbrev) : '';
     const colors = g ? ((isHome ? g.away_colors : g.home_colors) || []) : [];
     const user = g ? g.is_user_game === 1 : false;
     const has = !!opp;
+    // Read-only game info: opponent's record, this game's result (from the
+    // selected team's view), and attempts taken that week.
+    let oppRecCell = '', resultCell = '', attCell = '';
+    if (g && has) {
+      oppRecCell = `<span class="opp-rec" title="${esc(opp)} season record">${recStr(records.get(opp))}</span>`;
+      const resolved = (g.result_type === 'FR' && g.winner_side) || (g.home_score != null && g.away_score != null);
+      if (resolved) {
+        const myScore = isHome ? g.home_score : g.away_score;
+        const opScore = isHome ? g.away_score : g.home_score;
+        let outcome;
+        if (g.result_type === 'FR') outcome = g.winner_side === (isHome ? 'home' : 'away') ? 'w' : 'l';
+        else if (myScore > opScore) outcome = 'w';
+        else if (myScore < opScore) outcome = 'l';
+        else outcome = 't';
+        const scoreTxt = g.result_type === 'FR' ? '—' : `${myScore}–${opScore}`;
+        const tag = g.result_type === 'FS' ? ' <span class="res-tag">FS</span>'
+          : g.result_type === 'FR' ? ' <span class="res-tag">FR</span>' : '';
+        resultCell = `<span class="res res-${outcome}">${outcome.toUpperCase()} ${scoreTxt}</span>${tag}`;
+        attCell = g.attempts_taken != null ? String(g.attempts_taken) : '—';
+      }
+    }
     rows += `<tr>
       <td class="wk${w > 14 ? ' wk-post' : ''}">${weekShort(w)}</td>
       <td>
@@ -1816,6 +1859,9 @@ function scheduleCardHtml(t) {
           <label class="switch"><input type="checkbox" id="user-${abbr}-${w}" ${user ? 'checked' : ''} tabindex="-1" onchange="onUserToggle('${abbr}',${w})"><span class="slider"></span></label>
         </div>
       </td>
+      <td class="sched-opprec">${oppRecCell}</td>
+      <td class="sched-result">${resultCell}</td>
+      <td class="sched-att">${attCell}</td>
     </tr>`;
   }
   const coachInfo = t.coach_name
@@ -1835,9 +1881,16 @@ function scheduleCardHtml(t) {
       <div class="sched-stat"><span class="sched-stat-num">${gamesScheduled}</span><span class="sched-stat-lbl">Games</span></div>
       <div class="sched-stat"><span class="sched-stat-num">${homeGames}</span><span class="sched-stat-lbl">Home</span></div>
       <div class="sched-stat"><span class="sched-stat-num">${userGames}</span><span class="sched-stat-lbl">User</span></div>
+      <div class="sched-stat"><span class="sched-stat-num">${recStr(myRec)}</span><span class="sched-stat-lbl">Record</span></div>
     </div>
     <div class="sched-warn" id="cardwarn-${abbr}" hidden></div>
-    <table class="sched-card-table"><tbody>${rows}</tbody></table>
+    <table class="sched-card-table">
+      <thead><tr class="sched-head-row">
+        <th>Wk</th><th>Opponent</th><th>H/A</th><th>User</th>
+        <th title="Opponent season record">Opp Rec</th><th title="Result from ${esc(abbr)}'s view">Result</th><th title="Attempts taken">Att</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
     <div class="sched-card-foot">
       <button class="btn btn-primary btn-sm" onclick="saveCard('${abbr}')">Save ${esc(abbr)}</button>
       <span id="cardflash-${abbr}" class="card-flash"></span>
@@ -2059,7 +2112,11 @@ function renderResults(games) {
   tb.innerHTML = games.map(g => {
     const rt = g.result_type || 'normal';
     const sim = rt === 'FR' || rt === 'FS'; // forfeit / fair sim → no attempts
-    return `<tr data-game="${g.id}">
+    // Flag played fair-sim games with no attempts: a recorded result the teams
+    // never actually played out. Tint the row red so it stands out.
+    const played = g.played_at != null || (g.home_score != null && g.away_score != null);
+    const fsZero = rt === 'FS' && (g.attempts_taken ?? 0) === 0 && played;
+    return `<tr data-game="${g.id}"${fsZero ? ' class="row-fs-zero"' : ''}>
       <td>${resultTeamCell(g.away_abbrev, g.away_colors, g.away_coach_id != null)}</td>
       <td><input class="grid-input" type="number" id="as-${g.id}" value="${g.away_score ?? ''}"></td>
       <td>${resultTeamCell(g.home_abbrev, g.home_colors, g.home_coach_id != null)}</td>
@@ -2138,14 +2195,21 @@ function sortSummary(col) {
 }
 function renderSummary(rows) {
   const tb = document.getElementById('summary-tbody');
-  if (!rows.length) { tb.innerHTML = '<tr><td colspan="8" class="text-muted" style="text-align:center;padding:16px;">No results yet</td></tr>'; return; }
-  tb.innerHTML = rows.map(r => `<tr>
+  if (!rows.length) { tb.innerHTML = '<tr><td colspan="9" class="text-muted" style="text-align:center;padding:16px;">No results yet</td></tr>'; return; }
+  tb.innerHTML = rows.map(r => {
+    // Flag records that were earned without playing: a decided game count
+    // (W/L/T) but zero games actually played — i.e. all forfeits/fair sims.
+    const decided = r.wins + r.losses + r.ties;
+    const unearned = decided > 0 && r.games_played === 0;
+    return `<tr>
     <td><strong>${esc(r.team_abbrev)}</strong> ${esc(r.team_name)}</td>
     <td>${r.conference_name ? esc(r.conference_name) : '<span class="text-muted">—</span>'}</td>
     <td>${r.wins}</td><td>${r.losses}</td><td>${r.ties}</td>
+    <td class="${unearned ? 'gp-zero' : ''}" ${unearned ? 'title="No games actually played — record is all forfeits/fair sims"' : ''}>${r.games_played}</td>
     <td>${r.points_for}</td><td>${r.points_against}</td>
     <td>${r.point_diff > 0 ? '+' : ''}${r.point_diff}</td>
-  </tr>`).join('');
+  </tr>`;
+  }).join('');
 }
 
 // ── Coach history ──

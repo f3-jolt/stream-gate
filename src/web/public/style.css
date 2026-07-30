@@ -382,7 +382,8 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .sched-nav-count.low { color: var(--danger); background: rgba(255,92,92,.14); }
 .sched-nav-item.active .sched-nav-count.low { color: var(--danger); }
 .sched-detail { flex: 1 1 auto; min-width: 0; }
-.sched-card-solo { max-width: 560px; }
+/* Wide enough for the read-only result / attempts / opp-record columns. */
+.sched-card-solo { max-width: 780px; }
 @media (max-width: 720px) {
   .sched-layout { flex-direction: column; }
   .sched-nav { flex-basis: auto; width: 100%; position: static; max-height: none; }
@@ -411,6 +412,34 @@ tr:hover td { background: rgba(255,255,255,.02); }
 }
 .sched-warn strong { font-weight: 700; }
 .opp-cell.rematch { outline: 1px solid rgba(255,200,0,.75); outline-offset: -1px; }
+
+/* Schedule card header + read-only game columns (opp record / result / attempts). */
+.sched-card-table thead th {
+  padding: 4px 8px; text-align: left; font-size: 10px; font-weight: 600;
+  letter-spacing: .5px; text-transform: uppercase; color: var(--text-muted);
+  border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+.sched-opprec, .sched-result, .sched-att { font-size: 12px; white-space: nowrap; }
+.sched-att { text-align: center; font-family: var(--font-mono); color: var(--text-muted); }
+.opp-rec { font-family: var(--font-mono); color: var(--text-muted); font-size: 11px; }
+.res { font-weight: 700; }
+.res-w { color: var(--success); }
+.res-l { color: var(--danger); }
+.res-t { color: var(--text-muted); }
+.res-tag {
+  font-size: 9px; font-weight: 700; letter-spacing: .5px; padding: 1px 4px;
+  border-radius: 4px; background: var(--surface2); color: var(--text-muted); vertical-align: middle;
+}
+
+/* Results grid: fair-sim game recorded with no attempts (never actually played). */
+.row-fs-zero > td { background: rgba(255,92,92,.12); }
+.row-fs-zero:hover > td { background: rgba(255,92,92,.18); }
+
+/* Summary: a W/L/T record earned with zero games actually played. */
+.gp-zero {
+  color: var(--danger); font-weight: 700;
+  background: rgba(255,92,92,.12); border-radius: 4px;
+}
 
 /* User-game toggle (in the grid) + the person marker beside the opponent logo. */
 .user-toggle { display: inline-flex; align-items: center; gap: 6px; }

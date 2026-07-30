@@ -1024,30 +1024,36 @@ const recordGameResult = db.transaction((gameId, { homeScore = null, awayScore =
 const PLAYED_FILTER = "((g.result_type = 'FR' AND g.winner_side IS NOT NULL) OR (g.home_score IS NOT NULL AND g.away_score IS NOT NULL))";
 
 // Per-side (one row per team per resolved game). `meSide` is 'home' | 'away'.
-// Only FR uses winner_side; normal and FS compare scores.
-function sideSelect(meSide) {
+// Only FR uses winner_side; normal and FS compare scores. `extraFilter` narrows
+// which resolved games count (e.g. only games actually played, attempts > 0).
+function sideSelect(meSide, extraFilter = '') {
   const me = meSide === 'home' ? 'home' : 'away';
   const opp = meSide === 'home' ? 'away' : 'home';
   return `
     SELECT g.season_id AS season_id, g.week AS week,
       g.${me}_abbrev AS team, g.${me}_coach_id AS coach_id,
       COALESCE(g.${me}_score, 0) AS pf, COALESCE(g.${opp}_score, 0) AS pa,
+      COALESCE(g.attempts_taken, 0) AS attempts,
       CASE WHEN g.result_type = 'FR' THEN (CASE WHEN g.winner_side = '${me}' THEN 1 ELSE 0 END)
            WHEN g.${me}_score > g.${opp}_score THEN 1 ELSE 0 END AS won,
       CASE WHEN g.result_type = 'FR' THEN (CASE WHEN g.winner_side = '${opp}' THEN 1 ELSE 0 END)
            WHEN g.${opp}_score > g.${me}_score THEN 1 ELSE 0 END AS lost,
       CASE WHEN g.result_type != 'FR' AND g.${me}_score = g.${opp}_score THEN 1 ELSE 0 END AS tied
-    FROM games g WHERE __SCOPE__ AND ${PLAYED_FILTER}
+    FROM games g WHERE __SCOPE__ AND ${PLAYED_FILTER}${extraFilter ? ` AND ${extraFilter}` : ''}
   `;
 }
 
-function sidesCTE(scope) {
+function sidesCTE(scope, extraFilter = '') {
   return `WITH sides AS (
-    ${sideSelect('home').replace('__SCOPE__', scope)}
+    ${sideSelect('home', extraFilter).replace('__SCOPE__', scope)}
     UNION ALL
-    ${sideSelect('away').replace('__SCOPE__', scope)}
+    ${sideSelect('away', extraFilter).replace('__SCOPE__', scope)}
   )`;
 }
+
+// Coach history counts only games actually played by a human: attempts > 0.
+// This drops forfeits (FR) and fair sims (FS), which always record 0 attempts.
+const PLAYED_BY_HAND_FILTER = 'g.attempts_taken > 0';
 
 function getSeasonSummary(seasonId) {
   return db.prepare(`
@@ -1055,7 +1061,10 @@ function getSeasonSummary(seasonId) {
     SELECT s.team AS team_abbrev,
       SUM(s.won) AS wins, SUM(s.lost) AS losses, SUM(s.tied) AS ties,
       SUM(s.pf) AS points_for, SUM(s.pa) AS points_against,
-      SUM(s.pf) - SUM(s.pa) AS point_diff, COUNT(*) AS games_played,
+      SUM(s.pf) - SUM(s.pa) AS point_diff,
+      -- Games actually played (attempts > 0). Forfeits/fair sims still count in
+      -- the W/L above but not here, so a 3-0 record with 0 played is visible.
+      SUM(CASE WHEN s.attempts > 0 THEN 1 ELSE 0 END) AS games_played,
       c.name AS conference_name
     FROM sides s
     LEFT JOIN season_teams st ON st.season_id = @seasonId AND st.team_abbrev = s.team
@@ -1070,7 +1079,7 @@ function getSeasonSummary(seasonId) {
 
 function getCoachHistory(leagueId) {
   return db.prepare(`
-    ${sidesCTE('g.season_id IN (SELECT id FROM seasons WHERE league_id = @leagueId)')}
+    ${sidesCTE('g.season_id IN (SELECT id FROM seasons WHERE league_id = @leagueId)', PLAYED_BY_HAND_FILTER)}
     SELECT co.id AS coach_id, co.display_name, co.user_id, u.discord_id,
       SUM(s.won) AS wins, SUM(s.lost) AS losses, SUM(s.tied) AS ties,
       SUM(s.pf) AS points_for, SUM(s.pa) AS points_against,
@@ -1089,7 +1098,7 @@ function getCoachHistory(leagueId) {
 
 function getCoachSeasonBreakdown(coachId) {
   return db.prepare(`
-    ${sidesCTE('(g.home_coach_id = @coachId OR g.away_coach_id = @coachId)')}
+    ${sidesCTE('(g.home_coach_id = @coachId OR g.away_coach_id = @coachId)', PLAYED_BY_HAND_FILTER)}
     SELECT se.id AS season_id, se.year, se.label,
       GROUP_CONCAT(DISTINCT s.team) AS teams,
       SUM(s.won) AS wins, SUM(s.lost) AS losses, SUM(s.tied) AS ties,
