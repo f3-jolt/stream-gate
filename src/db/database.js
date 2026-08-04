@@ -277,6 +277,25 @@ function runDataMigrations() {
     db.pragma('user_version = 1');
     version = 1;
   }
+
+  // v2: teams removed from a season before removeTeamFromSeason deleted their
+  // unplayed games left behind ghost matchups that still showed on the schedule
+  // and Results grid. Delete unplayed games where either side is no longer in
+  // season_teams for that season. PLAYED games are kept so standings and the
+  // opponents' recorded results are untouched.
+  if (version < 2) {
+    const r = db.prepare(`
+      DELETE FROM games
+      WHERE played_at IS NULL AND home_score IS NULL AND away_score IS NULL
+        AND (
+          home_abbrev NOT IN (SELECT team_abbrev FROM season_teams WHERE season_id = games.season_id)
+          OR away_abbrev NOT IN (SELECT team_abbrev FROM season_teams WHERE season_id = games.season_id)
+        )
+    `).run();
+    logger.info('Data migration v2: removed ghost unplayed games for departed teams', { removed: r.changes });
+    db.pragma('user_version = 2');
+    version = 2;
+  }
 }
 
 const TEAMS_JSON_PATH = path.join(process.cwd(), 'src/db/teams/ncca-teams.json');
