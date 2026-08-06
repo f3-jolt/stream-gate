@@ -7,6 +7,10 @@ const router = express.Router();
 const DISCORD_API = 'https://discord.com/api/v10';
 const SCOPES = 'identify guilds';
 
+// Where to send the browser after auth. When the UI is hosted separately
+// (WEB_ORIGIN set, e.g. Firebase), return there; otherwise the bundled /admin.
+const APP_HOME = (process.env.WEB_ORIGIN || '').split(',')[0].trim() || '/admin';
+
 function getCallbackUrl() {
   return `${process.env.PUBLIC_URL}/auth/callback`;
 }
@@ -23,7 +27,7 @@ router.get('/login', (req, res) => {
 
 router.get('/callback', async (req, res) => {
   const { code } = req.query;
-  if (!code) return res.redirect('/admin');
+  if (!code) return res.redirect(APP_HOME);
 
   try {
     // Exchange code for access token
@@ -113,11 +117,11 @@ router.get('/callback', async (req, res) => {
     // Explicitly save session before redirect to ensure cookie is set
     req.session.save(err => {
       if (err) console.error('[auth] Session save error:', err.message);
-      res.redirect('/admin');
+      res.redirect(APP_HOME);
     });
   } catch (err) {
     console.error('[auth] OAuth callback error:', err.message, err.stack);
-    res.redirect('/admin?error=auth_failed');
+    res.redirect(`${APP_HOME}${APP_HOME.includes('?') ? '&' : '?'}error=auth_failed`);
   }
 });
 
@@ -128,7 +132,7 @@ router.get('/me', (req, res) => {
 });
 
 router.get('/logout', (req, res) => {
-  req.session.destroy(() => res.redirect('/admin'));
+  req.session.destroy(() => res.redirect(APP_HOME));
 });
 
 module.exports = router;

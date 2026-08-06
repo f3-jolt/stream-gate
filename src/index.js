@@ -21,13 +21,39 @@ const app = express();
 // Trust Fly.io's proxy so req.secure and req.ip are correct behind TLS termination
 app.set('trust proxy', 1);
 
+// CORS for the separately-hosted web UI (e.g. Firebase Hosting). Additive and
+// no-op until WEB_ORIGIN is set — comma-separate to allow multiple origins.
+// When configured, the session cookie also becomes cross-site capable below.
+const WEB_ORIGINS = (process.env.WEB_ORIGIN || '')
+  .split(',').map(s => s.trim()).filter(Boolean);
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && WEB_ORIGINS.includes(origin)) {
+    res.set('Access-Control-Allow-Origin', origin);
+    res.set('Access-Control-Allow-Credentials', 'true');
+    res.set('Vary', 'Origin');
+    res.set('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type');
+    if (req.method === 'OPTIONS') return res.sendStatus(204);
+  }
+  next();
+});
+
 // Session middleware (must come before any route that reads req.session)
 // MemoryStore is fine for this low-traffic admin tool; sessions reset on restart
 app.use(session({
   secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
   resave: false,
   saveUninitialized: false,
-  cookie: { httpOnly: true, secure: 'auto', maxAge: 7 * 24 * 60 * 60 * 1000 },
+  // sameSite 'none' lets the cross-origin web UI send the cookie on API calls;
+  // it requires Secure, which holds in prod (HTTPS). Falls back to 'lax' — the
+  // effective prior behaviour — when no web origin is configured.
+  cookie: {
+    httpOnly: true,
+    secure: 'auto',
+    sameSite: WEB_ORIGINS.length ? 'none' : 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  },
 }));
 
 // JSON body parser for API routes (must come before apiRouter).
