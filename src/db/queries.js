@@ -971,13 +971,67 @@ const setTeamWeekGame = db.transaction((seasonId, week, teamAbbrev, { opponentAb
   _placeGame(seasonId, week, T, opponentAbbrev || null, isHome, isUserGame);
 });
 
+// The one game a team has in a given week (a team is never double-booked).
+function _getTeamWeekGame(seasonId, week, abbrev) {
+  return db.prepare(
+    'SELECT * FROM games WHERE season_id = ? AND week = ? AND (home_abbrev = ? OR away_abbrev = ?)'
+  ).get(seasonId, week, abbrev, abbrev);
+}
+
+// Flip a game's home/away in place, carrying the result with it (scores, coach
+// snapshots and a forfeit's winner all swap sides). Used when only the H/A
+// toggle changed, so correcting the side never costs a recorded result.
+// Returns false without touching anything if the reversed matchup already
+// exists that week (the caller then falls back to delete + re-insert).
+function _swapGameSides(gameId) {
+  const g = db.prepare('SELECT season_id, week, home_abbrev, away_abbrev FROM games WHERE id = ?').get(gameId);
+  const clash = db.prepare(
+    'SELECT id FROM games WHERE season_id = ? AND week = ? AND home_abbrev = ? AND away_abbrev = ?'
+  ).get(g.season_id, g.week, g.away_abbrev, g.home_abbrev);
+  if (clash) return false;
+  db.prepare(`
+    UPDATE games SET
+      home_abbrev = away_abbrev, away_abbrev = home_abbrev,
+      home_score = away_score, away_score = home_score,
+      home_coach_id = away_coach_id, away_coach_id = home_coach_id,
+      winner_side = CASE winner_side WHEN 'home' THEN 'away' WHEN 'away' THEN 'home' ELSE winner_side END
+    WHERE id = ?
+  `).run(gameId);
+  return true;
+}
+
+// Same derivation insertGame uses: null auto-derives from the current coaches,
+// a boolean is the manual flag from the schedule builder.
+function _setUserGame(seasonId, gameId, teamA, teamB, isUserGame) {
+  const flag = isUserGame == null
+    ? (getAssignmentCoachId(seasonId, teamA) != null && getAssignmentCoachId(seasonId, teamB) != null ? 1 : 0)
+    : (isUserGame ? 1 : 0);
+  db.prepare('UPDATE games SET is_user_game = ? WHERE id = ?').run(flag, gameId);
+}
+
+// Save a team's whole week grid. Weeks whose matchup is UNCHANGED keep their
+// existing game row — deleting and re-inserting would throw away any recorded
+// result (scores, attempts, played_at) for both teams. An H/A flip on the same
+// matchup is applied in place for the same reason. Only a week whose opponent
+// actually changed (or was cleared to a BYE) drops its row and re-places, which
+// does discard that game's result — the schedule builder warns before saving.
+// Each week deletes before it re-places, so T's own outgoing game never trips
+// the busy check for the incoming opponent.
 const bulkSetTeamSchedule = db.transaction((seasonId, teamAbbrev, weeks) => {
   const T = teamAbbrev.toUpperCase();
-  // Clear all of T's games for the weeks being saved FIRST, so re-inserting
-  // doesn't trip the rematch/busy checks on T's own prior games.
-  for (const w of weeks) _deleteTeamWeek(seasonId, w.week, T);
   for (const w of weeks) {
-    _placeGame(seasonId, w.week, T, (w.opponent || null), w.isHome, w.isUserGame);
+    const opp = w.opponent ? String(w.opponent).toUpperCase() : null;
+    const existing = _getTeamWeekGame(seasonId, w.week, T);
+    if (existing && opp) {
+      const curOpp = existing.home_abbrev === T ? existing.away_abbrev : existing.home_abbrev;
+      const curIsHome = existing.home_abbrev === T;
+      if (curOpp === opp && (curIsHome === !!w.isHome || _swapGameSides(existing.id))) {
+        _setUserGame(seasonId, existing.id, T, opp, w.isUserGame);
+        continue;
+      }
+    }
+    if (existing) _deleteTeamWeek(seasonId, w.week, T);
+    _placeGame(seasonId, w.week, T, opp, w.isHome, w.isUserGame);
   }
 });
 
