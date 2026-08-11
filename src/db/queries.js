@@ -832,19 +832,51 @@ const removeCoachAssignment = db.transaction((seasonId, coachId) => {
   return rows.length;
 });
 
-// Remove a team from a season entirely: clear any coach assignment for it,
-// delete that team's UNPLAYED games (ghost matchups against a team that has
-// left the league — these would otherwise linger on the schedule/Results grid),
-// then drop the season-roster row. PLAYED games are left intact so standings and
-// the opponents' recorded results stay correct. Safe for coachless teams too
-// (the cleanup is then a no-op). Coaches stay in the league. Stream reg untouched.
+// A game is "untouched" only if nothing has been recorded against it: no
+// played_at stamp, no scores, no attempts, no forced winner, and still the
+// default result type. Anything else (a result, a forfeit, a fair sim, or even
+// just attempts logged) means the game happened and must survive cleanup.
+const UNTOUCHED_GAME_FILTER = `
+  played_at IS NULL AND home_score IS NULL AND away_score IS NULL
+  AND COALESCE(attempts_taken, 0) = 0 AND winner_side IS NULL
+  AND COALESCE(result_type, 'normal') = 'normal'
+`;
+
+// Remove a team from a season entirely: clear any coach assignment for it, drop
+// only the games that are purely its own ghosts, then drop the season-roster row.
+// A game is deleted ONLY when all three hold:
+//   1. nothing recorded on it (see UNTOUCHED_GAME_FILTER), and
+//   2. the opponent has no coach this season (no assignment row), and
+//   3. the opponent side carries no coach snapshot on the game row.
+// So played games stay (standings/results keep working) and unplayed games against
+// another coached team stay — they belong to that coach's schedule, not this team's.
+// Surviving unplayed games lose the departing team's coach snapshot and get
+// is_user_game recomputed, mirroring removeCoachAssignment. Safe for coachless
+// teams too. Coaches stay in the league. Stream reg untouched.
 const removeTeamFromSeason = db.transaction((seasonId, teamAbbrev) => {
   const abbr = teamAbbrev.toUpperCase();
   db.prepare('DELETE FROM coach_team_assignments WHERE season_id = ? AND team_abbrev = ?').run(seasonId, abbr);
   db.prepare(`
     DELETE FROM games
-    WHERE season_id = ? AND (home_abbrev = ? OR away_abbrev = ?)
-      AND played_at IS NULL AND home_score IS NULL AND away_score IS NULL
+    WHERE season_id = @seasonId
+      AND (home_abbrev = @abbr OR away_abbrev = @abbr)
+      AND ${UNTOUCHED_GAME_FILTER}
+      AND CASE WHEN home_abbrev = @abbr THEN away_coach_id ELSE home_coach_id END IS NULL
+      AND (CASE WHEN home_abbrev = @abbr THEN away_abbrev ELSE home_abbrev END) NOT IN (
+        SELECT team_abbrev FROM coach_team_assignments WHERE season_id = @seasonId
+      )
+  `).run({ seasonId, abbr });
+  // Games that survived: the departing team is no longer coached, so drop its
+  // snapshot and re-derive the user-game flag — but only on untouched rows. A
+  // game with attempts or a forfeit recorded keeps its coach so coach history
+  // and the opponent's recorded result stay attributed correctly.
+  db.prepare(`UPDATE games SET home_coach_id = NULL
+    WHERE season_id = ? AND home_abbrev = ? AND ${UNTOUCHED_GAME_FILTER}`).run(seasonId, abbr);
+  db.prepare(`UPDATE games SET away_coach_id = NULL
+    WHERE season_id = ? AND away_abbrev = ? AND ${UNTOUCHED_GAME_FILTER}`).run(seasonId, abbr);
+  db.prepare(`
+    UPDATE games SET is_user_game = (home_coach_id IS NOT NULL AND away_coach_id IS NOT NULL)
+    WHERE season_id = ? AND (home_abbrev = ? OR away_abbrev = ?) AND ${UNTOUCHED_GAME_FILTER}
   `).run(seasonId, abbr, abbr);
   return db.prepare('DELETE FROM season_teams WHERE season_id = ? AND team_abbrev = ?').run(seasonId, abbr);
 });

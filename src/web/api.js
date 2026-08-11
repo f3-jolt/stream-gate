@@ -922,8 +922,9 @@ router.post('/guilds/:guildId/seasons/:seasonId/teams', requireGuildAccess, (req
 router.delete('/guilds/:guildId/seasons/:seasonId/teams/:abbrev', requireGuildAccess, (req, res) => {
   const info = seasonInGuild(req.params.seasonId, req.params.guildId);
   if (!info) return res.status(404).json({ error: 'Season not found' });
-  // Full removal: also clears any coach assignment for the team and detaches
-  // its unplayed games (no-op for teams that had no coach).
+  // Full removal: also clears any coach assignment for the team and drops only
+  // its untouched games against uncoached opponents. Played games and games
+  // against another coach's team stay (no-op for teams that had no coach).
   removeTeamFromSeason(info.season.id, req.params.abbrev);
   logger.info('Team removed from season', { adminId: req.session.user.id, seasonId: info.season.id, team: req.params.abbrev });
   res.json({ ok: true });

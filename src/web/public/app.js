@@ -1626,13 +1626,15 @@ async function unassignCoach(coachId) {
 }
 // Remove a coach's team from the season entirely (drops the roster row and
 // unassigns the coach). The coach stays in the league; the team can still be a
-// schedule opponent. Reuses the season-team DELETE endpoint.
+// schedule opponent. Only the team's unplayed games against CPU/uncoached
+// opponents are cleared — played games and games against another coach's team
+// remain on the schedule. Reuses the season-team DELETE endpoint.
 async function removeTeamFromSeasonUi(coachId) {
   const c = coachAssignRows.find(r => r.id === coachId);
   if (!c || !c.assigned) return;
   const abbrev = c.assigned;
   const name = teamNameFor(abbrev) || abbrev;
-  if (!confirm(`Remove ${name} (${abbrev}) from this season? ${c.coach} will be unassigned; they stay in the league.`)) return;
+  if (!confirm(`Remove ${name} (${abbrev}) from this season? ${c.coach} will be unassigned; they stay in the league.\n\nPlayed games and games against another coach's team stay on the schedule; only unplayed CPU games are cleared.`)) return;
   const res = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/teams/${encodeURIComponent(abbrev)}`, { method: 'DELETE' });
   const data = await res.json();
   if (data.ok) { flash(`Removed ${abbrev} from season`); await loadSeasonTeams(); await loadCoaches(); }
