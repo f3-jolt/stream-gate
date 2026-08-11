@@ -1830,22 +1830,23 @@ function scheduleCardHtml(t) {
       const opScore = isHome ? g.away_score : g.home_score;
       const myKey = isHome ? 'home' : 'away';
       const oppKey = isHome ? 'away' : 'home';
-      const fr = rt === 'FR'; // a forfeit is decided by the winner, not a score
+      // A score can be entered for any result type, forfeits included — the
+      // winner still decides a forfeit, but the score is kept when one is given.
       scoreCell = `<div class="sc-pair">
           <input class="grid-input sc-in" type="number" id="msc-${abbr}-${w}" value="${myScore ?? ''}"
-                 placeholder="${esc(abbr)}" title="${esc(abbr)} score" ${fr ? 'disabled' : ''}>
+                 placeholder="${esc(abbr)}" title="${esc(abbr)} score" onkeydown="onGridTab(event,'${abbr}',${w},'msc')">
           <span class="sc-dash">–</span>
           <input class="grid-input sc-in" type="number" id="osc-${abbr}-${w}" value="${opScore ?? ''}"
-                 placeholder="${esc(opp)}" title="${esc(opp)} score" ${fr ? 'disabled' : ''}>
+                 placeholder="${esc(opp)}" title="${esc(opp)} score" onkeydown="onGridTab(event,'${abbr}',${w},'osc')">
         </div>`;
-      attCell = `<input class="grid-input sc-in" type="number" id="att-${abbr}-${w}"
+      attCell = `<input class="grid-input sc-in" type="number" id="att-${abbr}-${w}" tabindex="-1"
                         value="${g.attempts_taken ?? ''}" title="Attempts taken" ${sim ? 'disabled' : ''}>`;
-      typeCell = `<select class="grid-input sc-sel" id="rtyp-${abbr}-${w}" onchange="onSchedTypeChange('${abbr}',${w})">
+      typeCell = `<select class="grid-input sc-sel" id="rtyp-${abbr}-${w}" tabindex="-1" onchange="onSchedTypeChange('${abbr}',${w})">
           <option value="normal" ${rt === 'normal' ? 'selected' : ''}>Normal</option>
           <option value="FR" ${rt === 'FR' ? 'selected' : ''}>FR</option>
           <option value="FS" ${rt === 'FS' ? 'selected' : ''}>FS</option>
         </select>`;
-      winCell = `<select class="grid-input sc-sel" id="winr-${abbr}-${w}" ${rt === 'FR' ? '' : 'disabled'}>
+      winCell = `<select class="grid-input sc-sel" id="winr-${abbr}-${w}" tabindex="-1" ${rt === 'FR' ? '' : 'disabled'}>
           <option value="">—</option>
           <option value="${myKey}" ${g.winner_side === myKey ? 'selected' : ''}>${esc(abbr)}</option>
           <option value="${oppKey}" ${g.winner_side === oppKey ? 'selected' : ''}>${esc(opp)}</option>
@@ -1879,7 +1880,7 @@ function scheduleCardHtml(t) {
           <img class="opp-logo" id="opplogo-${abbr}-${w}" alt="" ${has ? `src="${logoUrl(opp)}"` : ''}
                onerror="this.style.visibility='hidden'" style="${has ? '' : 'visibility:hidden;'}">
           <input class="grid-input opp-input" list="team-options" id="opp-${abbr}-${w}" value="${esc(opp || '')}"
-                 placeholder="BYE" oninput="onOppChange('${abbr}',${w})">
+                 placeholder="BYE" oninput="onOppChange('${abbr}',${w})" onkeydown="onGridTab(event,'${abbr}',${w},'opp')">
         </div>
       </td>
       <td>
@@ -2154,13 +2155,32 @@ function onSchedTypeChange(abbr, w) {
   const sim = rt === 'FR' || rt === 'FS';
   at.disabled = sim;
   if (sim) at.value = 0;
-  // A forfeit has no score at all — clearing it keeps a stale number out of the
-  // points for/against totals. Fair sims still carry a score.
-  for (const p of ['msc', 'osc']) {
-    const el = gid(p, abbr, w);
-    el.disabled = rt === 'FR';
-    if (rt === 'FR') el.value = '';
-  }
+}
+
+// Tab lanes in the week grid. The opponent column and the score pair each tab
+// straight down their own column, so building a schedule and entering results
+// are both uninterrupted typing: opponent → opponent, and team score → opponent
+// score → next week's team score. Attempts/type/winner sit out of the tab order
+// (tabindex -1) and are reached by click. Weeks with nothing in that column (a
+// BYE has no score inputs) are skipped; running off the end tabs out normally.
+function onGridTab(e, abbr, w, col) {
+  if (e.key !== 'Tab') return;
+  const back = e.shiftKey;
+  const step = (fromWeek, dir, prefix) => {
+    for (let x = fromWeek + dir; x >= 0 && x <= SCHED_MAX_WEEK; x += dir) {
+      const el = gid(prefix, abbr, x);
+      if (el && !el.disabled) return el;
+    }
+    return null;
+  };
+  let target = null;
+  if (col === 'opp') target = step(w, back ? -1 : 1, 'opp');
+  else if (col === 'msc') target = back ? step(w, -1, 'osc') : gid('osc', abbr, w);
+  else if (col === 'osc') target = back ? gid('msc', abbr, w) : step(w, 1, 'msc');
+  if (!target || target.disabled) return;
+  e.preventDefault();
+  target.focus();
+  target.select();
 }
 
 // One comparable string for a row's result, so an edit can be told from what
@@ -2177,9 +2197,8 @@ function readCardResults(abbr) {
     const row = document.getElementById(`schedrow-${abbr}-${w}`);
     if (!row || !row.dataset.game) continue;
     const resultType = gid('rtyp', abbr, w).value;
-    // A forfeit posts no score, even if the row still shows one from before.
-    const my = resultType === 'FR' ? '' : (gid('msc', abbr, w).value || '').trim();
-    const op = resultType === 'FR' ? '' : (gid('osc', abbr, w).value || '').trim();
+    const my = (gid('msc', abbr, w).value || '').trim();
+    const op = (gid('osc', abbr, w).value || '').trim();
     const att = (gid('att', abbr, w).value || '').trim();
     const winnerSide = gid('winr', abbr, w).value || null;
     if (resultKey(my, op, att, resultType, winnerSide) === row.dataset.orig) continue;
@@ -2205,10 +2224,12 @@ async function saveCardResults(abbr) {
   const results = readCardResults(abbr);
   if (!results.length) { flashCard(abbr, 'No result changes to save', 'warn'); return; }
   for (const r of results) {
-    if (r.resultType === 'FR' && !r.winnerSide) {
-      flashCard(abbr, `${weekShort(r.week)}: a forfeit (FR) needs a winner.`, 'error'); return;
-    }
-    if (r.resultType !== 'FR' && (r.homeScore === '' || r.awayScore === '')) {
+    const oneScore = (r.homeScore === '') !== (r.awayScore === '');
+    if (r.resultType === 'FR') {
+      // A forfeit is decided by the winner; a score is optional but must be a pair.
+      if (!r.winnerSide) { flashCard(abbr, `${weekShort(r.week)}: a forfeit (FR) needs a winner.`, 'error'); return; }
+      if (oneScore) { flashCard(abbr, `${weekShort(r.week)}: enter both scores or neither.`, 'error'); return; }
+    } else if (r.homeScore === '' || r.awayScore === '') {
       flashCard(abbr, `${weekShort(r.week)}: both scores are required.`, 'error'); return;
     }
   }
