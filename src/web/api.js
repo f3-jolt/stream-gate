@@ -34,6 +34,7 @@ const {
   getSeasonById,
   getCurrentSeason,
   setCurrentSeason,
+  setSeasonCurrentWeek,
   getConferences,
   upsertConference,
   getSeasonTeams,
@@ -64,7 +65,7 @@ const {
   setTeamActive,
 } = require('../db/queries');
 const { requireAuth, requireGuildAccess } = require('./middleware');
-const { parseScheduleCell, parseMatchups, WEEK_LABELS, applyDateOverride } = require('../utils/schedule');
+const { parseScheduleCell, parseMatchups, WEEK_LABELS, MAX_WEEK, nextWeek, applyDateOverride } = require('../utils/schedule');
 const { buildDbAdvanceMessage } = require('../utils/advance');
 const { searchTeams, getTeamByAbbrev } = require('../utils/teams');
 const logger = require('../utils/logger');
@@ -480,6 +481,37 @@ async function resolveAdvanceMessage(league, week, { dateOverride = null, allowE
   return { message: buildDbAdvanceMessage(league, w, { dateOverride, allowEmpty: true }), source: 'empty' };
 }
 
+// ── GET /api/guilds/:guildId/advance/state ────────────────────────────────────
+// Everything the Advance screen needs on load: the current season's active week,
+// the week to default the picker to (one past the active week), and that week's
+// matchups so they can be eyeballed before posting. Pass `week` to fetch a
+// different week's matchups without changing what's active.
+router.get('/guilds/:guildId/advance/state', requireGuildAccess, (req, res) => {
+  const { guildId } = req.params;
+  const { leagueAbbr } = req.query;
+
+  if (!leagueAbbr) return res.status(400).json({ error: 'leagueAbbr is required' });
+
+  const league = getLeagueByAbbr(guildId, leagueAbbr.toUpperCase());
+  if (!league) return res.status(404).json({ error: 'League not found' });
+
+  const season = getCurrentSeason(league.id);
+  // No current season: the screen still works off the CSV sheet, so answer with
+  // a default week rather than an error.
+  if (!season) return res.json({ ok: true, season: null, currentWeek: null, week: 0, games: [] });
+
+  const asked = req.query.week;
+  const week = asked === undefined || asked === '' ? nextWeek(season.current_week) : Number(asked);
+
+  res.json({
+    ok: true,
+    season: { id: season.id, year: season.year, label: season.label },
+    currentWeek: season.current_week,
+    week,
+    games: getGamesByWeek(season.id, week).map(enrichGame),
+  });
+});
+
 // ── GET /api/guilds/:guildId/advance/preview ──────────────────────────────────
 
 router.get('/guilds/:guildId/advance/preview', requireGuildAccess, async (req, res) => {
@@ -540,6 +572,11 @@ router.post('/guilds/:guildId/advance', requireGuildAccess, async (req, res) => 
     const channel = await client.channels.fetch(league.advance_channel_id);
     await channel.send(message);
 
+    // The advancement is out — that week is now the league's active week. Done
+    // before threads so a thread failure can't leave the week behind.
+    const season = getCurrentSeason(league.id);
+    if (season) setSeasonCurrentWeek(season.id, Number(week));
+
     let threadCount = 0;
     if (league.user_channel_id) {
       const userChannel = await client.channels.fetch(league.user_channel_id);
@@ -585,7 +622,7 @@ router.post('/guilds/:guildId/advance', requireGuildAccess, async (req, res) => 
       threadCount,
     });
 
-    res.json({ ok: true, threadCount });
+    res.json({ ok: true, threadCount, currentWeek: season ? Number(week) : null });
   } catch (err) {
     logger.error('Web portal advance error', { error: err.message });
     res.status(500).json({ error: err.message });
@@ -874,6 +911,25 @@ router.put('/guilds/:guildId/leagues/:leagueId/current-season', requireGuildAcce
   if (!info || info.league.id !== league.id) return res.status(404).json({ error: 'Season not found' });
   setCurrentSeason(league.id, Number(seasonId));
   res.json({ ok: true });
+});
+
+// Set (or clear, with week: null) the week a season is actively playing —
+// normally maintained by posting an advancement, editable here to correct it.
+router.put('/guilds/:guildId/seasons/:seasonId/current-week', requireGuildAccess, (req, res) => {
+  const info = seasonInGuild(req.params.seasonId, req.params.guildId);
+  if (!info) return res.status(404).json({ error: 'Season not found' });
+
+  const { week } = req.body;
+  const w = week === null || week === undefined || week === '' ? null : Number(week);
+  if (w !== null && (!Number.isInteger(w) || w < 0 || w > MAX_WEEK)) {
+    return res.status(400).json({ error: `week must be a whole number between 0 and ${MAX_WEEK}` });
+  }
+
+  setSeasonCurrentWeek(info.season.id, w);
+  logger.info('Season active week set', {
+    adminId: req.session.user.id, seasonId: info.season.id, week: w,
+  });
+  res.json({ ok: true, currentWeek: w });
 });
 
 // ── Conferences ───────────────────────────────────────────────────────────────

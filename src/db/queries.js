@@ -653,6 +653,15 @@ function getSeasonByYear(leagueId, year) {
   return db.prepare('SELECT * FROM seasons WHERE league_id = ? AND year = ?').get(leagueId, year);
 }
 
+// The week a season is actively playing. Advancing to a week sets it here, so
+// the portal can default the advance picker to the NEXT week and the results
+// grid to the week currently being played. null clears it (season not started).
+function setSeasonCurrentWeek(seasonId, week) {
+  db.prepare('UPDATE seasons SET current_week = ? WHERE id = ?')
+    .run(week == null ? null : Number(week), seasonId);
+  return getSeasonById(seasonId);
+}
+
 const setCurrentSeason = db.transaction((leagueId, seasonId) => {
   db.prepare('UPDATE seasons SET is_current = 0 WHERE league_id = ?').run(leagueId);
   db.prepare('UPDATE seasons SET is_current = 1 WHERE id = ? AND league_id = ?').run(seasonId, leagueId);
@@ -1264,6 +1273,7 @@ module.exports = {
   getCurrentSeason,
   getSeasonByYear,
   setCurrentSeason,
+  setSeasonCurrentWeek,
   // Dynasty: conferences
   upsertConference,
   getConferences,

@@ -215,6 +215,17 @@ tr:hover td { background: rgba(255,255,255,.02); }
   text-transform: uppercase; letter-spacing: 0.85px;
 }
 
+/* Active-week line + "set active" button, tucked under the advance controls. */
+.advance-week-state {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: -14px 0 18px; font-size: 13px;
+}
+
+/* ── Advance matchup preview ── */
+#advance-games-table td { vertical-align: middle; }
+#advance-games-table td:first-child { white-space: nowrap; }
+#advance-preview-box { margin-top: 20px; }
+
 /* ── Advance date/time picker row ── */
 .advance-dt-row { display: flex; align-items: center; gap: 6px; }
 .advance-dt-row select { width: 64px; }

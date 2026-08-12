@@ -184,7 +184,7 @@
             <div class="advance-row">
               <div class="field-group">
                 <label>Week</label>
-                <select id="advance-week">
+                <select id="advance-week" onchange="onAdvanceWeekChange()">
                   <option value="0">Week 0</option>
                   <option value="1">Week 1</option>
                   <option value="2">Week 2</option>
@@ -223,7 +223,20 @@
               <button class="btn btn-ghost" onclick="previewAdvance()">Preview</button>
               <button class="btn btn-primary" onclick="postAdvance()">Post Advancement</button>
             </div>
+            <div class="advance-week-state">
+              <span id="advance-active-week" class="text-muted"></span>
+              <button id="advance-set-week-btn" class="btn btn-ghost btn-sm" onclick="setActiveWeek()" style="display:none;"></button>
+            </div>
             <div id="advance-result" class="flash"></div>
+
+            <div class="advance-preview-label">Matchups <span id="advance-games-count" class="text-muted" style="font-weight:400;"></span></div>
+            <div class="table-wrap">
+              <table id="advance-games-table">
+                <thead><tr><th>Matchup</th><th>Type</th><th>Away Coach</th><th>Home Coach</th></tr></thead>
+                <tbody id="advance-games-tbody"></tbody>
+              </table>
+            </div>
+
             <div id="advance-preview-box" style="display:none;">
               <div class="advance-preview-label">Message Preview</div>
               <pre id="advance-preview-content" class="advance-preview"></pre>

@@ -149,6 +149,9 @@ function initSchema() {
       year        INTEGER NOT NULL,
       label       TEXT,
       is_current  INTEGER NOT NULL DEFAULT 0,
+      -- The week the league is actively playing. Set by posting an advancement
+      -- (or by hand in the portal). NULL = the season hasn't advanced yet.
+      current_week INTEGER,
       created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(league_id, year)
     );
@@ -423,6 +426,7 @@ function runMigrations() {
     `ALTER TABLE leagues ADD COLUMN settings TEXT`,
     `ALTER TABLE leagues ADD COLUMN settings_channel_id TEXT`,
     `ALTER TABLE leagues ADD COLUMN roster_channel_id TEXT`,
+    `ALTER TABLE seasons ADD COLUMN current_week INTEGER`,
   ];
 
   for (const sql of migrations) {

@@ -24,6 +24,8 @@ const {
   updateCustomTeam,
   updateTeam,
   getStreamPostMessageIds,
+  getCurrentSeason,
+  setSeasonCurrentWeek,
 } = require('../../db/queries');
 const fs = require('fs');
 const path = require('path');
@@ -1081,6 +1083,10 @@ async function handleAdvance(interaction) {
 
     const channel = await interaction.client.channels.fetch(league.advance_channel_id);
     await channel.send(message);
+
+    // The advancement is out — that week is now the league's active week.
+    const season = getCurrentSeason(league.id);
+    if (season) setSeasonCurrentWeek(season.id, weekValue);
 
     logger.info('Advance message posted', {
       adminId: interaction.user.id,

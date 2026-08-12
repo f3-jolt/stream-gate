@@ -157,6 +157,7 @@ function renderActiveTab() {
   if (showDynBar) onDynastyTabShown(activeTab);
 
   if (activeTab === 'settings' && !needsLeague) loadLeagueSettings();
+  if (activeTab === 'advance' && !needsLeague) showAdvanceTab();
 }
 
 function currentLeague() {
@@ -1052,6 +1053,133 @@ function selectedWeekLabel() {
   return sel.selectedOptions[0]?.textContent || `Week ${sel.value}`;
 }
 
+// ── Active week + matchup preview ──
+// The league's current season and the week it's actively playing. Posting an
+// advancement moves the active week to the week posted, so the picker opens on
+// the NEXT week and the matchups below show what's about to go out.
+let advanceSeason = null;
+let advanceCurrentWeek = null;
+// League the picker has been defaulted for, so bouncing between tabs doesn't
+// throw away a week you deliberately selected.
+let advanceWeekDefaultedFor = null;
+
+function showAdvanceTab() {
+  const keep = advanceWeekDefaultedFor === currentLeagueId;
+  advanceWeekDefaultedFor = currentLeagueId;
+  loadAdvanceState(keep ? document.getElementById('advance-week').value : null);
+}
+
+// Fetch the advance screen's state. week === null asks the server for the
+// default (one past the active week) and moves the picker there; passing a week
+// just reloads that week's matchups.
+async function loadAdvanceState(week = null) {
+  const leagueAbbr = currentLeague()?.abbr;
+  const sel = document.getElementById('advance-week');
+  if (!leagueAbbr || !sel) return;
+
+  const params = new URLSearchParams({ leagueAbbr });
+  if (week !== null) params.set('week', week);
+
+  let data = null;
+  try {
+    const res = await fetch(`/api/guilds/${currentGuildId}/advance/state?${params}`);
+    data = await res.json();
+  } catch { /* network hiccup — fall through to the empty render */ }
+
+  if (!data?.ok) {
+    advanceSeason = null;
+    advanceCurrentWeek = null;
+    renderAdvanceWeek([]);
+    return;
+  }
+
+  advanceSeason = data.season;
+  advanceCurrentWeek = data.currentWeek;
+  if (week === null) sel.value = String(data.week);
+  renderAdvanceWeek(data.games);
+}
+
+function renderAdvanceWeek(games) {
+  const label = document.getElementById('advance-active-week');
+  const btn = document.getElementById('advance-set-week-btn');
+  const selected = Number(document.getElementById('advance-week').value);
+
+  if (!advanceSeason) {
+    label.textContent = 'No current season for this league — set one on the Season tab to track the active week.';
+    btn.style.display = 'none';
+  } else {
+    const active = advanceCurrentWeek == null ? 'not set yet' : weekLabelFor(advanceCurrentWeek);
+    label.innerHTML = `Active week: <strong>${esc(active)}</strong> `
+      + `<span class="text-muted">— posting an advancement makes the posted week active.</span>`;
+    const differs = advanceCurrentWeek !== selected;
+    btn.style.display = differs ? '' : 'none';
+    btn.textContent = `Set ${weekLabelFor(selected)} active`;
+  }
+  renderAdvanceGames(games);
+}
+
+function renderAdvanceGames(games) {
+  const tb = document.getElementById('advance-games-tbody');
+  const count = document.getElementById('advance-games-count');
+  const weekLabel = weekLabelFor(document.getElementById('advance-week').value);
+
+  if (!games.length) {
+    count.textContent = '';
+    tb.innerHTML = `<tr><td colspan="4" class="text-muted" style="text-align:center;padding:16px;">`
+      + `No games scheduled for ${esc(weekLabel)}</td></tr>`;
+    return;
+  }
+
+  count.textContent = `${weekLabel} · ${games.length} game${games.length === 1 ? '' : 's'}`;
+  tb.innerHTML = games.map(g => {
+    // "User" only when both sides are coached — matches how the advancement
+    // message splits USER GAMES from CPU GAMES.
+    const userGame = Boolean(g.is_user_game) && g.home_coach_id != null && g.away_coach_id != null;
+    return `<tr>
+      <td>${resultTeamCell(g.away_abbrev, g.away_colors, g.away_coach_id != null)}`
+      + ` <span class="text-muted">@</span> `
+      + `${resultTeamCell(g.home_abbrev, g.home_colors, g.home_coach_id != null)}</td>
+      <td>${userGame ? '<span class="badge badge-green">User</span>' : '<span class="badge badge-blue">CPU</span>'}</td>
+      <td>${esc(g.away_coach_name || '—')}</td>
+      <td>${esc(g.home_coach_name || '—')}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function onAdvanceWeekChange() {
+  // A preview built for the old week would be misleading next to the new one.
+  document.getElementById('advance-preview-box').style.display = 'none';
+  await loadAdvanceState(document.getElementById('advance-week').value);
+}
+
+// Point the season at the selected week by hand — for correcting the active
+// week without re-posting an advancement.
+async function setActiveWeek() {
+  if (!advanceSeason) { flash('No current season for this league', 'error', 'advance-result'); return; }
+  const week = Number(document.getElementById('advance-week').value);
+
+  const res = await fetch(`/api/guilds/${currentGuildId}/seasons/${advanceSeason.id}/current-week`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ week }),
+  });
+  const data = await res.json();
+  if (!data.ok) { flash(data.error || 'Failed to set the active week', 'error', 'advance-result'); return; }
+
+  advanceCurrentWeek = data.currentWeek;
+  noteSeasonWeek(advanceSeason.id, data.currentWeek);
+  await loadAdvanceState(week);
+  flash(`Active week set to ${weekLabelFor(week)}`, 'success', 'advance-result');
+}
+
+// Keep the cached season list in step so the Results tab defaults to the new
+// active week the next time it's opened.
+function noteSeasonWeek(seasonId, week) {
+  const season = allSeasons.find(s => s.id === seasonId);
+  if (season) season.current_week = week;
+  resultsWeekSeasonId = null;
+}
+
 async function previewAdvance() {
   const leagueAbbr   = currentLeague()?.abbr;
   const week         = document.getElementById('advance-week').value;
@@ -1116,7 +1244,13 @@ async function postAdvance() {
 
   if (data.ok) {
     const threadMsg = data.threadCount > 0 ? ` ${data.threadCount} scheduling thread(s) created.` : '';
-    flash(`Advancement posted.${threadMsg}`, 'success', 'advance-result');
+    // The posted week is now the active week — reload so the picker moves on to
+    // the next one and the matchups below follow it.
+    const weekMsg = data.currentWeek != null ? ` ${weekLabelFor(data.currentWeek)} is now the active week.` : '';
+    if (data.currentWeek != null && advanceSeason) noteSeasonWeek(advanceSeason.id, data.currentWeek);
+    document.getElementById('advance-preview-box').style.display = 'none';
+    await loadAdvanceState();
+    flash(`Advancement posted.${weekMsg}${threadMsg}`, 'success', 'advance-result');
   } else {
     flash(data.error || 'Failed', 'error', 'advance-result');
   }
@@ -2255,10 +2389,24 @@ function flashCard(abbr, msg, type) {
 }
 
 // ── Results ──
+// Season the week picker has been defaulted for. Defaulting happens once per
+// season so re-opening the tab doesn't yank you off the week you were entering.
+let resultsWeekSeasonId = null;
+
 async function loadResults() {
   if (!currentSeasonId) return;
   buildWeekOptions('results-week');
-  const week = document.getElementById('results-week').value;
+  const sel = document.getElementById('results-week');
+
+  // Open on the week the league is actively playing — that's the week whose
+  // results are being entered.
+  if (resultsWeekSeasonId !== currentSeasonId) {
+    resultsWeekSeasonId = currentSeasonId;
+    const season = allSeasons.find(s => s.id === currentSeasonId);
+    sel.value = String(season?.current_week ?? 0);
+  }
+
+  const week = sel.value;
   const res = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/games?week=${week}`);
   renderResults(await res.json());
 }

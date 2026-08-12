@@ -8,6 +8,16 @@ const WEEK_LABELS = {
   18: 'CFP Semi Finals', 19: 'National Championship',
 };
 
+// Last stage of a season (National Championship).
+const MAX_WEEK = 19;
+
+// The week to advance to next, given a season's active week. A season that has
+// never advanced (null) starts at Week 0; the last stage stays put.
+function nextWeek(currentWeek) {
+  if (currentWeek == null) return 0;
+  return Math.min(Number(currentWeek) + 1, MAX_WEEK);
+}
+
 function parseScheduleCell(csvText, row, col) {
   let r = 0, c = 0;
   let i = 0;
@@ -74,4 +84,4 @@ function parseMatchups(message) {
   return matchups;
 }
 
-module.exports = { WEEK_LABELS, parseScheduleCell, parseMatchups, applyDateOverride };
+module.exports = { WEEK_LABELS, MAX_WEEK, nextWeek, parseScheduleCell, parseMatchups, applyDateOverride };
