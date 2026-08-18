@@ -32,7 +32,8 @@ const path = require('path');
 const axios = require('axios');
 const { searchTeams, searchCustomTeams, getTeamByAbbrev, invalidateTeamsCache, TEAMS_JSON_PATH } = require('../../utils/teams');
 const logger = require('../../utils/logger');
-const { WEEK_LABELS, parseScheduleCell, parseMatchups, applyDateOverride } = require('../../utils/schedule');
+const { parseScheduleCell, parseMatchups, applyDateOverride } = require('../../utils/schedule');
+const { weekLabel, weekHasGames, isValidWeek, weeksForSeason } = require('../../utils/weeks');
 const { buildDbAdvanceMessage } = require('../../utils/advance');
 
 // Admin check: server owner, MANAGE_GUILD permission, or configured admin role
@@ -220,29 +221,10 @@ module.exports = {
       sub.setName('advance')
         .setDescription('Post the week advancement message to a league channel')
         .addStringOption(o => o.setName('league').setDescription('League').setRequired(true).setAutocomplete(true))
-        .addIntegerOption(o => o.setName('week').setDescription('Week or stage to advance to').setRequired(true)
-          .addChoices(
-            { name: 'Week 0',               value: 0  },
-            { name: 'Week 1',               value: 1  },
-            { name: 'Week 2',               value: 2  },
-            { name: 'Week 3',               value: 3  },
-            { name: 'Week 4',               value: 4  },
-            { name: 'Week 5',               value: 5  },
-            { name: 'Week 6',               value: 6  },
-            { name: 'Week 7',               value: 7  },
-            { name: 'Week 8',               value: 8  },
-            { name: 'Week 9',               value: 9  },
-            { name: 'Week 10',              value: 10 },
-            { name: 'Week 11',              value: 11 },
-            { name: 'Week 12',              value: 12 },
-            { name: 'Week 13',              value: 13 },
-            { name: 'Week 14',              value: 14 },
-            { name: 'CCW',                  value: 15 },
-            { name: 'Bowl Week 1',          value: 16 },
-            { name: 'Bowl Week 2',          value: 17 },
-            { name: 'CFP Semi Finals',      value: 18 },
-            { name: 'National Championship', value: 19 },
-          ))
+        // 31 stages per season is past Discord's 25-choice ceiling, so this
+        // autocompletes — and narrows to the picked league's season year, since
+        // the 2026 and 2027+ bye weeks differ.
+        .addIntegerOption(o => o.setName('week').setDescription('Week or stage to advance to').setRequired(true).setAutocomplete(true))
         .addStringOption(o => o.setName('date_override').setDescription('Override the date/time in the message (e.g. Monday, August 26th at 9 PM ET)').setRequired(false))
     ),
 
@@ -264,6 +246,18 @@ module.exports = {
       const choices = platforms
         .filter(p => p.platform.includes(query) || p.platform_username.toLowerCase().includes(query))
         .map(p => ({ name: `${p.platform} — ${p.platform_username}`, value: p.platform }));
+      return interaction.respond(choices);
+    }
+
+    if (focused.name === 'week') {
+      const abbr = interaction.options.getString('league');
+      const league = abbr ? getLeagueByAbbr(interaction.guildId, abbr.toUpperCase()) : null;
+      const season = league ? getCurrentSeason(league.id) : null;
+      const query = String(focused.value || '').toLowerCase();
+      const choices = weeksForSeason(season?.year)
+        .filter(w => w.label.toLowerCase().includes(query))
+        .slice(0, 25)
+        .map(w => ({ name: w.games ? w.label : `${w.label} (no games)`, value: w.value }));
       return interaction.respond(choices);
     }
 
@@ -1050,6 +1044,11 @@ async function handleAdvance(interaction) {
   const weekValue    = interaction.options.getInteger('week');
   const dateOverride = interaction.options.getString('date_override') ?? null;
 
+  // The week option autocompletes, so a number can be typed straight in.
+  if (!isValidWeek(weekValue)) {
+    return interaction.editReply({ content: `**${weekValue}** isn't a known week or stage. Pick one from the autocomplete list.` });
+  }
+
   const league = getLeagueByAbbr(interaction.guildId, leagueAbbr);
   if (!league) {
     return interaction.editReply({ content: `League **${leagueAbbr}** not found.` });
@@ -1066,6 +1065,13 @@ async function handleAdvance(interaction) {
     let message = buildDbAdvanceMessage(league, weekValue, { dateOverride });
 
     if (!message) {
+      // The CSV sheet is laid out one column per playing week, so it can only
+      // answer for a week that has games — and only when there's no season.
+      if (!weekHasGames(weekValue)) {
+        return interaction.editReply({
+          content: `**${weekLabel(weekValue)}** has no games, so there's nothing to build. Set a current season for **${league.name}** in the portal and try again.`,
+        });
+      }
       if (!league.schedule_url) {
         return interaction.editReply({
           content: `No games scheduled in the database for that week, and no schedule URL set for **${league.name}**. Build the week's schedule in the portal, or set \`/admin editleague schedule_url:...\`.`,
@@ -1114,13 +1120,13 @@ async function handleAdvance(interaction) {
       if (matchups.length > 0) {
         const leagueUsers = getUsersInLeague(league.id);
         const teamMap = new Map(leagueUsers.map(u => [u.discord_id, u.team_name || u.discord_username]));
-        const weekLabel = WEEK_LABELS[weekValue] ?? `Week ${weekValue}`;
+        const wkLabel = weekLabel(weekValue);
 
         for (const [id1, id2] of matchups) {
           const team1 = teamMap.get(id1) ?? `<@${id1}>`;
           const team2 = teamMap.get(id2) ?? `<@${id2}>`;
           const thread = await userChannel.threads.create({
-            name: `${weekLabel} : ${team1} vs ${team2}`,
+            name: `${wkLabel} : ${team1} vs ${team2}`,
             autoArchiveDuration: 10080,
           });
           const staffMention = league.staff_role_id ? `<@&${league.staff_role_id}>` : 'Staff';

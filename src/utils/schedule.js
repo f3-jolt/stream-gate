@@ -1,22 +1,8 @@
 'use strict';
 
-const WEEK_LABELS = {
-  0: 'Week 0', 1: 'Week 1', 2: 'Week 2', 3: 'Week 3', 4: 'Week 4',
-  5: 'Week 5', 6: 'Week 6', 7: 'Week 7', 8: 'Week 8', 9: 'Week 9',
-  10: 'Week 10', 11: 'Week 11', 12: 'Week 12', 13: 'Week 13', 14: 'Week 14',
-  15: 'CCW', 16: 'Bowl Week 1', 17: 'Bowl Week 2',
-  18: 'CFP Semi Finals', 19: 'National Championship',
-};
-
-// Last stage of a season (National Championship).
-const MAX_WEEK = 19;
-
-// The week to advance to next, given a season's active week. A season that has
-// never advanced (null) starts at Week 0; the last stage stays put.
-function nextWeek(currentWeek) {
-  if (currentWeek == null) return 0;
-  return Math.min(Number(currentWeek) + 1, MAX_WEEK);
-}
+// Week/stage definitions live in weeks.js — re-exported here so the existing
+// callers keep importing them from './schedule'.
+const { WEEK_LABELS, MAX_WEEK, nextWeek } = require('./weeks');
 
 function parseScheduleCell(csvText, row, col) {
   let r = 0, c = 0;

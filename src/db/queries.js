@@ -1,4 +1,5 @@
 const { db } = require('./database');
+const { isPostseasonWeek } = require('../utils/weeks');
 
 // ── Guild settings ────────────────────────────────────────────────────────────
 
@@ -227,8 +228,11 @@ function setLeagueActive(leagueId, active) {
   return db.prepare('UPDATE leagues SET active = ? WHERE id = ?').run(active ? 1 : 0, leagueId);
 }
 
-function setLeagueAdvanceTemplate(leagueId, template) {
-  return db.prepare('UPDATE leagues SET advance_template = ? WHERE id = ?').run(template, leagueId);
+// The footers a league can put on its advancement messages. Either one blank
+// (or null) falls back to the built-in default for that kind of week.
+function setLeagueAdvanceFooters(leagueId, { footer = null, adminFooter = null } = {}) {
+  return db.prepare('UPDATE leagues SET advance_footer = ?, advance_admin_footer = ? WHERE id = ?')
+    .run(footer, adminFooter, leagueId);
 }
 
 // Gameplay settings overrides, stored as a JSON blob (see utils/leagueSettings).
@@ -970,7 +974,7 @@ function _placeGame(seasonId, week, T, opponentAbbrev, isHome, isUserGame) {
   }
   const home = isHome ? T : opp;
   const away = isHome ? opp : T;
-  insertGame(seasonId, week, home, away, week >= 15 ? 1 : 0, isUserGame);
+  insertGame(seasonId, week, home, away, isPostseasonWeek(week) ? 1 : 0, isUserGame);
 }
 
 // Set (or clear) a single team's game for one week, enforcing the scheduling rules.
@@ -1229,7 +1233,7 @@ module.exports = {
   addLeague,
   updateLeague,
   setLeagueActive,
-  setLeagueAdvanceTemplate,
+  setLeagueAdvanceFooters,
   getLeagueSettings,
   setLeagueSettings,
   getSettingsPost,
