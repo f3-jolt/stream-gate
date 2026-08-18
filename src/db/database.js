@@ -427,6 +427,12 @@ function runMigrations() {
     `ALTER TABLE leagues ADD COLUMN settings_channel_id TEXT`,
     `ALTER TABLE leagues ADD COLUMN roster_channel_id TEXT`,
     `ALTER TABLE seasons ADD COLUMN current_week INTEGER`,
+    // Replaces advance_template, which held a whole-message template. The frame
+    // is fixed in code now and only the footer is a league's to change — one for
+    // the weeks that play games, one for the admin-only stages. The old column
+    // is left in place (it was never set by any league) rather than dropped.
+    `ALTER TABLE leagues ADD COLUMN advance_footer TEXT`,
+    `ALTER TABLE leagues ADD COLUMN advance_admin_footer TEXT`,
   ];
 
   for (const sql of migrations) {

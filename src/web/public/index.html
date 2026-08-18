@@ -184,28 +184,8 @@
             <div class="advance-row">
               <div class="field-group">
                 <label>Week</label>
-                <select id="advance-week" onchange="onAdvanceWeekChange()">
-                  <option value="0">Week 0</option>
-                  <option value="1">Week 1</option>
-                  <option value="2">Week 2</option>
-                  <option value="3">Week 3</option>
-                  <option value="4">Week 4</option>
-                  <option value="5">Week 5</option>
-                  <option value="6">Week 6</option>
-                  <option value="7">Week 7</option>
-                  <option value="8">Week 8</option>
-                  <option value="9">Week 9</option>
-                  <option value="10">Week 10</option>
-                  <option value="11">Week 11</option>
-                  <option value="12">Week 12</option>
-                  <option value="13">Week 13</option>
-                  <option value="14">Week 14</option>
-                  <option value="15">CCW</option>
-                  <option value="16">Bowl Week 1</option>
-                  <option value="17">Bowl Week 2</option>
-                  <option value="18">CFP Semi Finals</option>
-                  <option value="19">National Championship</option>
-                </select>
+                <!-- Options are built from the season's week list (buildAdvanceWeekOptions). -->
+                <select id="advance-week" onchange="onAdvanceWeekChange()"></select>
               </div>
               <div class="field-group">
                 <label>Date/Time Override <span style="font-weight:400; text-transform:none;">(optional)</span></label>
@@ -244,12 +224,18 @@
           </div>
 
           <div class="card">
-            <div class="card-title">Advancement Message Template</div>
-            <p class="text-muted" style="margin-bottom:12px;">When this league has a current season with games scheduled, the message is built from the database using this template. Tokens: <code>{pingRole}</code>, <code>{weekLabel}</code>, <code>{season}</code>, <code>{userGames}</code>, <code>{cpuGames}</code>, <code>{advanceDate}</code>. The advance deadline auto-fills to 36h out (48h when there are user games). Leave blank to use the default format.</p>
-            <textarea id="advance-template" class="advance-preview" style="width:100%; min-height:120px;" placeholder="**{weekLabel} Matchups**&#10;&#10;{matchups}"></textarea>
+            <div class="card-title">Advancement Message Footers</div>
+            <p class="text-muted" style="margin-bottom:12px;">Every advancement is built to the same shape &mdash; the header, the matchups, this week&rsquo;s tasks, and the advancement deadline are standard and can&rsquo;t be edited. What you set here is the footer that closes the message: your league&rsquo;s rules and reminders. The deadline auto-fills to 36h out (48h when there are user games) on the weeks that play games, and to the window each admin stage calls for. Tokens: <code>{pingRole}</code>, <code>{weekLabel}</code>, <code>{season}</code>, <code>{userGames}</code>, <code>{cpuGames}</code>, <code>{tasks}</code>, <code>{advanceDate}</code>. Leave either blank to use the default.</p>
+
+            <label class="text-muted" style="display:block; margin-bottom:6px;"><strong>Game weeks</strong> &mdash; Weeks 0&ndash;14, CCW, the bowls, CFP, and the National Championship.</label>
+            <textarea id="advance-footer" class="advance-preview" style="width:100%; min-height:110px;"></textarea>
+
+            <label class="text-muted" style="display:block; margin:16px 0 6px;"><strong>Admin weeks</strong> &mdash; Preseason, byes, and everything from End of Season through the Offseason. Nobody plays, so game rules don&rsquo;t belong here.</label>
+            <textarea id="advance-admin-footer" class="advance-preview" style="width:100%; min-height:80px;"></textarea>
+
             <div class="modal-actions" style="margin-top:12px;">
-              <button class="btn btn-ghost" onclick="loadAdvanceTemplate()">Reset</button>
-              <button class="btn btn-primary" onclick="saveAdvanceTemplate()">Save Template</button>
+              <button class="btn btn-ghost" onclick="loadAdvanceFooters()">Reset</button>
+              <button class="btn btn-primary" onclick="saveAdvanceFooters()">Save Footers</button>
             </div>
             <div id="tmpl-result" class="flash"></div>
           </div>

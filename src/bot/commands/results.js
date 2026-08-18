@@ -11,7 +11,7 @@ const {
   recordGameResult,
 } = require('../../db/queries');
 const { searchTeams, getTeamByAbbrev } = require('../../utils/teams');
-const { WEEK_LABELS } = require('../../utils/schedule');
+const { GAME_WEEKS, weekLabel, isPostseasonWeek } = require('../../utils/weeks');
 const logger = require('../../utils/logger');
 
 // Same admin gate as /admin (server owner, Manage Server, or configured admin role)
@@ -24,10 +24,12 @@ function isAdmin(interaction) {
   return false;
 }
 
-const WEEK_CHOICES = Object.entries(WEEK_LABELS).map(([v, name]) => ({ name, value: Number(v) }));
+// Results are only ever entered for weeks that carry games — the admin-only
+// stages have nothing to record. Stays under Discord's 25-choice ceiling.
+const WEEK_CHOICES = GAME_WEEKS.map(w => ({ name: w.label, value: w.value }));
 
 function gameLabel(g) {
-  const wk = WEEK_LABELS[g.week] ?? `Week ${g.week}`;
+  const wk = weekLabel(g.week);
   return `${wk}: ${g.away_abbrev} @ ${g.home_abbrev}`;
 }
 
@@ -241,9 +243,9 @@ async function handleSchedule(interaction) {
     return interaction.reply({ content: 'Home and away must be valid teams (use autocomplete).', flags: 64 });
   }
 
-  const isPostseason = week >= 15 ? 1 : 0;
+  const isPostseason = isPostseasonWeek(week) ? 1 : 0;
   insertGame(season.id, week, homeAbbrev, awayAbbrev, isPostseason);
-  const wk = WEEK_LABELS[week] ?? `Week ${week}`;
+  const wk = weekLabel(week);
   logger.info('Game scheduled via Discord', { adminId: interaction.user.id, seasonId: season.id, week, home: homeAbbrev, away: awayAbbrev });
   await interaction.reply({ content: `Scheduled **${wk}**: ${away.name} @ ${home.name}.`, flags: 64 });
 }
@@ -254,7 +256,7 @@ async function handleShow(interaction) {
 
   const week = interaction.options.getInteger('week');
   const games = getGamesByWeek(season.id, week);
-  const wk = WEEK_LABELS[week] ?? `Week ${week}`;
+  const wk = weekLabel(week);
 
   if (!games.length) {
     return interaction.reply({ content: `No games scheduled for **${wk}**.`, flags: 64 });

@@ -22,7 +22,7 @@ const {
   ensureUserInLeague,
   removeUserFromLeague,
   getUsersInLeague,
-  setLeagueAdvanceTemplate,
+  setLeagueAdvanceFooters,
   getLeagueSettings,
   setLeagueSettings,
   getSettingsPost,
@@ -65,7 +65,8 @@ const {
   setTeamActive,
 } = require('../db/queries');
 const { requireAuth, requireGuildAccess } = require('./middleware');
-const { parseScheduleCell, parseMatchups, WEEK_LABELS, MAX_WEEK, nextWeek, applyDateOverride } = require('../utils/schedule');
+const { parseScheduleCell, parseMatchups, applyDateOverride } = require('../utils/schedule');
+const { weekLabel: weekLabelFor, nextWeek, isValidWeek, weeksForSeason } = require('../utils/weeks');
 const { buildDbAdvanceMessage } = require('../utils/advance');
 const { searchTeams, getTeamByAbbrev } = require('../utils/teams');
 const logger = require('../utils/logger');
@@ -498,16 +499,18 @@ router.get('/guilds/:guildId/advance/state', requireGuildAccess, (req, res) => {
   const season = getCurrentSeason(league.id);
   // No current season: the screen still works off the CSV sheet, so answer with
   // a default week rather than an error.
-  if (!season) return res.json({ ok: true, season: null, currentWeek: null, week: 0, games: [] });
+  if (!season) return res.json({ ok: true, season: null, currentWeek: null, week: 0, weeks: [], games: [] });
 
   const asked = req.query.week;
-  const week = asked === undefined || asked === '' ? nextWeek(season.current_week) : Number(asked);
+  const week = asked === undefined || asked === '' ? nextWeek(season.current_week, season.year) : Number(asked);
 
   res.json({
     ok: true,
     season: { id: season.id, year: season.year, label: season.label },
     currentWeek: season.current_week,
     week,
+    // The stages this season actually runs — the 2026 and 2027+ bye weeks differ.
+    weeks: weeksForSeason(season.year).map(w => ({ value: w.value, label: w.label, games: w.games })),
     games: getGamesByWeek(season.id, week).map(enrichGame),
   });
 });
@@ -596,7 +599,7 @@ router.post('/guilds/:guildId/advance', requireGuildAccess, async (req, res) => 
       if (matchups.length > 0) {
         const leagueUsers = getUsersInLeague(league.id);
         const teamMap = new Map(leagueUsers.map(u => [u.discord_id, u.team_name || u.discord_username]));
-        const weekLabel = WEEK_LABELS[Number(week)] ?? `Week ${week}`;
+        const weekLabel = weekLabelFor(week);
 
         for (const [id1, id2] of matchups) {
           const team1 = teamMap.get(id1) ?? `<@${id1}>`;
@@ -921,8 +924,8 @@ router.put('/guilds/:guildId/seasons/:seasonId/current-week', requireGuildAccess
 
   const { week } = req.body;
   const w = week === null || week === undefined || week === '' ? null : Number(week);
-  if (w !== null && (!Number.isInteger(w) || w < 0 || w > MAX_WEEK)) {
-    return res.status(400).json({ error: `week must be a whole number between 0 and ${MAX_WEEK}` });
+  if (w !== null && !isValidWeek(w)) {
+    return res.status(400).json({ error: 'week must be a known week or stage' });
   }
 
   setSeasonCurrentWeek(info.season.id, w);
@@ -1202,19 +1205,30 @@ router.get('/guilds/:guildId/coaches/:coachId/history', requireGuildAccess, (req
   res.json({ coach, seasons: getCoachSeasonBreakdown(coach.id) });
 });
 
-// ── Advancement template ──────────────────────────────────────────────────────
+// ── Advancement footers ───────────────────────────────────────────────────────
+// The message frame is fixed in utils/advance; only the footers are a league's
+// to change — one for the weeks that play games, one for the admin-only stages.
 
-router.get('/guilds/:guildId/leagues/:leagueId/advance-template', requireGuildAccess, (req, res) => {
+router.get('/guilds/:guildId/leagues/:leagueId/advance-footers', requireGuildAccess, (req, res) => {
   const league = leagueInGuild(req.params.leagueId, req.params.guildId);
   if (!league) return res.status(404).json({ error: 'League not found' });
-  const { DEFAULT_TEMPLATE } = require('../utils/advance');
-  res.json({ template: league.advance_template || '', default: DEFAULT_TEMPLATE });
+  const { DEFAULT_FOOTER, DEFAULT_ADMIN_FOOTER } = require('../utils/advance');
+  res.json({
+    footer: league.advance_footer || '',
+    adminFooter: league.advance_admin_footer || '',
+    defaults: { footer: DEFAULT_FOOTER, adminFooter: DEFAULT_ADMIN_FOOTER },
+  });
 });
 
-router.put('/guilds/:guildId/leagues/:leagueId/advance-template', requireGuildAccess, (req, res) => {
+router.put('/guilds/:guildId/leagues/:leagueId/advance-footers', requireGuildAccess, (req, res) => {
   const league = leagueInGuild(req.params.leagueId, req.params.guildId);
   if (!league) return res.status(404).json({ error: 'League not found' });
-  setLeagueAdvanceTemplate(league.id, req.body.template ?? null);
+  // Blank means "use the default", so it's stored as null rather than an empty string.
+  const clean = v => (typeof v === 'string' && v.trim() ? v : null);
+  setLeagueAdvanceFooters(league.id, {
+    footer: clean(req.body.footer),
+    adminFooter: clean(req.body.adminFooter),
+  });
   res.json({ ok: true });
 });
 

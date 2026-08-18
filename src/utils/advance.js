@@ -9,7 +9,7 @@
 
 const { getCurrentSeason, getGamesByWeek } = require('../db/queries');
 const { getTeamByAbbrev } = require('./teams');
-const { WEEK_LABELS } = require('./schedule');
+const { weekLabel: labelForWeek, weekHasGames, weekTasks, weekHours } = require('./weeks');
 
 function teamLabel(abbrev) {
   const t = getTeamByAbbrev(abbrev);
@@ -19,8 +19,11 @@ function teamLabel(abbrev) {
   return `${t.name} ${mascot}`;
 }
 
-// 48h when there are user games (they need time to schedule), else 36h.
-function advanceOffsetHours(hasUserGames) {
+// An admin-only stage carries its own fixed deadline. A stage that plays games
+// gets 48h when there are user games (they need time to schedule), else 36h.
+function advanceOffsetHours(hasUserGames, weekValue = null) {
+  const fixed = weekValue == null ? null : weekHours(weekValue);
+  if (fixed != null) return fixed;
   return hasUserGames ? 48 : 36;
 }
 
@@ -38,28 +41,48 @@ function formatAdvanceDate(date, timeZone = 'America/Chicago') {
   return `${get('weekday')} ${get('month')} ${get('day')} at ${time} ${get('timeZoneName')}`;
 }
 
-function computeAdvanceDate(hasUserGames, nowMs = Date.now()) {
-  return formatAdvanceDate(new Date(nowMs + advanceOffsetHours(hasUserGames) * 3600 * 1000));
+function computeAdvanceDate(hasUserGames, nowMs = Date.now(), weekValue = null) {
+  const hours = advanceOffsetHours(hasUserGames, weekValue);
+  return formatAdvanceDate(new Date(nowMs + hours * 3600 * 1000));
 }
 
-const DEFAULT_TEMPLATE = [
-  '{pingRole} ',
-  '# :rotating_light: {weekLabel} Season {season} :rotating_light:',
-  '.',
-  '```USER GAMES```',
-  '{userGames}',
-  '.',
-  '```CPU GAMES```',
-  '{cpuGames}',
-  '.',
-  '```ADVANCEMENT SCHEDULE [IF NOT SOONER]```',
-  '`{advanceDate}`',
-  '',
+// The footers. Everything above a footer — the header, the matchup sections,
+// the task list, the advancement deadline — is fixed in buildBody() so every
+// league's advancement reads the same way. A league can replace the footer, and
+// only the footer, with its own house rules.
+const DEFAULT_FOOTER = [
   '## :warning: REMEMBER CPU GAME RULES :warning: ',
   '> CPU Game Participation : The expectation is that you play ALL OF YOUR GAMES. If you do not communicate, then you could be awarded a FORCE LOSS. Key here, communicate and let the commissioner know what is going on so they can make the necessary adjustments. It is ok to miss games, just make it known.',
   '## :warning: STREAMING RULES :warning: ',
   '> You Must Stream : The expectation is that you stream/record ALL OF YOUR GAMES. If you do not stream/record, then you could be awarded a FORCE LOSS.',
 ].join('\n');
+
+// Nobody plays on an admin-only stage, so the game rules would be noise.
+const DEFAULT_ADMIN_FOOTER =
+  '> Get your tasks done before the deadline above. If something is going to hold you up, let the commissioner know so they can adjust.';
+
+// The standard frame, identical for every league. An admin-only stage swaps the
+// two matchup sections for a single "no games" banner; everything else matches.
+function buildBody({ pingRole, weekLabel, season, isAdminWeek, userGames, cpuGames, tasks, advanceDate }) {
+  const lines = [
+    `${pingRole} `,
+    `# :rotating_light: ${weekLabel} Season ${season} :rotating_light:`,
+    '.',
+  ];
+
+  if (isAdminWeek) {
+    lines.push('```NO GAMES THIS WEEK - ADMIN TASKS ONLY```', '.');
+  } else {
+    lines.push('```USER GAMES```', userGames, '.', '```CPU GAMES```', cpuGames, '.');
+  }
+
+  lines.push(
+    "```THIS WEEK'S TASKS```", tasks, '.',
+    '```ADVANCEMENT SCHEDULE [IF NOT SOONER]```', `\`${advanceDate}\``,
+  );
+
+  return lines.join('\n');
+}
 
 // allowEmpty: when true, a week with no scheduled games still builds a message
 // (both sections render "*No Games Scheduled*") instead of returning null. Used
@@ -69,10 +92,13 @@ function buildDbAdvanceMessage(league, weekValue, { dateOverride = null, allowEm
   const season = getCurrentSeason(league.id);
   if (!season) return null;
 
+  // An admin-only stage (Preseason, a bye week, anything in the offseason) has
+  // no games by definition — there's nothing to confirm, so build it regardless.
   const games = getGamesByWeek(season.id, Number(weekValue));
-  if (!games.length && !allowEmpty) return null;
+  if (!games.length && !allowEmpty && weekHasGames(weekValue)) return null;
 
-  const weekLabel = WEEK_LABELS[Number(weekValue)] ?? `Week ${weekValue}`;
+  const weekLabel = labelForWeek(weekValue);
+  const isAdminWeek = !weekHasGames(weekValue);
 
   // USER GAMES: both sides human → "<@home> vs <@away>".
   // CPU GAMES: one human per line, from their perspective — home hosts ("vs Team"),
@@ -93,22 +119,39 @@ function buildDbAdvanceMessage(league, weekValue, { dateOverride = null, allowEm
 
   const userGames = userLines.length ? userLines.join('\n') : '*No Games Scheduled*';
   const cpuGames = cpuLines.length ? cpuLines.join('\n') : '*No Games Scheduled*';
-  const advanceDate = dateOverride || computeAdvanceDate(userLines.length > 0);
+  const advanceDate = dateOverride || computeAdvanceDate(userLines.length > 0, Date.now(), weekValue);
   const pingRole = league.ping_role_id ? `<@&${league.ping_role_id}>` : '';
 
-  const tpl = (league.advance_template && league.advance_template.trim())
-    ? league.advance_template
-    : DEFAULT_TEMPLATE;
+  const taskList = weekTasks(weekValue);
+  const tasks = taskList.length
+    ? taskList.map(t => `- ${t}`).join('\n')
+    : '*Nothing to do but advance*';
 
-  return tpl
+  const body = buildBody({
+    pingRole, weekLabel, season: season.year, isAdminWeek, userGames, cpuGames, tasks, advanceDate,
+  });
+
+  // The league's own footer, or the built-in one for this kind of week. The two
+  // are kept apart because the game rules make no sense on a stage nobody plays.
+  const custom = isAdminWeek ? league.advance_admin_footer : league.advance_footer;
+  const footer = (custom && custom.trim()) || (isAdminWeek ? DEFAULT_ADMIN_FOOTER : DEFAULT_FOOTER);
+
+  // Tokens work in a footer too, so house rules can name the week or the deadline.
+  const filled = footer
     .replace(/\{pingRole\}/g, pingRole)
     .replace(/\{weekLabel\}/g, weekLabel)
     .replace(/\{week\}/g, weekLabel)
     .replace(/\{season\}/g, String(season.year))
     .replace(/\{userGames\}/g, userGames)
     .replace(/\{cpuGames\}/g, cpuGames)
-    .replace(/\{matchups\}/g, [userGames, cpuGames].join('\n')) // back-compat
+    .replace(/\{tasks\}/g, tasks)
     .replace(/\{advanceDate\}/g, advanceDate);
+
+  return `${body}\n\n${filled}`;
 }
 
-module.exports = { buildDbAdvanceMessage, DEFAULT_TEMPLATE, formatAdvanceDate, computeAdvanceDate };
+module.exports = {
+  buildDbAdvanceMessage, buildBody,
+  DEFAULT_FOOTER, DEFAULT_ADMIN_FOOTER,
+  formatAdvanceDate, computeAdvanceDate,
+};

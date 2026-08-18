@@ -38,16 +38,55 @@ let coachAssignSort = { col: 'coach', dir: 1 };
 const DYNASTY_TABS = new Set(['season', 'schedule', 'results', 'summary', 'coaches']);
 // Tabs that act on one specific league and can't operate on "All Leagues".
 const SINGLE_LEAGUE_TABS = new Set(['advance', 'season', 'schedule', 'results', 'summary', 'coaches', 'settings']);
-const WEEK_LABELS = {
-  0:'Week 0',1:'Week 1',2:'Week 2',3:'Week 3',4:'Week 4',5:'Week 5',6:'Week 6',7:'Week 7',
-  8:'Week 8',9:'Week 9',10:'Week 10',11:'Week 11',12:'Week 12',13:'Week 13',14:'Week 14',
-  15:'CCW',16:'Bowl Week 1',17:'Bowl Week 2',18:'CFP Semi Finals',19:'National Championship',
-};
+// Mirror of src/utils/weeks.js — keep the two in step. `value` is what the
+// database stores (frozen for the weeks that carry games), and the array order
+// is the order a season plays them; `games: false` stages are admin work only,
+// so they never reach the schedule builder or the results grid.
+const WEEKS = [
+  { value: -1, label: 'Preseason',                    short: 'Pre',      games: false },
+  { value:  0, label: 'Week 0',                       short: 'W0',       games: true  },
+  { value:  1, label: 'Week 1',                       short: 'W1',       games: true  },
+  { value:  2, label: 'Week 2',                       short: 'W2',       games: true  },
+  { value:  3, label: 'Week 3',                       short: 'W3',       games: true  },
+  { value:  4, label: 'Week 4',                       short: 'W4',       games: true  },
+  { value:  5, label: 'Week 5',                       short: 'W5',       games: true  },
+  { value:  6, label: 'Week 6',                       short: 'W6',       games: true  },
+  { value:  7, label: 'Week 7',                       short: 'W7',       games: true  },
+  { value:  8, label: 'Week 8',                       short: 'W8',       games: true  },
+  { value:  9, label: 'Week 9',                       short: 'W9',       games: true  },
+  { value: 10, label: 'Week 10',                      short: 'W10',      games: true  },
+  { value: 11, label: 'Week 11',                      short: 'W11',      games: true  },
+  { value: 12, label: 'Week 12',                      short: 'W12',      games: true  },
+  { value: 13, label: 'Week 13',                      short: 'W13',      games: true  },
+  { value: 14, label: 'Week 14',                      short: 'W14',      games: true  },
+  { value: 20, label: 'Week 15',                      short: 'W15',      games: false, years: y => y === 2026 },
+  { value: 15, label: 'CCW',                          short: 'CCW',      games: true  },
+  { value: 21, label: 'Week 16',                      short: 'W16',      games: false, years: y => y >= 2027 },
+  { value: 16, label: 'Bowl Week 1',                  short: 'BW1',      games: true  },
+  { value: 17, label: 'Bowl Week 2',                  short: 'BW2',      games: true  },
+  { value: 18, label: 'CFP Semi-Finals',              short: 'CFP Semi', games: true  },
+  { value: 19, label: 'National Championship',        short: 'NC',       games: true  },
+  { value: 22, label: 'End of Season',                short: 'EOS',      games: false },
+  { value: 23, label: 'Players Leaving',              short: 'Leaving',  games: false },
+  { value: 24, label: 'Offseason Recruiting Week 1',  short: 'REC1',     games: false },
+  { value: 25, label: 'Offseason Recruiting Week 2',  short: 'REC2',     games: false },
+  { value: 26, label: 'Offseason Recruiting Week 3',  short: 'REC3',     games: false },
+  { value: 27, label: 'Offseason Recruiting Week 4',  short: 'REC4',     games: false },
+  { value: 28, label: 'National Signing Day',         short: 'NSD',      games: false },
+  { value: 29, label: 'Training Results',             short: 'Training', games: false },
+  { value: 30, label: 'Offseason',                    short: 'Off',      games: false },
+];
+const WEEK_BY_VALUE = new Map(WEEKS.map(w => [w.value, w]));
+// Weeks that carry games, in playing order — their values run 0..19.
+const GAME_WEEKS = WEEKS.filter(w => w.games);
 // Highest week the schedule builder exposes (0–14 regular season, 15–19 postseason).
 const SCHED_MAX_WEEK = 19;
-// Compact labels for the schedule grid's week column.
-const WEEK_SHORT = { 15:'CCW', 16:'BW1', 17:'BW2', 18:'CFP Semi', 19:'NC' };
-function weekShort(w) { return w <= 14 ? `W${w}` : (WEEK_SHORT[w] || `W${w}`); }
+function weekShort(w) { return WEEK_BY_VALUE.get(Number(w))?.short ?? `W${w}`; }
+// The stages one season runs — the 2026 and 2027+ bye weeks differ.
+function weeksForYear(year) {
+  const y = Number(year);
+  return WEEKS.filter(w => !w.years || (Number.isFinite(y) && w.years(y)));
+}
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────────
 
@@ -195,7 +234,7 @@ function syncDynastyLeague() {
   if (badge) badge.textContent = lg ? `${lg.name} (${lg.abbr})` : '';
   if (currentDynLeagueId) {
     loadSeasons();
-    loadAdvanceTemplate();
+    loadAdvanceFooters();
   } else {
     allSeasons = []; currentSeasonId = null;
   }
@@ -1089,12 +1128,16 @@ async function loadAdvanceState(week = null) {
   if (!data?.ok) {
     advanceSeason = null;
     advanceCurrentWeek = null;
+    buildAdvanceWeekOptions(null);
     renderAdvanceWeek([]);
     return;
   }
 
   advanceSeason = data.season;
   advanceCurrentWeek = data.currentWeek;
+  // Options first — the season decides which bye weeks exist, so the week the
+  // server picked has to have somewhere to land.
+  buildAdvanceWeekOptions(data.weeks);
   if (week === null) sel.value = String(data.week);
   renderAdvanceWeek(data.games);
 }
@@ -1235,10 +1278,13 @@ async function postAdvance() {
   };
 
   let data = await post(false);
-  // Empty week: don't silently block — confirm, then post a placeholder advancement.
+  // Empty week: don't silently block — confirm, then post a placeholder
+  // advancement. An admin-only stage is empty by design, so it never asks.
   if (!data.ok && data.code === 'no-games') {
-    const ok = confirm(`No games are scheduled for ${selectedWeekLabel()}.\n\nPost an advancement anyway? The USER GAMES and CPU GAMES sections will show "No Games Scheduled".`);
-    if (!ok) { flash('Advancement cancelled', 'warn', 'advance-result'); return; }
+    if (selectedWeekHasGames()) {
+      const ok = confirm(`No games are scheduled for ${selectedWeekLabel()}.\n\nPost an advancement anyway? The USER GAMES and CPU GAMES sections will show "No Games Scheduled".`);
+      if (!ok) { flash('Advancement cancelled', 'warn', 'advance-result'); return; }
+    }
     data = await post(true);
   }
 
@@ -1260,12 +1306,33 @@ async function postAdvance() {
 // Dynasty: seasons, teams, coaches, schedule, results, summaries
 // ════════════════════════════════════════════════════════════════════════════
 
+// Weeks with games only — results and schedules have nothing to show for the
+// admin-only stages.
 function buildWeekOptions(selectId) {
   const sel = document.getElementById(selectId);
   if (sel.options.length) return;
-  sel.innerHTML = Object.entries(WEEK_LABELS).map(([v, n]) => `<option value="${v}">${n}</option>`).join('');
+  sel.innerHTML = GAME_WEEKS.map(w => `<option value="${w.value}">${esc(w.label)}</option>`).join('');
 }
-function weekLabelFor(v) { return WEEK_LABELS[Number(v)] ?? `Week ${v}`; }
+function weekLabelFor(v) { return WEEK_BY_VALUE.get(Number(v))?.label ?? `Week ${v}`; }
+
+// The advance picker carries every stage, games or not, for the season in play.
+// Rebuilt whenever the season changes, keeping the selection when it still applies.
+function buildAdvanceWeekOptions(weeks) {
+  const sel = document.getElementById('advance-week');
+  const keep = sel.value;
+  const list = (weeks && weeks.length) ? weeks : weeksForYear(null);
+  const html = list.map(w =>
+    `<option value="${w.value}">${esc(w.label)}${w.games ? '' : ' — no games'}</option>`).join('');
+  if (sel.innerHTML === html) return;
+  sel.innerHTML = html;
+  if (keep !== '' && list.some(w => String(w.value) === keep)) sel.value = keep;
+}
+
+// True when the selected stage plays games — the empty-week confirm only makes
+// sense for a week that was supposed to have some.
+function selectedWeekHasGames() {
+  return WEEK_BY_VALUE.get(Number(document.getElementById('advance-week').value))?.games ?? true;
+}
 
 function onDynSeasonChange() {
   currentSeasonId = Number(document.getElementById('dyn-season-select').value) || null;
@@ -2403,7 +2470,10 @@ async function loadResults() {
   if (resultsWeekSeasonId !== currentSeasonId) {
     resultsWeekSeasonId = currentSeasonId;
     const season = allSeasons.find(s => s.id === currentSeasonId);
-    sel.value = String(season?.current_week ?? 0);
+    const active = season?.current_week;
+    // current_week can point at an admin-only stage, which the grid doesn't
+    // list — fall back to Week 0 rather than leaving the picker blank.
+    sel.value = String(GAME_WEEKS.some(w => w.value === Number(active)) ? active : 0);
   }
 
   const week = sel.value;
@@ -2569,24 +2639,34 @@ async function openCoachDetail(coachId, name) {
 }
 function closeCoachDetail() { document.getElementById('coach-detail-modal').classList.remove('open'); }
 
-// ── Advancement template ──
-async function loadAdvanceTemplate() {
+// ── Advancement footers ──
+// The message frame is fixed server-side; only these two footers are editable.
+async function loadAdvanceFooters() {
   const leagueId = currentLeagueId;
   if (!leagueId) return;
-  const res = await fetch(`/api/guilds/${currentGuildId}/leagues/${leagueId}/advance-template`);
+  const res = await fetch(`/api/guilds/${currentGuildId}/leagues/${leagueId}/advance-footers`);
   const data = await res.json();
-  document.getElementById('advance-template').value = data.template || '';
-  if (data.default) document.getElementById('advance-template').placeholder = data.default;
+  const set = (id, value, placeholder) => {
+    const el = document.getElementById(id);
+    el.value = value || '';
+    if (placeholder) el.placeholder = placeholder;
+  };
+  set('advance-footer', data.footer, data.defaults?.footer);
+  set('advance-admin-footer', data.adminFooter, data.defaults?.adminFooter);
 }
-async function saveAdvanceTemplate() {
+
+async function saveAdvanceFooters() {
   const leagueId = currentLeagueId;
   if (!leagueId) { flash('Select a league first', 'error', 'tmpl-result'); return; }
-  const template = document.getElementById('advance-template').value;
-  const res = await fetch(`/api/guilds/${currentGuildId}/leagues/${leagueId}/advance-template`, {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ template }),
+  const body = {
+    footer: document.getElementById('advance-footer').value,
+    adminFooter: document.getElementById('advance-admin-footer').value,
+  };
+  const res = await fetch(`/api/guilds/${currentGuildId}/leagues/${leagueId}/advance-footers`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
   const data = await res.json();
-  if (data.ok) flash('Template saved', 'success', 'tmpl-result');
+  if (data.ok) flash('Footers saved', 'success', 'tmpl-result');
   else flash(data.error || 'Failed', 'error', 'tmpl-result');
 }
 
