@@ -460,10 +460,12 @@ router.put('/guilds/:guildId/users/:discordId/platforms', requireGuildAccess, as
 //   'no-season' — league has no current season (nothing to build against)
 //   'no-games'  — a season exists but the week is empty and no sheet supplied it;
 //                 the caller may re-request with allowEmpty to force a placeholder.
-async function resolveAdvanceMessage(league, week, { dateOverride = null, allowEmpty = false } = {}) {
+async function resolveAdvanceMessage(league, week, {
+  dateOverride = null, allowEmpty = false, advanceWindow = false, windowStartOverride = null,
+} = {}) {
   const w = Number(week);
 
-  const dbMessage = buildDbAdvanceMessage(league, w, { dateOverride });
+  const dbMessage = buildDbAdvanceMessage(league, w, { dateOverride, advanceWindow, windowStartOverride });
   if (dbMessage) return { message: dbMessage, source: 'database' };
 
   // No DB message — distinguish "no season at all" from "season, but empty week".
@@ -479,7 +481,10 @@ async function resolveAdvanceMessage(league, week, { dateOverride = null, allowE
 
   // Nothing scheduled anywhere. Only build a placeholder if the caller confirmed.
   if (!allowEmpty) return { code: 'no-games' };
-  return { message: buildDbAdvanceMessage(league, w, { dateOverride, allowEmpty: true }), source: 'empty' };
+  return {
+    message: buildDbAdvanceMessage(league, w, { dateOverride, allowEmpty: true, advanceWindow, windowStartOverride }),
+    source: 'empty',
+  };
 }
 
 // ── GET /api/guilds/:guildId/advance/state ────────────────────────────────────
@@ -519,7 +524,7 @@ router.get('/guilds/:guildId/advance/state', requireGuildAccess, (req, res) => {
 
 router.get('/guilds/:guildId/advance/preview', requireGuildAccess, async (req, res) => {
   const { guildId } = req.params;
-  const { leagueAbbr, week, dateOverride } = req.query;
+  const { leagueAbbr, week, dateOverride, windowStart } = req.query;
 
   if (!leagueAbbr || week === undefined) {
     return res.status(400).json({ error: 'leagueAbbr and week are required' });
@@ -530,7 +535,10 @@ router.get('/guilds/:guildId/advance/preview', requireGuildAccess, async (req, r
 
   try {
     const allowEmpty = req.query.allowEmpty === '1' || req.query.allowEmpty === 'true';
-    const resolved = await resolveAdvanceMessage(league, week, { dateOverride: dateOverride || null, allowEmpty });
+    const advanceWindow = req.query.advanceWindow === '1' || req.query.advanceWindow === 'true';
+    const resolved = await resolveAdvanceMessage(league, week, {
+      dateOverride: dateOverride || null, allowEmpty, advanceWindow, windowStartOverride: windowStart || null,
+    });
     if (resolved.code === 'no-season') {
       return res.status(400).json({ error: 'No current season is set for this league' });
     }
@@ -549,7 +557,7 @@ router.get('/guilds/:guildId/advance/preview', requireGuildAccess, async (req, r
 
 router.post('/guilds/:guildId/advance', requireGuildAccess, async (req, res) => {
   const { guildId } = req.params;
-  const { leagueAbbr, week, dateOverride } = req.body;
+  const { leagueAbbr, week, dateOverride, windowStart } = req.body;
 
   if (!leagueAbbr || week === undefined) {
     return res.status(400).json({ error: 'leagueAbbr and week are required' });
@@ -561,7 +569,10 @@ router.post('/guilds/:guildId/advance', requireGuildAccess, async (req, res) => 
 
   try {
     const allowEmpty = req.body.allowEmpty === true;
-    const resolved = await resolveAdvanceMessage(league, week, { dateOverride: dateOverride || null, allowEmpty });
+    const advanceWindow = req.body.advanceWindow === true;
+    const resolved = await resolveAdvanceMessage(league, week, {
+      dateOverride: dateOverride || null, allowEmpty, advanceWindow, windowStartOverride: windowStart || null,
+    });
     if (resolved.code === 'no-season') {
       return res.status(400).json({ error: 'No current season is set for this league' });
     }

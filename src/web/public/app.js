@@ -1065,7 +1065,9 @@ function initAdvanceForm() {
   }
 }
 
-function formatDateOverride() {
+// offsetHours shifts the picked moment (e.g. -24 formats the start of a 24h
+// advancement window that closes at the picked deadline).
+function formatDateOverride(offsetHours = 0) {
   const datePart = document.getElementById('advance-date').value;
   const timePart = document.getElementById('advance-time').value;
   const tz       = document.getElementById('advance-tz').value;
@@ -1074,16 +1076,17 @@ function formatDateOverride() {
   const [year, month, day] = datePart.split('-').map(Number);
   const [hour, minute]     = timePart.split(':').map(Number);
 
-  const date     = new Date(year, month - 1, day, hour, minute);
+  const date     = new Date(year, month - 1, day, hour + offsetHours, minute);
   const weekday  = date.toLocaleDateString('en-US', { weekday: 'long' });
   const monthStr = date.toLocaleDateString('en-US', { month: 'long' });
-  const ones = day % 10, teens = day % 100;
+  const dayNum   = date.getDate();
+  const ones = dayNum % 10, teens = dayNum % 100;
   const suffix = (teens >= 11 && teens <= 13) ? 'th' : (ones === 1 ? 'st' : ones === 2 ? 'nd' : ones === 3 ? 'rd' : 'th');
-  const h        = hour % 12 || 12;
-  const m        = minute.toString().padStart(2, '0');
-  const ampm     = hour < 12 ? 'AM' : 'PM';
+  const h        = date.getHours() % 12 || 12;
+  const m        = date.getMinutes().toString().padStart(2, '0');
+  const ampm     = date.getHours() < 12 ? 'AM' : 'PM';
 
-  return `${weekday}, ${monthStr} ${day}${suffix} at ${h}:${m} ${ampm} ${tz}`;
+  return `${weekday}, ${monthStr} ${dayNum}${suffix} at ${h}:${m} ${ampm} ${tz}`;
 }
 
 // Label of the currently selected week, e.g. "Week 5" or "CCW", for prompts.
@@ -1227,6 +1230,7 @@ async function previewAdvance() {
   const leagueAbbr   = currentLeague()?.abbr;
   const week         = document.getElementById('advance-week').value;
   const dateOverride = formatDateOverride();
+  const useWindow    = document.getElementById('advance-window').checked;
   if (!leagueAbbr) return;
 
   const box = document.getElementById('advance-preview-box');
@@ -1235,6 +1239,12 @@ async function previewAdvance() {
   const load = async (allowEmpty) => {
     const params = new URLSearchParams({ leagueAbbr, week });
     if (dateOverride) params.set('dateOverride', dateOverride);
+    if (useWindow) {
+      params.set('advanceWindow', '1');
+      // An overridden deadline is opaque to the server, so its -24h window
+      // start ships pre-formatted from here.
+      if (dateOverride) params.set('windowStart', formatDateOverride(-24));
+    }
     if (allowEmpty) params.set('allowEmpty', '1');
     const res = await fetch(`/api/guilds/${currentGuildId}/advance/preview?${params}`);
     return res.json();
@@ -1263,11 +1273,16 @@ async function postAdvance() {
   const leagueAbbr   = currentLeague()?.abbr;
   const week         = document.getElementById('advance-week').value;
   const dateOverride = formatDateOverride();
+  const useWindow    = document.getElementById('advance-window').checked;
   if (!leagueAbbr) return;
 
   const post = async (allowEmpty) => {
     const body = { leagueAbbr, week: Number(week) };
     if (dateOverride) body.dateOverride = dateOverride;
+    if (useWindow) {
+      body.advanceWindow = true;
+      if (dateOverride) body.windowStart = formatDateOverride(-24);
+    }
     if (allowEmpty) body.allowEmpty = true;
     const res = await fetch(`/api/guilds/${currentGuildId}/advance`, {
       method: 'POST',

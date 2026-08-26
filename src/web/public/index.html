@@ -203,6 +203,10 @@
               <button class="btn btn-ghost" onclick="previewAdvance()">Preview</button>
               <button class="btn btn-primary" onclick="postAdvance()">Post Advancement</button>
             </div>
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; margin:-12px 0 24px;">
+              <input id="advance-window" type="checkbox" onchange="document.getElementById('advance-preview-box').style.display='none'">
+              <span>Advancement window <span class="text-muted">&mdash; message shows a 24-hour window ending at the deadline; advancing early requires all games played or accounted for</span></span>
+            </label>
             <div class="advance-week-state">
               <span id="advance-active-week" class="text-muted"></span>
               <button id="advance-set-week-btn" class="btn btn-ghost btn-sm" onclick="setActiveWeek()" style="display:none;"></button>
