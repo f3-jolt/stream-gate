@@ -63,7 +63,9 @@ const DEFAULT_ADMIN_FOOTER =
 
 // The standard frame, identical for every league. An admin-only stage swaps the
 // two matchup sections for a single "no games" banner; everything else matches.
-function buildBody({ pingRole, weekLabel, season, isAdminWeek, userGames, cpuGames, tasks, advanceDate }) {
+// windowStart, when set, turns the fixed deadline into a 24h advancement window
+// (windowStart → advanceDate) that the league may advance early within.
+function buildBody({ pingRole, weekLabel, season, isAdminWeek, userGames, cpuGames, tasks, advanceDate, windowStart = null }) {
   const lines = [
     `${pingRole} `,
     `# :rotating_light: ${weekLabel} Season ${season} :rotating_light:`,
@@ -76,10 +78,16 @@ function buildBody({ pingRole, weekLabel, season, isAdminWeek, userGames, cpuGam
     lines.push('```USER GAMES```', userGames, '.', '```CPU GAMES```', cpuGames, '.');
   }
 
-  lines.push(
-    "```THIS WEEK'S TASKS```", tasks, '.',
-    '```ADVANCEMENT SCHEDULE [IF NOT SOONER]```', `\`${advanceDate}\``,
-  );
+  lines.push("```THIS WEEK'S TASKS```", tasks, '.');
+
+  if (windowStart) {
+    lines.push(
+      '```ADVANCEMENT WINDOW```',
+      `Anytime between \`${windowStart}\` and \`${advanceDate}\`. Requirement to advance early in this window will be that \`all games are played or accounted for.\``,
+    );
+  } else {
+    lines.push('```ADVANCEMENT SCHEDULE [IF NOT SOONER]```', `\`${advanceDate}\``);
+  }
 
   return lines.join('\n');
 }
@@ -88,7 +96,12 @@ function buildBody({ pingRole, weekLabel, season, isAdminWeek, userGames, cpuGam
 // (both sections render "*No Games Scheduled*") instead of returning null. Used
 // for a confirmed "advance anyway" on an empty week. A missing current season
 // still returns null regardless — there's nothing to build against.
-function buildDbAdvanceMessage(league, weekValue, { dateOverride = null, allowEmpty = false } = {}) {
+// advanceWindow: render a 24h advancement window ending at the deadline instead
+// of the fixed deadline. windowStartOverride carries the client-formatted start
+// when the deadline itself was overridden (the server can't parse dateOverride).
+function buildDbAdvanceMessage(league, weekValue, {
+  dateOverride = null, allowEmpty = false, advanceWindow = false, windowStartOverride = null,
+} = {}) {
   const season = getCurrentSeason(league.id);
   if (!season) return null;
 
@@ -119,7 +132,17 @@ function buildDbAdvanceMessage(league, weekValue, { dateOverride = null, allowEm
 
   const userGames = userLines.length ? userLines.join('\n') : '*No Games Scheduled*';
   const cpuGames = cpuLines.length ? cpuLines.join('\n') : '*No Games Scheduled*';
-  const advanceDate = dateOverride || computeAdvanceDate(userLines.length > 0, Date.now(), weekValue);
+  const hasUserGames = userLines.length > 0;
+  const advanceDate = dateOverride || computeAdvanceDate(hasUserGames, Date.now(), weekValue);
+  // The window opens 24h before the deadline. Shifting "now" back 24h before
+  // adding the offset lands on exactly that. An overridden deadline is an opaque
+  // string here, so its window start must arrive pre-formatted alongside it.
+  let windowStart = null;
+  if (advanceWindow) {
+    windowStart = dateOverride
+      ? windowStartOverride
+      : computeAdvanceDate(hasUserGames, Date.now() - 24 * 3600 * 1000, weekValue);
+  }
   const pingRole = league.ping_role_id ? `<@&${league.ping_role_id}>` : '';
 
   const taskList = weekTasks(weekValue);
@@ -128,7 +151,7 @@ function buildDbAdvanceMessage(league, weekValue, { dateOverride = null, allowEm
     : '*Nothing to do but advance*';
 
   const body = buildBody({
-    pingRole, weekLabel, season: season.year, isAdminWeek, userGames, cpuGames, tasks, advanceDate,
+    pingRole, weekLabel, season: season.year, isAdminWeek, userGames, cpuGames, tasks, advanceDate, windowStart,
   });
 
   // The league's own footer, or the built-in one for this kind of week. The two
