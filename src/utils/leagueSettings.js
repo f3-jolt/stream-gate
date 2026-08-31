@@ -25,6 +25,13 @@ const scale = (key, label, short) => ({
 // A position XP slider: 0–300, defaulting to 100 (in-game "normal").
 const xp = (key, label) => ({ key, label, type: 'range', min: 0, max: 300, default: 100 });
 
+// A "NONE or 1..max" dropdown defaulting to NONE (e.g. Play Cooldown/Call Limit).
+const noneOrCount = (key, label, max) => ({
+  key, label, type: 'enum',
+  options: ['NONE', ...Array.from({ length: max }, (_, i) => String(i + 1))],
+  default: 'NONE',
+});
+
 const SECTIONS = [
   {
     title: 'League Settings',
@@ -34,6 +41,8 @@ const SECTIONS = [
       { key: 'coach_xp', label: 'Coach XP Setting', type: 'enum', options: ['CAREER', 'SIMULATION', 'CASUAL'], default: 'CASUAL' },
       { key: 'injury', label: 'Injury', type: 'toggle', default: 'ON' },
       { key: 'manual_progression_xp_penalty', label: 'Manual Progression XP Penalty', short: 'Manual XP Penalty', type: 'range', min: 1, max: 100, default: 25, unit: '%' },
+      noneOrCount('play_call_limit', 'Play Call Limit', 20),
+      noneOrCount('play_cooldown', 'Play Cooldown', 10),
       { key: 'preorder_membership_bonuses', label: 'Pre-Order & Membership Bonuses', short: 'Pre-Order Bonuses', type: 'toggle', default: 'OFF' },
       { key: 'recruit_flipping', label: 'Recruit Flipping', type: 'toggle', default: 'ON' },
       { key: 'verbal_commit_influence', label: 'Verbal Commit Influence', short: 'Verbal Commit Infl.', type: 'range', min: 1, max: 100, default: 25, unit: '%' },
