@@ -2032,10 +2032,9 @@ function scheduleCardHtml(t) {
     const colors = g ? ((isHome ? g.away_colors : g.home_colors) || []) : [];
     const user = g ? g.is_user_game === 1 : false;
     const has = !!opp;
-    // Result entry, from the selected team's view. The score/winner mapping to
-    // home/away comes from the SAVED game (data-home on the row), not the H/A
-    // toggle — a result posts against the game row as it currently exists in the
-    // DB. Flip the side and save the schedule first, then enter the result.
+    // Result entry, from the selected team's view. Inputs are rendered in the
+    // SAVED game's orientation (data-home on the row); saveCard re-maps them to
+    // home/away after the schedule half of the save settles each game's sides.
     // Rows with no saved game yet (a new matchup, or a BYE) get no inputs.
     let oppRecCell = '', scoreCell = '', attCell = '', typeCell = '', winCell = '', resultCell = '';
     if (g && has) {
@@ -2132,7 +2131,12 @@ function scheduleCardHtml(t) {
       <span>${esc(t.team_name)} <small>(${esc(abbr)})</small></span>
       ${t.is_user_team ? '<span class="badge badge-yellow" style="margin-left:auto;">user</span>' : ''}
     </div>
-    <div class="sched-card-meta">${confInfo} ${coachInfo}</div>
+    <div class="sched-card-meta">${confInfo} ${coachInfo}
+      <div class="sched-card-actions">
+        <span id="cardflash-${abbr}" class="card-flash"></span>
+        <button class="btn btn-primary btn-sm" onclick="saveCard('${abbr}')" title="Save ${esc(abbr)}'s matchups (opponent, H/A, user flag) and any results entered">Save</button>
+      </div>
+    </div>
     <div class="sched-summary">
       <div class="sched-stat"><span class="sched-stat-num">${gamesScheduled}</span><span class="sched-stat-lbl">Games</span></div>
       <div class="sched-stat"><span class="sched-stat-num">${homeGames}</span><span class="sched-stat-lbl">Home</span></div>
@@ -2152,11 +2156,6 @@ function scheduleCardHtml(t) {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table></div>
-    <div class="sched-card-foot">
-      <button class="btn btn-primary btn-sm" onclick="saveCard('${abbr}')" title="Save ${esc(abbr)}'s matchups (opponent, H/A, user flag)">Save schedule</button>
-      <button class="btn btn-ghost btn-sm" onclick="saveCardResults('${abbr}')" title="Save the scores, attempts, type and winner entered above">Save results</button>
-      <span id="cardflash-${abbr}" class="card-flash"></span>
-    </div>
   </div>`;
 }
 
@@ -2326,9 +2325,26 @@ function resultLossWarnings(abbr) {
   return out;
 }
 
+// One save for the whole card: matchups first, then any result edits. Result
+// rows are validated before anything posts, so a bad score can't leave the
+// schedule saved with the results half rejected mid-batch (the bulk endpoint
+// applies rows one at a time). After the schedule lands, games are re-fetched
+// and each result maps onto the game row as it now exists — a re-placed
+// matchup has a new id, and an H/A flip inverts the score/winner orientation.
 async function saveCard(abbr) {
   const { error, warnings } = validateCard(abbr);
   if (error) { flashCard(abbr, error, 'error'); return; }
+  const results = readCardResults(abbr);
+  for (const r of results) {
+    const oneScore = (r.myScore === '') !== (r.opScore === '');
+    if (r.resultType === 'FR') {
+      // A forfeit is decided by the winner; a score is optional but must be a pair.
+      if (r.winnerIsMe == null) { flashCard(abbr, `${weekShort(r.week)}: a forfeit (FR) needs a winner.`, 'error'); return; }
+      if (oneScore) { flashCard(abbr, `${weekShort(r.week)}: enter both scores or neither.`, 'error'); return; }
+    } else if (r.myScore === '' || r.opScore === '') {
+      flashCard(abbr, `${weekShort(r.week)}: both scores are required.`, 'error'); return;
+    }
+  }
   const losses = resultLossWarnings(abbr);
   if (losses.length) {
     const ok = confirm(`Saving this schedule discards recorded results:\n\n${losses.join('\n')}\n\nSave anyway?`);
@@ -2354,9 +2370,42 @@ async function saveCard(abbr) {
   });
   const data = await res.json();
   if (!data.ok) { flashCard(abbr, data.error || 'Failed', 'error'); return; }
-  const msg = warnings.length ? `Saved with ${warnings.length} rematch warning${warnings.length > 1 ? 's' : ''}` : 'Saved';
+
+  let savedResults = 0, resultError = null;
+  if (results.length) {
+    const games = await (await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/games`)).json();
+    const payload = [];
+    for (const r of results) {
+      const g = games.find(x => x.week === r.week
+        && ((x.home_abbrev === abbr && x.away_abbrev === r.opp)
+          || (x.away_abbrev === abbr && x.home_abbrev === r.opp)));
+      if (!g) continue;
+      const isHome = g.home_abbrev === abbr;
+      payload.push({
+        gameId: g.id,
+        homeScore: isHome ? r.myScore : r.opScore,
+        awayScore: isHome ? r.opScore : r.myScore,
+        attempts: r.attempts,
+        resultType: r.resultType,
+        winnerSide: r.winnerIsMe == null ? null : (r.winnerIsMe === isHome ? 'home' : 'away'),
+      });
+    }
+    if (payload.length) {
+      const rr = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/results`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ results: payload }),
+      });
+      const rd = await rr.json();
+      if (rd.ok) savedResults = rd.saved;
+      else resultError = rd.error || 'Failed';
+    }
+  }
+
   // Reload first — it re-renders the card (and the flash span with it).
   await loadScheduleTab();
+  if (resultError) { flashCard(abbr, `Schedule saved, but results failed: ${resultError}`, 'error'); return; }
+  let msg = savedResults ? `Saved schedule + ${savedResults} result${savedResults === 1 ? '' : 's'}` : 'Saved';
+  if (warnings.length) msg += ` — ${warnings.length} rematch warning${warnings.length > 1 ? 's' : ''}`;
   flashCard(abbr, msg, warnings.length ? 'warn' : 'success');
 }
 
@@ -2405,13 +2454,19 @@ function resultKey(my, op, att, type, win) {
   return [my, op, att, type, win].map(v => (v == null ? '' : String(v))).join('|');
 }
 
-// Rows on this card that were EDITED (compared with data-orig from the last
-// load). Scores map back to home/away using the row's saved orientation.
+// Rows on this card whose result was EDITED (compared with data-orig from the
+// last load). Scores and the winner stay relative to this team — saveCard maps
+// them to home/away only after the schedule is saved, because a matchup can be
+// re-placed (new game id) or side-flipped (orientation inverted) by that save.
+// A row whose opponent changed is skipped: its recorded result is being
+// discarded (saveCard warns first) and the typed values meant the old matchup.
 function readCardResults(abbr) {
   const out = [];
   for (let w = 0; w <= SCHED_MAX_WEEK; w++) {
     const row = document.getElementById(`schedrow-${abbr}-${w}`);
     if (!row || !row.dataset.game) continue;
+    const opp = (gid('opp', abbr, w).value || '').trim().toUpperCase();
+    if (opp !== row.dataset.opp) continue;
     const resultType = gid('rtyp', abbr, w).value;
     const my = (gid('msc', abbr, w).value || '').trim();
     const op = (gid('osc', abbr, w).value || '').trim();
@@ -2419,44 +2474,20 @@ function readCardResults(abbr) {
     const winnerSide = gid('winr', abbr, w).value || null;
     if (resultKey(my, op, att, resultType, winnerSide) === row.dataset.orig) continue;
     if (my === '' && op === '' && att === '' && resultType === 'normal') continue;
-    const isHome = row.dataset.home === '1';
+    // The winner select's home/away values use the row's render-time
+    // orientation, so translate through data-home rather than the H/A toggle.
+    const myKey = row.dataset.home === '1' ? 'home' : 'away';
     out.push({
       week: w,
-      gameId: Number(row.dataset.game),
-      homeScore: isHome ? my : op,
-      awayScore: isHome ? op : my,
+      opp,
+      myScore: my,
+      opScore: op,
       attempts: att,
       resultType,
-      winnerSide,
+      winnerIsMe: winnerSide == null ? null : winnerSide === myKey,
     });
   }
   return out;
-}
-
-// Save every result entered on the card in one post. Validated client-side first
-// (the bulk endpoint applies rows one at a time, so a mid-batch rejection would
-// leave a partial save). Reloads so records, badges and nav counts refresh.
-async function saveCardResults(abbr) {
-  const results = readCardResults(abbr);
-  if (!results.length) { flashCard(abbr, 'No result changes to save', 'warn'); return; }
-  for (const r of results) {
-    const oneScore = (r.homeScore === '') !== (r.awayScore === '');
-    if (r.resultType === 'FR') {
-      // A forfeit is decided by the winner; a score is optional but must be a pair.
-      if (!r.winnerSide) { flashCard(abbr, `${weekShort(r.week)}: a forfeit (FR) needs a winner.`, 'error'); return; }
-      if (oneScore) { flashCard(abbr, `${weekShort(r.week)}: enter both scores or neither.`, 'error'); return; }
-    } else if (r.homeScore === '' || r.awayScore === '') {
-      flashCard(abbr, `${weekShort(r.week)}: both scores are required.`, 'error'); return;
-    }
-  }
-  const res = await fetch(`/api/guilds/${currentGuildId}/seasons/${currentSeasonId}/results`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ results }),
-  });
-  const data = await res.json();
-  if (!data.ok) { flashCard(abbr, data.error || 'Failed', 'error'); return; }
-  // Reload first — it re-renders the card (and the flash span with it).
-  await loadScheduleTab();
-  flashCard(abbr, `Saved ${data.saved} result${data.saved === 1 ? '' : 's'}`, 'success');
 }
 
 function flashCard(abbr, msg, type) {

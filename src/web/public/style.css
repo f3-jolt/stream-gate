@@ -357,7 +357,8 @@ tr:hover td { background: rgba(255,255,255,.02); }
 /* Keep the opponent field readable now that the result columns share the row. */
 .sched-card .opp-cell { min-width: 128px; padding: 2px 6px; }
 .sched-card .opp-input { width: 100%; }
-.sched-card-foot { display: flex; align-items: center; gap: 10px; padding: 12px; }
+/* Save buttons + flash live on the meta row (conference/coach), pushed right. */
+.sched-card-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
 .card-flash { font-size: 12px; }
 .card-flash.success { color: var(--success); }
 .card-flash.error { color: var(--danger); }
@@ -405,7 +406,7 @@ tr:hover td { background: rgba(255,255,255,.02); }
   .sched-nav { flex-basis: auto; width: 100%; position: static; max-height: none; }
   .sched-nav-list { max-height: 260px; }
 }
-.sched-card-meta { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.sched-card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
 .sched-card-table tr.sched-sep td {
   padding: 4px 8px; font-size: 11px; font-weight: 600; letter-spacing: .8px;
   text-transform: uppercase; color: var(--text-muted); background: var(--surface2);
