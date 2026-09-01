@@ -1687,21 +1687,36 @@ function populateCoachTeamSelect() {
   const confSel = document.getElementById('coach-conf');
   if (confSel) confSel.innerHTML = confOptions('');
 }
-// Count season teams per conference for the breakdown card.
+// Season teams grouped by conference for the breakdown card: each conference
+// gets a tile with a count badge and its team chips (👤 = user-controlled;
+// hover a chip for the full name and coach). Largest conferences first,
+// teams alphabetical, dashed Total tile at the end.
 function renderConfBreakdown() {
   const el = document.getElementById('conf-breakdown');
   if (!el) return;
   if (!allTeams.length) { el.innerHTML = '<span class="text-muted">No teams in this season yet.</span>'; return; }
-  const counts = new Map();
+  const groups = new Map();
   for (const t of allTeams) {
     const c = t.conference_name || 'No conference';
-    counts.set(c, (counts.get(c) || 0) + 1);
+    if (!groups.has(c)) groups.set(c, []);
+    groups.get(c).push(t);
   }
-  const entries = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  el.innerHTML = entries.map(([conf, n]) =>
-    `<div class="conf-tile"><span class="conf-name">${esc(conf)}</span><span class="badge badge-blue">${n}</span></div>`
-  ).join('') +
-    `<div class="conf-tile conf-total"><span class="conf-name">Total</span><span class="badge badge-green">${allTeams.length}</span></div>`;
+  const entries = [...groups.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+  el.innerHTML = entries.map(([conf, teams]) => {
+    const chips = teams
+      .sort((a, b) => a.team_abbrev.localeCompare(b.team_abbrev))
+      .map(t => `<span class="team-chip" style="background:${shadeFor(t.colors || [])}"
+          title="${esc(t.team_name)}${t.coach_name ? ` — coach: ${esc(t.coach_name)}` : ''}">`
+        + `<img class="team-chip-logo" src="${logoUrl(t.team_abbrev)}" alt="" onerror="this.style.display='none'">`
+        + `<strong>${esc(t.team_abbrev)}</strong>`
+        + (t.is_user_team ? '<span class="user-badge" title="User-controlled team">👤</span>' : '')
+        + `</span>`).join('');
+    return `<div class="conf-group">
+      <div class="conf-group-head"><span class="conf-name">${esc(conf)}</span><span class="badge badge-blue">${teams.length}</span></div>
+      <div class="conf-group-teams">${chips}</div>
+    </div>`;
+  }).join('')
+    + `<div class="conf-group conf-total"><div class="conf-group-head"><span class="conf-name">Total</span><span class="badge badge-green">${allTeams.length}</span></div></div>`;
 }
 function renderCoaches(rows) {
   const tb = document.getElementById('coaches-tbody');
