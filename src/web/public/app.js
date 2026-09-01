@@ -1995,6 +1995,7 @@ function selectScheduleTeam(abbr) {
 // The loaded card: team + coach info header, then the week grid (0–14 regular
 // season, 15–19 postseason under a divider).
 function renderScheduleDetail() {
+  closeAvailPop(); // the rows it was anchored to are being replaced
   const detail = document.getElementById('schedule-detail');
   const t = allTeams.find(x => x.team_abbrev === selectedScheduleTeam);
   if (!t) { detail.innerHTML = ''; return; }
@@ -2096,6 +2097,8 @@ function scheduleCardHtml(t) {
                onerror="this.style.visibility='hidden'" style="${has ? '' : 'visibility:hidden;'}">
           <input class="grid-input opp-input" list="team-options" id="opp-${abbr}-${w}" value="${esc(opp || '')}"
                  placeholder="BYE" oninput="onOppChange('${abbr}',${w})" onkeydown="onGridTab(event,'${abbr}',${w},'opp')">
+          <button class="avail-btn" tabindex="-1" title="User teams free in ${weekShort(w)}"
+                  onclick="toggleAvailPop('${abbr}',${w},this)">?</button>
         </div>
       </td>
       <td>
@@ -2189,6 +2192,83 @@ function excludedForRow(abbr, w) {
   const set = new Set([abbr]);
   bookedThatWeek(abbr, w).forEach(a => set.add(a));
   return set;
+}
+
+// User teams free to schedule in week w for this card: every coached team other
+// than the card's own with no matchup that week. Each entry carries its current
+// user-game total so schedules can be balanced at a glance. Availability follows
+// saved games (same basis as the double-booking rule), not unsaved card edits.
+function availableUserTeams(abbr, w) {
+  const busy = bookedThatWeek(abbr, w);
+  return coachedScheduleTeams()
+    .filter(t => t.team_abbrev !== abbr && !busy.has(t.team_abbrev))
+    .map(t => ({ abbrev: t.team_abbrev, name: t.team_name, userGames: userGameCount(t.team_abbrev) }))
+    .sort((a, b) => a.userGames - b.userGames || a.abbrev.localeCompare(b.abbrev));
+}
+
+// ── "Who's free this week?" popover (the ? button on each week row) ──
+let availPopKey = null; // `${abbr}-${w}` of the open popover, null when closed
+
+// Single shared popover element, created on first use and kept on <body> so the
+// scrolling table wrapper can't clip it.
+function availPopEl() {
+  let el = document.getElementById('avail-pop');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'avail-pop';
+    el.className = 'avail-pop';
+    el.addEventListener('click', e => {
+      const item = e.target.closest('.avail-item');
+      if (item) pickAvailTeam(item.dataset.abbr, Number(item.dataset.week), item.dataset.opp);
+    });
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+function closeAvailPop() {
+  availPopKey = null;
+  const el = document.getElementById('avail-pop');
+  if (el) el.style.display = 'none';
+}
+
+function toggleAvailPop(abbr, w, btn) {
+  const key = `${abbr}-${w}`;
+  if (availPopKey === key) { closeAvailPop(); return; }
+  const teams = availableUserTeams(abbr, w);
+  const current = (gid('opp', abbr, w).value || '').trim().toUpperCase();
+  const items = teams.map(t => {
+    const isCur = t.abbrev === current;
+    return `<button class="avail-item${isCur ? ' current' : ''}" data-abbr="${esc(abbr)}" data-week="${w}" data-opp="${esc(t.abbrev)}"
+        title="${isCur ? 'Current opponent this week' : `Schedule ${esc(t.abbrev)} in ${weekShort(w)}`}">`
+      + `<img class="avail-logo" src="${logoUrl(t.abbrev)}" alt="" onerror="this.style.visibility='hidden'">`
+      + `<span class="avail-abbr">${esc(t.abbrev)}</span>`
+      + `<span class="avail-name">${esc(t.name || '')}</span>`
+      + `<span class="avail-count" title="${t.userGames} user game${t.userGames === 1 ? '' : 's'} on ${esc(t.abbrev)}'s schedule">${t.userGames}</span></button>`;
+  }).join('');
+  const el = availPopEl();
+  el.innerHTML = `<div class="avail-pop-head"><span>${weekShort(w)} · user teams free</span><span class="avail-head-hint">user games</span></div>`
+    + `<div class="avail-list">${items || '<div class="avail-empty">No user teams are free this week.</div>'}</div>`;
+  el.style.display = 'block';
+  // Anchor to the button: below it by default, above when there's more room
+  // there, clamped to the viewport horizontally (position: fixed).
+  const r = btn.getBoundingClientRect();
+  el.style.left = Math.max(8, Math.min(r.left, window.innerWidth - el.offsetWidth - 8)) + 'px';
+  el.style.top = ''; el.style.bottom = '';
+  const spaceBelow = window.innerHeight - r.bottom;
+  if (spaceBelow < Math.min(el.offsetHeight + 12, 260) && r.top > spaceBelow) {
+    el.style.bottom = (window.innerHeight - r.top + 4) + 'px';
+  } else {
+    el.style.top = (r.bottom + 4) + 'px';
+  }
+  availPopKey = key;
+}
+
+// Fill the chosen team into the week's opponent input, as if typed by hand.
+function pickAvailTeam(abbr, w, opp) {
+  const input = gid('opp', abbr, w);
+  if (input) { input.value = opp; onOppChange(abbr, w); }
+  closeAvailPop();
 }
 
 function teamSearchForRow(q, abbr, w) {
@@ -3087,5 +3167,16 @@ document.getElementById('team-modal').addEventListener('click', e => {
 document.addEventListener('click', e => {
   if (e.target.id !== 'coach-search' && !e.target.closest('#coach-search-results')) hideCoachResults();
 });
+// Dismiss the week-availability popover on an outside click, Escape, or any
+// scroll/resize (its fixed-position anchor goes stale). Scrolling the popover's
+// own list is exempt.
+document.addEventListener('click', e => {
+  if (availPopKey && !e.target.closest('#avail-pop') && !e.target.closest('.avail-btn')) closeAvailPop();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAvailPop(); });
+window.addEventListener('scroll', e => {
+  if (availPopKey && !(e.target instanceof Element && e.target.closest('#avail-pop'))) closeAvailPop();
+}, true);
+window.addEventListener('resize', () => closeAvailPop());
 
 init();

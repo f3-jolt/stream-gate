@@ -476,6 +476,48 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .user-mark { display: inline-flex; flex: none; color: var(--accent); }
 .opp-cell .user-mark .user-svg { width: 15px; height: 15px; }
 
+/* ── Week-availability helper: ? button on each week row + fixed popover
+   listing user teams with no game that week (count = their user games). ── */
+.avail-btn {
+  flex: none; width: 20px; height: 20px; padding: 0; border-radius: 50%;
+  font: inherit; font-size: 11px; font-weight: 700; line-height: 1; cursor: pointer;
+  color: var(--text-muted); background: rgba(0,0,0,.32);
+  border: 1px solid rgba(255,255,255,.18);
+  transition: color .12s, border-color .12s;
+}
+.avail-btn:hover { color: var(--text); border-color: var(--accent); }
+.avail-pop {
+  position: fixed; z-index: 120; display: none; width: 270px;
+  max-height: 300px; overflow-y: auto;
+  background: var(--surface); border: 1px solid var(--border-strong);
+  border-radius: var(--radius); box-shadow: 0 10px 28px rgba(0,0,0,.5);
+}
+.avail-pop-head {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  position: sticky; top: 0; padding: 8px 10px 6px;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  font-size: 11px; font-weight: 600; letter-spacing: .5px;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.avail-head-hint { font-weight: 400; letter-spacing: .3px; text-transform: none; }
+.avail-list { padding: 4px; }
+.avail-item {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  padding: 6px 8px; font: inherit; font-size: 13px; color: var(--text);
+  background: transparent; border: none; border-radius: var(--radius-sm); cursor: pointer;
+}
+.avail-item:hover { background: var(--surface2); }
+.avail-item.current { outline: 1px solid var(--accent); outline-offset: -1px; }
+.avail-logo { width: 18px; height: 18px; object-fit: contain; flex: none; }
+.avail-abbr { font-weight: 600; flex: none; min-width: 42px; }
+.avail-name { flex: 1; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.avail-count {
+  flex: none; min-width: 20px; text-align: center;
+  padding: 1px 6px; border-radius: 999px; font-size: 11px; font-weight: 600;
+  color: var(--text-muted); background: var(--surface2);
+}
+.avail-empty { padding: 10px 12px; color: var(--text-muted); font-size: 13px; }
+
 /* ── Typeahead (Discord user search) ── */
 .typeahead { position: relative; }
 .typeahead-results {
