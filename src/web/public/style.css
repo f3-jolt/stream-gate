@@ -462,6 +462,15 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .row-fs-zero > td { background: rgba(255,92,92,.12); }
 .row-fs-zero:hover > td { background: rgba(255,92,92,.18); }
 
+/* Results grid: user-vs-user matchups — stacked on top with an accent shade,
+   split from user-vs-CPU games by section divider rows. */
+.row-user-user > td { background: rgba(88,101,242,.12); }
+.row-user-user:hover > td { background: rgba(88,101,242,.18); }
+#results-tbody tr.res-sep td {
+  padding: 4px 8px; font-size: 11px; font-weight: 600; letter-spacing: .8px;
+  text-transform: uppercase; color: var(--text-muted); background: var(--surface2);
+}
+
 /* Summary: a W/L/T record earned with zero games actually played. */
 .gp-zero {
   color: var(--danger); font-weight: 700;

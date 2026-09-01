@@ -2624,14 +2624,21 @@ function resultTeamCell(abbrev, colors, isUser) {
 function renderResults(games) {
   const tb = document.getElementById('results-tbody');
   if (!games.length) { tb.innerHTML = '<tr><td colspan="8" class="text-muted" style="text-align:center;padding:16px;">No games scheduled for this week</td></tr>'; return; }
-  tb.innerHTML = games.map(g => {
+  // User-vs-user matchups (both teams coached) stack on top, shaded and split
+  // from the rest by section dividers, so head-to-head games are easy to spot.
+  const isUserGame = g => g.home_coach_id != null && g.away_coach_id != null;
+  const userGames = games.filter(isUserGame);
+  const cpuGames = games.filter(g => !isUserGame(g));
+  const rowHtml = g => {
     const rt = g.result_type || 'normal';
     const sim = rt === 'FR' || rt === 'FS'; // forfeit / fair sim → no attempts
     // Flag played fair-sim games with no attempts: a recorded result the teams
-    // never actually played out. Tint the row red so it stands out.
+    // never actually played out. Tint the row red so it stands out (the red
+    // flag outranks the user-game shade).
     const played = g.played_at != null || (g.home_score != null && g.away_score != null);
     const fsZero = rt === 'FS' && (g.attempts_taken ?? 0) === 0 && played;
-    return `<tr data-game="${g.id}"${fsZero ? ' class="row-fs-zero"' : ''}>
+    const cls = fsZero ? 'row-fs-zero' : (isUserGame(g) ? 'row-user-user' : '');
+    return `<tr data-game="${g.id}"${cls ? ` class="${cls}"` : ''}>
       <td>${resultTeamCell(g.away_abbrev, g.away_colors, g.away_coach_id != null)}</td>
       <td><input class="grid-input" type="number" id="as-${g.id}" value="${g.away_score ?? ''}"></td>
       <td>${resultTeamCell(g.home_abbrev, g.home_colors, g.home_coach_id != null)}</td>
@@ -2649,7 +2656,14 @@ function renderResults(games) {
       </select></td>
       <td><button class="btn btn-primary btn-sm" onclick="saveResult(${g.id})">Save</button></td>
     </tr>`;
-  }).join('');
+  };
+  let html = '';
+  if (userGames.length) {
+    html += `<tr class="res-sep"><td colspan="8">User vs User</td></tr>` + userGames.map(rowHtml).join('');
+    if (cpuGames.length) html += `<tr class="res-sep"><td colspan="8">User vs CPU</td></tr>`;
+  }
+  html += cpuGames.map(rowHtml).join('');
+  tb.innerHTML = html;
 }
 function toggleWinner(id) {
   const rt = document.getElementById(`rt-${id}`).value;
