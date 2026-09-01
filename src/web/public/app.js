@@ -2097,8 +2097,8 @@ function scheduleCardHtml(t) {
                onerror="this.style.visibility='hidden'" style="${has ? '' : 'visibility:hidden;'}">
           <input class="grid-input opp-input" list="team-options" id="opp-${abbr}-${w}" value="${esc(opp || '')}"
                  placeholder="BYE" oninput="onOppChange('${abbr}',${w})" onkeydown="onGridTab(event,'${abbr}',${w},'opp')">
-          <button class="avail-btn" tabindex="-1" title="User teams free in ${weekShort(w)}${w <= 14 ? ' (non-conference)' : ''}"
-                  onclick="toggleAvailPop('${abbr}',${w},this)">?</button>
+          ${w <= 14 ? `<button class="avail-btn" tabindex="-1" title="User teams free in ${weekShort(w)} (non-conference)"
+                  onclick="toggleAvailPop('${abbr}',${w},this)">?</button>` : ''}
         </div>
       </td>
       <td>
@@ -2195,16 +2195,15 @@ function excludedForRow(abbr, w) {
 }
 
 // User teams free to schedule in week w for this card: every coached team other
-// than the card's own with no matchup that week. Regular-season weeks (0–14)
-// also require the opponent to be out of conference — conference matchups come
-// from the game's own schedule, so only non-conference slots are hand-filled;
-// postseason weeks (CCW and beyond) keep same-conference teams selectable.
-// Each entry carries its current user-game total so schedules can be balanced
-// at a glance. Availability follows saved games (same basis as the
-// double-booking rule), not unsaved card edits.
+// than the card's own with no matchup that week, and out of conference —
+// conference matchups come from the game's own schedule, so only
+// non-conference slots are hand-filled. Regular season only: postseason rows
+// don't offer the helper at all. Each entry carries its current user-game
+// total so schedules can be balanced at a glance. Availability follows saved
+// games (same basis as the double-booking rule), not unsaved card edits.
 function availableUserTeams(abbr, w) {
   const busy = bookedThatWeek(abbr, w);
-  const myConf = w <= 14 ? (allTeams.find(t => t.team_abbrev === abbr)?.conference_name || null) : null;
+  const myConf = allTeams.find(t => t.team_abbrev === abbr)?.conference_name || null;
   return coachedScheduleTeams()
     .filter(t => t.team_abbrev !== abbr && !busy.has(t.team_abbrev)
       && !(myConf && t.conference_name === myConf))
@@ -2253,10 +2252,8 @@ function toggleAvailPop(abbr, w, btn) {
       + `<span class="avail-count" title="${t.userGames} user game${t.userGames === 1 ? '' : 's'} on ${esc(t.abbrev)}'s schedule">${t.userGames}</span></button>`;
   }).join('');
   const el = availPopEl();
-  const label = w <= 14 ? 'non-conf user teams free' : 'user teams free';
-  const emptyMsg = w <= 14 ? 'No non-conference user teams are free this week.' : 'No user teams are free this week.';
-  el.innerHTML = `<div class="avail-pop-head"><span>${weekShort(w)} · ${label}</span><span class="avail-head-hint">user games</span></div>`
-    + `<div class="avail-list">${items || `<div class="avail-empty">${emptyMsg}</div>`}</div>`;
+  el.innerHTML = `<div class="avail-pop-head"><span>${weekShort(w)} · non-conf user teams free</span><span class="avail-head-hint">user games</span></div>`
+    + `<div class="avail-list">${items || '<div class="avail-empty">No non-conference user teams are free this week.</div>'}</div>`;
   el.style.display = 'block';
   // Anchor to the button: below it by default, above when there's more room
   // there, clamped to the viewport horizontally (position: fixed).
