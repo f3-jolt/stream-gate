@@ -66,7 +66,9 @@ function buildSettingsEmbed(league, values) {
 }
 
 // Compare two snapshots (resolved on both sides so every key is present) and
-// return [{ label, from, to }] for each setting whose displayed value changed.
+// return [{ section, label, from, to }] for each setting whose displayed value
+// changed. `section` matters in the changelog: Player Skill and CPU Skill share
+// setting labels (Pass Blocking, WR Catching, …), so bare labels are ambiguous.
 function diffSettings(oldSnapshot, newSnapshot) {
   const before = resolveSettings(oldSnapshot);
   const after = resolveSettings(newSnapshot);
@@ -75,14 +77,27 @@ function diffSettings(oldSnapshot, newSnapshot) {
     for (const s of section.settings) {
       const from = displayValue(s, before[s.key]);
       const to = displayValue(s, after[s.key]);
-      if (from !== to) changes.push({ label: s.label, from, to });
+      if (from !== to) {
+        changes.push({ section: section.short || section.title, label: s.label, from, to });
+      }
     }
   }
   return changes;
 }
 
 function buildChangelogEmbed(league, changes, actorName) {
-  const lines = changes.map(c => `• ${c.label}: ${c.from} → **${c.to}**`);
+  // Group under section headers, in SECTIONS order (diffSettings emits them in
+  // order, so a header appears once before its run of changes).
+  const lines = [];
+  let currentSection = null;
+  for (const c of changes) {
+    if (c.section !== currentSection) {
+      currentSection = c.section;
+      if (lines.length) lines.push('');
+      lines.push(`**${c.section}**`);
+    }
+    lines.push(`• ${c.label}: ${c.from} → **${c.to}**`);
+  }
   let description = lines.join('\n');
   if (description.length > 4000) {
     // Keep under the 4096 description cap if a league rewrites almost everything.
@@ -92,7 +107,8 @@ function buildChangelogEmbed(league, changes, actorName) {
       if (len + line.length + 1 > 3900) break;
       kept.push(line); len += line.length + 1;
     }
-    description = kept.join('\n') + `\n…and ${changes.length - kept.length} more`;
+    const keptChanges = kept.filter(l => l.startsWith('•')).length;
+    description = kept.join('\n') + `\n…and ${changes.length - keptChanges} more`;
   }
   const count = changes.length;
   return new EmbedBuilder()
