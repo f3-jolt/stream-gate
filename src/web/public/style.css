@@ -593,6 +593,22 @@ tr:hover td { background: rgba(255,255,255,.02); }
   flex-shrink: 0; min-width: 24px;
 }
 .setting-select { width: 100%; }
+
+/* Rows an import just modified: accent stripe + the pre-import value, so a
+   fresh import is scannable at a glance. Cleared on Save or league reload. */
+.setting-row-changed {
+  background: rgba(103,152,255,.08);
+  border-left: 2px solid var(--accent);
+  border-radius: 4px;
+  padding: 2px 8px 2px 10px;
+  margin-left: -12px;
+}
+.setting-was {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 1px 8px; margin-left: 8px;
+  white-space: nowrap; vertical-align: 1px;
+}
 @media (max-width: 640px) {
   .setting-row { grid-template-columns: 1fr; align-items: stretch; gap: 4px; }
 }

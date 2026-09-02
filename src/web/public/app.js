@@ -2836,6 +2836,7 @@ let settingsValues = {};          // key -> current (resolved) value, edited in 
 let settingsPublished = false;    // a settings post already exists in Discord
 let settingsChannelConfigured = false; // league has a settings channel set
 let settingsDirty = false;        // UI edited since the last Save/load
+let settingsImportChanges = {};   // key -> previous value, for rows an import modified
 
 async function loadLeagueSettings() {
   const leagueId = currentLeagueId;
@@ -2849,6 +2850,7 @@ async function loadLeagueSettings() {
   settingsPublished = Boolean(data.published);
   settingsChannelConfigured = Boolean(data.channelConfigured);
   settingsDirty = false;
+  settingsImportChanges = {};
   renderSettings();
   renderSettingsPublishState();
 }
@@ -2920,9 +2922,13 @@ function renderSettingRow(s) {
       <select class="setting-select" data-key="${esc(s.key)}"
               onchange="onSettingSelect('${esc(s.key)}', this.value)">${opts}</select>`;
   }
+  const changed = Object.prototype.hasOwnProperty.call(settingsImportChanges, s.key);
+  const wasChip = changed
+    ? `<span class="setting-was" title="Value before import">was ${esc(settingsImportChanges[s.key])}</span>`
+    : '';
   return `
-    <div class="setting-row">
-      <label class="setting-label">${esc(s.label)}</label>
+    <div class="setting-row${changed ? ' setting-row-changed' : ''}">
+      <label class="setting-label">${esc(s.label)}${wasChip}</label>
       <div class="setting-control">${control}</div>
     </div>`;
 }
@@ -2992,6 +2998,7 @@ async function saveLeagueSettings() {
   if (data.ok) {
     settingsValues = data.values || settingsValues; // reflect server-clamped values
     settingsDirty = false;
+    settingsImportChanges = {};
     renderSettings();
     renderSettingsPublishState();
     flash('Settings saved', 'success', 'settings-result');
@@ -3005,6 +3012,7 @@ function resetLeagueSettings() {
   for (const section of settingsSections) {
     for (const s of section.settings) settingsValues[s.key] = s.default;
   }
+  settingsImportChanges = {};
   renderSettings();
   markSettingsDirty();
   flash('Reset to defaults — Save to apply', 'success', 'settings-result');
@@ -3117,11 +3125,14 @@ function onSettingsImportFile(event) {
     }
     let applied = 0;
     let skipped = 0;
+    const changes = {};
     for (const [key, raw] of Object.entries(incoming)) {
       const setting = findSetting(key);
       if (!setting) { skipped++; continue; }
       const val = coerceSettingValue(setting, raw);
       if (val === null) { skipped++; continue; }
+      // Numbers round-trip as strings through export/server, so compare as text.
+      if (String(settingsValues[key]) !== String(val)) changes[key] = settingsValues[key];
       settingsValues[key] = val;
       applied++;
     }
@@ -3129,10 +3140,12 @@ function onSettingsImportFile(event) {
       flash('Import failed: no recognized settings in file', 'error', 'settings-result');
       return;
     }
+    settingsImportChanges = changes;
     renderSettings();
     markSettingsDirty();
+    const changedCount = Object.keys(changes).length;
     const extra = skipped ? ` (${skipped} ignored)` : '';
-    flash(`Imported ${applied} setting${applied === 1 ? '' : 's'}${extra} — review and Save`, 'success', 'settings-result');
+    flash(`Imported ${applied} setting${applied === 1 ? '' : 's'} — ${changedCount} changed (highlighted)${extra} — review and Save`, 'success', 'settings-result');
   };
   reader.onerror = () => flash('Import failed: could not read file', 'error', 'settings-result');
   reader.readAsText(file);
