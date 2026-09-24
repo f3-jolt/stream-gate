@@ -462,9 +462,14 @@ tr:hover td { background: rgba(255,255,255,.02); }
   border-radius: 4px; background: var(--surface2); color: var(--text-muted); vertical-align: middle;
 }
 
-/* Results grid: fair-sim game recorded with no attempts (never actually played). */
-.row-fs-zero > td { background: rgba(255,92,92,.12); }
-.row-fs-zero:hover > td { background: rgba(255,92,92,.18); }
+/* Result-type row shades. Schedule: forced result (FR) is green for a win, red
+   for a loss; fair sim (FS) is yellow. Results grid: any FR is red, FS yellow. */
+.row-fr-w > td { background: rgba(91,217,143,.12); }
+.row-fr-w:hover > td { background: rgba(91,217,143,.18); }
+.row-fr-l > td { background: rgba(255,92,92,.12); }
+.row-fr-l:hover > td { background: rgba(255,92,92,.18); }
+.row-fs > td { background: rgba(255,206,77,.12); }
+.row-fs:hover > td { background: rgba(255,206,77,.18); }
 
 /* Results grid: user-vs-user matchups — stacked on top with an accent shade,
    split from user-vs-CPU games by section divider rows. */

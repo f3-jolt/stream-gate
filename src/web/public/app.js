@@ -2052,7 +2052,7 @@ function scheduleCardHtml(t) {
     // SAVED game's orientation (data-home on the row); saveCard re-maps them to
     // home/away after the schedule half of the save settles each game's sides.
     // Rows with no saved game yet (a new matchup, or a BYE) get no inputs.
-    let oppRecCell = '', scoreCell = '', attCell = '', typeCell = '', winCell = '', resultCell = '';
+    let oppRecCell = '', scoreCell = '', attCell = '', typeCell = '', winCell = '', resultCell = '', rowCls = '';
     if (g && has) {
       oppRecCell = `<span class="opp-rec" title="${esc(opp)} season record">${recStr(records.get(opp))}</span>`;
       const rt = g.result_type || 'normal';
@@ -2091,6 +2091,9 @@ function scheduleCardHtml(t) {
         else outcome = 't';
         const tag = sim ? ` <span class="res-tag">${rt}</span>` : '';
         resultCell = `<span class="res res-${outcome}">${outcome.toUpperCase()}</span>${tag}`;
+        // Shade the row: forced win green, forced loss red, fair sim yellow.
+        if (rt === 'FR') rowCls = `row-fr-${outcome}`;
+        else if (rt === 'FS') rowCls = 'row-fs';
       }
     }
     // data-result marks a game with something already recorded, so the schedule
@@ -2102,7 +2105,7 @@ function scheduleCardHtml(t) {
     const orig = g && has ? resultKey(
       (isHome ? g.home_score : g.away_score) ?? '', (isHome ? g.away_score : g.home_score) ?? '',
       g.attempts_taken ?? '', g.result_type || 'normal', g.winner_side ?? '') : '';
-    rows += `<tr id="schedrow-${abbr}-${w}"${g ? ` data-game="${g.id}"` : ''} data-home="${isHome ? 1 : 0}"
+    rows += `<tr id="schedrow-${abbr}-${w}"${rowCls ? ` class="${rowCls}"` : ''}${g ? ` data-game="${g.id}"` : ''} data-home="${isHome ? 1 : 0}"
         data-opp="${esc(opp || '')}" data-result="${recorded ? 1 : 0}" data-orig="${esc(orig)}">
       <td class="wk${w > 14 ? ' wk-post' : ''}">${weekShort(w)}</td>
       <td>
@@ -2647,12 +2650,9 @@ function renderResults(games) {
   const rowHtml = g => {
     const rt = g.result_type || 'normal';
     const sim = rt === 'FR' || rt === 'FS'; // forfeit / fair sim → no attempts
-    // Flag played fair-sim games with no attempts: a recorded result the teams
-    // never actually played out. Tint the row red so it stands out (the red
-    // flag outranks the user-game shade).
-    const played = g.played_at != null || (g.home_score != null && g.away_score != null);
-    const fsZero = rt === 'FS' && (g.attempts_taken ?? 0) === 0 && played;
-    const cls = fsZero ? 'row-fs-zero' : (isUserGame(g) ? 'row-user-user' : '');
+    // Games the teams never actually played out stand out: any forced result
+    // is tinted red, a fair sim yellow (both outrank the user-game shade).
+    const cls = rt === 'FR' ? 'row-fr-l' : rt === 'FS' ? 'row-fs' : (isUserGame(g) ? 'row-user-user' : '');
     return `<tr data-game="${g.id}"${cls ? ` class="${cls}"` : ''}>
       <td>${resultTeamCell(g.away_abbrev, g.away_colors, g.away_coach_id != null)}</td>
       <td><input class="grid-input" type="number" id="as-${g.id}" value="${g.away_score ?? ''}"></td>
