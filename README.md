@@ -1,4 +1,4 @@
-# StreamGate — About & Deployment Guide
+# StreamGate
 
 StreamGate is a Discord bot plus a small web admin portal for college-football dynasty leagues. It:
 
