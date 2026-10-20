@@ -290,7 +290,10 @@ function applyUserFilters() {
       u.discord_id.includes(q) ||
       (u.league_name || '').toLowerCase().includes(q) ||
       (u.team_name || '').toLowerCase().includes(q);
-    const matchesLeague = !currentLeagueId || u.league_id === currentLeagueId;
+    // A user removed from a league but still coaching there stays visible
+    // under that league's filter.
+    const matchesLeague = !currentLeagueId || u.league_id === currentLeagueId ||
+      (u.coach_leagues || []).some(l => l.id === currentLeagueId);
     return matchesText && matchesLeague;
   });
 
@@ -326,7 +329,9 @@ function renderUsers(users) {
     const isArchived = Boolean(u.league_id) && u.league_active === 0;
     const leagueCell = u.league_id
       ? `<span class="badge badge-blue">${esc(u.league_abbr)}</span> ${esc(u.league_name)}${isArchived ? ' <span class="badge">archived</span>' : ''}`
-      : '<span class="badge">Unassigned</span>';
+      : '<span class="badge">Unassigned</span>' + (u.coach_leagues?.length
+        ? ` <span class="text-muted" style="font-size:12px;" title="Has a coach record but no league membership">coach in ${esc(u.coach_leagues.map(l => l.abbr).join(', '))}</span>`
+        : '');
     // Archived-league memberships are read-only (the league is deactivated).
     const removeBtn = (u.league_id && !isArchived)
       ? `<button class="btn btn-danger btn-sm"

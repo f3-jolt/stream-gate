@@ -288,23 +288,35 @@ router.get('/guilds/:guildId/users', requireGuildAccess, (req, res) => {
     }
   }
 
-  // Also surface users who have stream details but no active league membership
-  // in this guild. Platform accounts are global, so an unassigned user has no
-  // guild link — we key them by discord_id alone with null league fields.
+  // Also surface users with no active league membership in this guild who
+  // either have stream details or still have a coach record in one of its
+  // active leagues (removing someone from a league drops the membership but
+  // keeps their coach record and history). Platform accounts are global, so an
+  // unassigned user has no guild link — we key them by discord_id alone with
+  // null league fields; coach_leagues lists the leagues they still coach in.
   const unassigned = db.prepare(`
     SELECT u.discord_id, u.discord_username,
-           up.platform, up.platform_username, up.subscription_id
+           up.platform, up.platform_username, up.subscription_id,
+           (SELECT json_group_array(DISTINCT l.id) FROM coaches co
+              JOIN leagues l ON l.id = co.league_id
+              WHERE co.user_id = u.id AND l.guild_id = @guildId AND l.active = 1) AS coach_league_ids
     FROM users u
-    JOIN user_platforms up ON up.user_id = u.id
+    LEFT JOIN user_platforms up ON up.user_id = u.id
     WHERE u.active = 1
       AND NOT EXISTS (
         SELECT 1 FROM user_leagues ul
         JOIN leagues l ON l.id = ul.league_id
-        WHERE ul.user_id = u.id AND l.guild_id = ? ${activeLeague}
+        WHERE ul.user_id = u.id AND l.guild_id = @guildId ${activeLeague}
       )
+      AND (up.id IS NOT NULL OR EXISTS (
+        SELECT 1 FROM coaches co JOIN leagues l ON l.id = co.league_id
+        WHERE co.user_id = u.id AND l.guild_id = @guildId AND l.active = 1
+      ))
     ORDER BY u.discord_username
-  `).all(req.params.guildId);
+  `).all({ guildId: req.params.guildId });
 
+  const leagueAbbr = new Map(db.prepare('SELECT id, abbr FROM leagues WHERE guild_id = ?')
+    .all(req.params.guildId).map(l => [l.id, l.abbr]));
   const byUser = new Map();
   for (const row of unassigned) {
     if (!byUser.has(row.discord_id)) {
@@ -316,14 +328,17 @@ router.get('/guilds/:guildId/users', requireGuildAccess, (req, res) => {
         league_abbr: null,
         team_name: null,
         team_abbrev: null,
+        coach_leagues: JSON.parse(row.coach_league_ids).map(id => ({ id, abbr: leagueAbbr.get(id) })),
         platforms: [],
       });
     }
-    byUser.get(row.discord_id).platforms.push({
-      platform: row.platform,
-      platform_username: row.platform_username,
-      subscription_id: row.subscription_id,
-    });
+    if (row.platform) {
+      byUser.get(row.discord_id).platforms.push({
+        platform: row.platform,
+        platform_username: row.platform_username,
+        subscription_id: row.subscription_id,
+      });
+    }
   }
 
   res.json([...byKey.values(), ...byUser.values()]);
