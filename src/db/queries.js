@@ -1246,21 +1246,23 @@ function getCareerHistoryById(id) {
 }
 
 // Users a history row can be tied to: every active user, including those not
-// in any league right now. leagues/coach_names (this guild's active leagues
-// only, NULL when none) help match a gamertag to a person.
+// in any league right now. leagues (memberships) and coach_names help match a
+// gamertag to a person, both limited to this guild's active leagues. Coach
+// names are looked up on their own: removing someone from a league on the
+// Users page drops the membership but keeps their coach record and history.
 function getGuildMappableUsers(guildId) {
   return db.prepare(`
     SELECT u.id, u.discord_id, u.discord_username,
-      GROUP_CONCAT(DISTINCT l.abbr) AS leagues,
-      GROUP_CONCAT(DISTINCT co.display_name) AS coach_names
+      (SELECT GROUP_CONCAT(DISTINCT l.abbr) FROM user_leagues ul
+         JOIN leagues l ON l.id = ul.league_id AND l.guild_id = @guildId AND l.active = 1
+         WHERE ul.user_id = u.id) AS leagues,
+      (SELECT GROUP_CONCAT(DISTINCT co.display_name) FROM coaches co
+         JOIN leagues l ON l.id = co.league_id AND l.guild_id = @guildId AND l.active = 1
+         WHERE co.user_id = u.id) AS coach_names
     FROM users u
-    LEFT JOIN user_leagues ul ON ul.user_id = u.id
-    LEFT JOIN leagues l ON l.id = ul.league_id AND l.guild_id = ? AND l.active = 1
-    LEFT JOIN coaches co ON co.user_id = u.id AND co.league_id = l.id
     WHERE u.active = 1
-    GROUP BY u.id
     ORDER BY u.discord_username COLLATE NOCASE
-  `).all(guildId);
+  `).all({ guildId });
 }
 
 function setCareerHistoryUser(id, userId) {
