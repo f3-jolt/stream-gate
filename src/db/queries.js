@@ -1230,6 +1230,44 @@ function getGuildCoachHistory(guildId) {
   `).all({ guildId });
 }
 
+// ── Career history (imported pre-StreamGate records) ─────────────────────────
+
+function getCareerHistory() {
+  return db.prepare(`
+    SELECT ch.*, u.discord_id, u.discord_username
+    FROM career_history ch
+    LEFT JOIN users u ON u.id = ch.user_id
+    ORDER BY ch.gamertag COLLATE NOCASE
+  `).all();
+}
+
+function getCareerHistoryById(id) {
+  return db.prepare('SELECT * FROM career_history WHERE id = ?').get(id);
+}
+
+// Users a history row can be tied to: active users with a membership in one of
+// this guild's active leagues. coach_names helps match a gamertag to a person.
+function getGuildMappableUsers(guildId) {
+  return db.prepare(`
+    SELECT u.id, u.discord_id, u.discord_username,
+      GROUP_CONCAT(DISTINCT l.abbr) AS leagues,
+      GROUP_CONCAT(DISTINCT co.display_name) AS coach_names
+    FROM users u
+    JOIN user_leagues ul ON ul.user_id = u.id
+    JOIN leagues l ON l.id = ul.league_id AND l.guild_id = ? AND l.active = 1
+    LEFT JOIN coaches co ON co.user_id = u.id AND co.league_id = l.id
+    WHERE u.active = 1
+    GROUP BY u.id
+    ORDER BY u.discord_username COLLATE NOCASE
+  `).all(guildId);
+}
+
+function setCareerHistoryUser(id, userId) {
+  return db.prepare(`
+    UPDATE career_history SET user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+  `).run(userId, id);
+}
+
 // Per-season breakdown for one or more coach rows (several when the same
 // person is viewed across leagues).
 function getCoachSeasonBreakdown(coachIds) {
@@ -1353,4 +1391,8 @@ module.exports = {
   getCoachHistory,
   getGuildCoachHistory,
   getCoachSeasonBreakdown,
+  getCareerHistory,
+  getCareerHistoryById,
+  getGuildMappableUsers,
+  setCareerHistoryUser,
 };

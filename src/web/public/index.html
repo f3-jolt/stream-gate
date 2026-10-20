@@ -361,7 +361,14 @@
 
         <!-- COACHES TAB -->
         <div id="tab-coaches" class="tab-panel">
-          <div class="card">
+          <!-- Sub-tabs only appear under "All Leagues" -->
+          <div class="search-row" id="coach-view-row" style="display:none;">
+            <div class="btn-group" id="coach-view-group">
+              <button class="btn btn-sm btn-primary" data-view="current" onclick="setCoachView('current')">CFB 27 History</button>
+              <button class="btn btn-sm btn-ghost" data-view="history" onclick="setCoachView('history')">Prior History</button>
+            </div>
+          </div>
+          <div class="card" id="coach-history-card">
             <div class="card-title" id="coach-history-title">Coach History (all seasons)</div>
             <div class="table-wrap">
               <table id="coach-history-table">
@@ -378,6 +385,35 @@
                   <th class="sortable" data-col="teams_count" onclick="sortCoaches('teams_count')">Teams</th>
                 </tr></thead>
                 <tbody id="coach-history-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card" id="career-history-card" style="display:none;">
+            <div class="card-title">Prior History <span id="career-mapped-count" class="badge badge-blue"></span></div>
+            <p class="text-muted" style="margin:-6px 0 12px;">Career records carried over from the league history sheet. Use 🔗 to tie a gamertag to a current user; a user's gamertags combine into one row — click it to see each record.</p>
+            <div class="search-row">
+              <input id="career-search" type="text" placeholder="Search name or gamertag..." oninput="applyCareerHistory()">
+              <label class="text-muted" style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
+                <input type="checkbox" id="career-unmapped-only" style="width:auto;" onchange="applyCareerHistory()"> Unmapped only
+              </label>
+            </div>
+            <div class="table-wrap">
+              <table id="career-history-table">
+                <thead><tr>
+                  <th class="sortable" data-col="name" onclick="sortCareer('name')" title="Linked user, or the gamertag while unmapped">Name</th>
+                  <th class="sortable" data-col="linked" onclick="sortCareer('linked')" title="Linked to a current user">Linked</th>
+                  <th class="sortable" data-col="overall_wins" onclick="sortCareer('overall_wins')">W</th>
+                  <th class="sortable" data-col="overall_losses" onclick="sortCareer('overall_losses')">L</th>
+                  <th class="sortable" data-col="win_pct" onclick="sortCareer('win_pct')" title="Overall win %">OVR Win%</th>
+                  <th class="sortable" data-col="cpu_win_pct" onclick="sortCareer('cpu_win_pct')" title="Win % in games against a CPU team">CPU Win%</th>
+                  <th class="sortable" data-col="usr_win_pct" onclick="sortCareer('usr_win_pct')" title="Win % in games against another user">USR Win%</th>
+                  <th class="sortable" data-col="national_titles" onclick="sortCareer('national_titles')">Titles</th>
+                  <th class="sortable" data-col="conf_titles" onclick="sortCareer('conf_titles')">Conf</th>
+                  <th class="sortable" data-col="bowl_wins" onclick="sortCareer('bowl_wins')">Bowls</th>
+                  <th class="sortable" data-col="cfp_appearances" onclick="sortCareer('cfp_appearances')" title="College Football Playoff appearances">CFP</th>
+                  <th></th>
+                </tr></thead>
+                <tbody id="career-history-tbody"></tbody>
               </table>
             </div>
           </div>
@@ -631,6 +667,40 @@
       </div>
       <div class="modal-actions" style="margin-top:16px;">
         <button class="btn btn-ghost" onclick="closeCoachDetail()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CAREER HISTORY RECORDS MODAL (one user's gamertags) -->
+  <div id="career-records-modal" class="modal-backdrop">
+    <div class="modal" style="width:900px;">
+      <h3 id="career-records-title">History Records</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Gamertag</th><th>W</th><th>L</th><th>OVR Win%</th><th>CPU Win%</th><th>USR Win%</th>
+            <th>Titles</th><th>Conf</th><th>Bowls</th><th>CFP</th><th>Pts</th><th>Grade</th><th></th>
+          </tr></thead>
+          <tbody id="career-records-tbody"></tbody>
+        </table>
+      </div>
+      <div class="modal-actions" style="margin-top:16px;">
+        <button class="btn btn-ghost" onclick="closeCareerRecords()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CAREER HISTORY MAPPING MODAL -->
+  <div id="career-map-modal" class="modal-backdrop">
+    <div class="modal" style="width:480px;">
+      <h3 id="career-map-title">Map Gamertag</h3>
+      <p class="text-muted" id="career-map-current" style="margin:-8px 0 12px;"></p>
+      <input id="career-map-search" type="text" autocomplete="off" placeholder="Search users..." oninput="renderCareerMapUsers()" style="width:100%; margin-bottom:8px;">
+      <div id="career-map-users" class="career-map-users"></div>
+      <div class="modal-actions" style="margin-top:16px;">
+        <button class="btn btn-danger" id="career-map-unmap" style="margin-right:auto;" onclick="saveCareerMapping(null)">Unmap</button>
+        <button class="btn btn-ghost" onclick="closeCareerMap()">Cancel</button>
+        <button class="btn btn-primary" id="career-map-save" onclick="saveCareerMapping(careerMapPick)">Save</button>
       </div>
     </div>
   </div>

@@ -59,6 +59,10 @@ const {
   getGuildCoachHistory,
   getCoachById,
   getCoachSeasonBreakdown,
+  getCareerHistory,
+  getCareerHistoryById,
+  getGuildMappableUsers,
+  setCareerHistoryUser,
   getAllTeams,
   getTeamRow,
   addCustomTeam,
@@ -1230,6 +1234,33 @@ router.get('/guilds/:guildId/coaches/:coachId/history', requireGuildAccess, (req
     if (!coachIds.includes(coach.id)) coachIds.push(coach.id);
   }
   res.json({ coach, seasons: getCoachSeasonBreakdown(coachIds) });
+});
+
+// ── Career history ────────────────────────────────────────────────────────────
+// Imported pre-StreamGate career records, keyed by gamertag. user_id ties a
+// row to a registered user; it starts NULL and is set from the mapping popup.
+
+router.get('/guilds/:guildId/career-history', requireGuildAccess, (req, res) => {
+  res.json(getCareerHistory());
+});
+
+router.get('/guilds/:guildId/career-history/users', requireGuildAccess, (req, res) => {
+  res.json(getGuildMappableUsers(req.params.guildId));
+});
+
+// Body: { userId } — a user from /career-history/users, or null to unmap.
+router.put('/guilds/:guildId/career-history/:id/user', requireGuildAccess, (req, res) => {
+  const row = getCareerHistoryById(Number(req.params.id));
+  if (!row) return res.status(404).json({ error: 'History row not found' });
+  const userId = req.body?.userId == null ? null : Number(req.body.userId);
+  if (userId != null && !getGuildMappableUsers(req.params.guildId).some(u => u.id === userId)) {
+    return res.status(400).json({ error: 'User is not an active member of this server' });
+  }
+  setCareerHistoryUser(row.id, userId);
+  logger.info('Career history mapping changed', {
+    adminId: req.session.user.id, gamertag: row.gamertag, from: row.user_id, to: userId,
+  });
+  res.json({ ok: true });
 });
 
 // ── Advancement footers ───────────────────────────────────────────────────────

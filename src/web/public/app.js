@@ -34,6 +34,12 @@ let summarySort = { col: 'wins', dir: -1 };
 let coachSort = { col: 'wins', dir: -1 };
 let coachAssignRows = [];
 let coachAssignSort = { col: 'coach', dir: 1 };
+let coachView = 'current';      // Coaches tab under All Leagues: current | history
+let careerData = [];
+let careerSort = { col: 'overall_wins', dir: -1 };
+let careerUsers = [];           // users a history row can be mapped to
+let careerMapRow = null;        // history row the mapping popup is editing
+let careerMapPick = null;       // user id picked in the popup
 
 const DYNASTY_TABS = new Set(['season', 'schedule', 'results', 'summary', 'coaches']);
 // Tabs that act on one specific league and can't operate on "All Leagues".
@@ -200,7 +206,7 @@ function renderActiveTab() {
   const showDynBar = DYNASTY_TABS.has(activeTab) && !needsLeague && !!currentLeagueId;
   document.getElementById('dynasty-bar').style.display = showDynBar ? 'flex' : 'none';
   if (showDynBar) onDynastyTabShown(activeTab);
-  else if (activeTab === 'coaches') loadCoachHistory();
+  else if (activeTab === 'coaches') loadCoachesTab();
 
   if (activeTab === 'settings' && !needsLeague) loadLeagueSettings();
   if (activeTab === 'advance' && !needsLeague) showAdvanceTab();
@@ -1398,7 +1404,7 @@ function onDynastyTabShown(name) {
   else if (name === 'schedule') loadScheduleTab();
   else if (name === 'results') loadResults();
   else if (name === 'summary') loadSummary();
-  else if (name === 'coaches') loadCoachHistory();
+  else if (name === 'coaches') loadCoachesTab();
 }
 
 // ── Season roster → Discord ──
@@ -2768,7 +2774,7 @@ async function loadCoachHistory() {
   // No league picked → aggregate each person across every league.
   const leagueId = currentDynLeagueId;
   document.getElementById('coach-history-title').textContent =
-    leagueId ? 'Coach History (all seasons)' : 'Coach History (all leagues, all seasons)';
+    leagueId ? 'Coach History (all seasons)' : 'CFB 27 History (all leagues, all seasons)';
   const url = leagueId
     ? `/api/guilds/${currentGuildId}/leagues/${leagueId}/coach-history`
     : `/api/guilds/${currentGuildId}/coach-history`;
@@ -2826,6 +2832,186 @@ async function openCoachDetail(coachId, name) {
   document.getElementById('coach-detail-modal').classList.add('open');
 }
 function closeCoachDetail() { document.getElementById('coach-detail-modal').classList.remove('open'); }
+
+// ── Prior History (imported career records) ──
+// Coaches tab sub-view, only offered under "All Leagues": picking a league
+// always shows that league's coach history.
+function loadCoachesTab() {
+  const allLeagues = !currentDynLeagueId;
+  const view = allLeagues ? coachView : 'current';
+  document.getElementById('coach-view-row').style.display = allLeagues ? '' : 'none';
+  document.querySelectorAll('#coach-view-group [data-view]').forEach(b => {
+    const active = b.dataset.view === view;
+    b.classList.toggle('btn-primary', active);
+    b.classList.toggle('btn-ghost', !active);
+  });
+  document.getElementById('coach-history-card').style.display = view === 'current' ? '' : 'none';
+  document.getElementById('career-history-card').style.display = view === 'history' ? '' : 'none';
+  if (view === 'history') loadCareerHistory();
+  else loadCoachHistory();
+}
+function setCoachView(view) {
+  coachView = view;
+  loadCoachesTab();
+}
+
+const GRADE_ORDER = ['F', 'D-', 'D', 'D+', 'C-', 'C', 'C+', 'B-', 'B', 'B+', 'A-', 'A', 'A+'];
+const CAREER_SUM_COLS = ['cpu_wins', 'cpu_losses', 'user_wins', 'user_losses', 'overall_wins', 'overall_losses',
+  'conf_titles', 'bowl_wins', 'cfp_appearances', 'national_titles', 'points_total'];
+let careerRecords = [];         // one per imported gamertag
+let careerRecordsUserId = null; // user whose records popup is open
+
+function withCareerPcts(r) {
+  return {
+    ...r,
+    win_pct: winPct(r.overall_wins, r.overall_losses),
+    cpu_win_pct: winPct(r.cpu_wins, r.cpu_losses),
+    usr_win_pct: winPct(r.user_wins, r.user_losses),
+  };
+}
+async function loadCareerHistory() {
+  const res = await fetch(`/api/guilds/${currentGuildId}/career-history`);
+  careerRecords = (await res.json()).map(r => withCareerPcts({
+    ...r, grade_rank: GRADE_ORDER.indexOf(r.grade), // NR / unknown → -1, sorts last
+  }));
+  // Mapped records roll up into one row per user; unmapped ones stay per gamertag.
+  const byUser = new Map();
+  careerData = [];
+  for (const r of careerRecords) {
+    if (r.user_id == null) {
+      careerData.push({ ...r, name: r.gamertag, linked: 0, records: [r] });
+      continue;
+    }
+    if (!byUser.has(r.user_id)) byUser.set(r.user_id, []);
+    byUser.get(r.user_id).push(r);
+  }
+  for (const [userId, recs] of byUser) {
+    const row = { user_id: userId, name: recs[0].discord_username, linked: 1, records: recs };
+    for (const col of CAREER_SUM_COLS) row[col] = recs.reduce((n, r) => n + r[col], 0);
+    // Grades can't be combined: show the best, with every grade in the popup.
+    const best = recs.reduce((a, b) => (b.grade_rank > a.grade_rank ? b : a));
+    row.grade = best.grade;
+    row.grade_rank = best.grade_rank;
+    careerData.push(withCareerPcts(row));
+  }
+  applyCareerHistory();
+  if (careerRecordsUserId != null) renderCareerRecords();
+}
+function applyCareerHistory() {
+  const q = document.getElementById('career-search').value.trim().toLowerCase();
+  const unmappedOnly = document.getElementById('career-unmapped-only').checked;
+  const rows = careerData.filter(r =>
+    (!unmappedOnly || r.user_id == null) &&
+    (!q || r.name.toLowerCase().includes(q) || r.records.some(x => x.gamertag.toLowerCase().includes(q))));
+  renderCareerHistory(sortData(rows, careerSort.col, careerSort.dir));
+  updateSortHeaders('career-history-table', careerSort);
+  const mapped = careerRecords.filter(r => r.user_id != null).length;
+  document.getElementById('career-mapped-count').textContent = `${mapped} / ${careerRecords.length} mapped`;
+}
+function sortCareer(col) {
+  if (careerSort.col === col) careerSort.dir *= -1; else { careerSort.col = col; careerSort.dir = 1; }
+  applyCareerHistory();
+}
+// Points and grade only show in the records popup, not the Prior History table.
+function careerStatCells(r, { withPoints = false } = {}) {
+  return `<td>${r.overall_wins}</td><td>${r.overall_losses}</td>
+    ${winPctCell(r.win_pct, r.overall_wins, r.overall_losses)}
+    ${winPctCell(r.cpu_win_pct, r.cpu_wins, r.cpu_losses)}
+    ${winPctCell(r.usr_win_pct, r.user_wins, r.user_losses)}
+    <td>${r.national_titles}</td><td>${r.conf_titles}</td><td>${r.bowl_wins}</td><td>${r.cfp_appearances}</td>
+    ${withPoints ? `<td>${r.points_total}</td><td>${esc(r.grade || '')}</td>` : ''}`;
+}
+const LINK_ICON = '<svg class="link-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
+const UNLINK_ICON = '<svg class="link-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m18.84 12.25 1.72-1.71h-.02a5 5 0 0 0-.12-7.07 5 5 0 0 0-6.95 0l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5 5 0 0 0 .12 7.07 5 5 0 0 0 6.95 0l1.71-1.71"/><path d="M8 2v3M2 8h3M16 19v3M19 16h3"/></svg>';
+function renderCareerHistory(rows) {
+  const tb = document.getElementById('career-history-tbody');
+  if (!rows.length) { tb.innerHTML = '<tr><td colspan="12" class="text-muted" style="text-align:center;padding:16px;">No history rows</td></tr>'; return; }
+  tb.innerHTML = rows.map(r => r.user_id != null
+    ? `<tr class="clickable" onclick="openCareerRecords(${r.user_id})">
+      <td><strong>${esc(r.name)}</strong></td>
+      <td class="link-status linked" title="Linked: ${esc(r.records.map(x => x.gamertag).join(', '))}">${LINK_ICON}</td>
+      ${careerStatCells(r)}
+      <td><button class="btn btn-ghost btn-sm" title="Show each record">${r.records.length} record${r.records.length === 1 ? '' : 's'}</button></td>
+    </tr>`
+    : `<tr>
+      <td><strong>${esc(r.name)}</strong></td>
+      <td class="link-status" title="Not linked to a user">${UNLINK_ICON}</td>
+      ${careerStatCells(r)}
+      <td><button class="btn btn-ghost btn-sm" title="Map to a user" onclick="openCareerMap(${r.id})">🔗</button></td>
+    </tr>`).join('');
+}
+
+function openCareerRecords(userId) {
+  careerRecordsUserId = userId;
+  renderCareerRecords();
+  document.getElementById('career-records-modal').classList.add('open');
+}
+function renderCareerRecords() {
+  const row = careerData.find(r => r.user_id === careerRecordsUserId);
+  if (!row) { closeCareerRecords(); return; } // last record was unmapped
+  document.getElementById('career-records-title').textContent = `${row.name} — History Records`;
+  document.getElementById('career-records-tbody').innerHTML = row.records.map(r => `<tr>
+    <td><strong>${esc(r.gamertag)}</strong></td>
+    ${careerStatCells(r, { withPoints: true })}
+    <td><button class="btn btn-ghost btn-sm" title="Change mapped user" onclick="openCareerMap(${r.id})">🔗</button></td>
+  </tr>`).join('') + (row.records.length > 1 ? `<tr class="career-total-row">
+    <td>Total</td>${careerStatCells(row, { withPoints: true })}<td></td>
+  </tr>` : '');
+}
+function closeCareerRecords() {
+  document.getElementById('career-records-modal').classList.remove('open');
+  careerRecordsUserId = null;
+}
+
+async function openCareerMap(id) {
+  careerMapRow = careerRecords.find(r => r.id === id);
+  if (!careerMapRow) return;
+  careerMapPick = careerMapRow.user_id;
+  document.getElementById('career-map-title').textContent = `Map ${careerMapRow.gamertag}`;
+  document.getElementById('career-map-current').textContent = careerMapRow.discord_username
+    ? `Currently mapped to ${careerMapRow.discord_username}` : 'Not mapped to a user yet';
+  document.getElementById('career-map-unmap').style.display = careerMapRow.user_id != null ? '' : 'none';
+  const search = document.getElementById('career-map-search');
+  search.value = '';
+  document.getElementById('career-map-modal').classList.add('open');
+  const res = await fetch(`/api/guilds/${currentGuildId}/career-history/users`);
+  careerUsers = await res.json();
+  renderCareerMapUsers();
+  search.focus();
+}
+function renderCareerMapUsers() {
+  const q = document.getElementById('career-map-search').value.trim().toLowerCase();
+  const users = careerUsers.filter(u => !q ||
+    u.discord_username.toLowerCase().includes(q) || (u.coach_names || '').toLowerCase().includes(q));
+  const box = document.getElementById('career-map-users');
+  box.innerHTML = users.length ? users.map(u => `<div class="typeahead-item${u.id === careerMapPick ? ' selected' : ''}" onclick="pickCareerUser(${u.id})">
+      ${esc(u.discord_username)} <span class="badge badge-blue">${esc((u.leagues || '').split(',').join(', '))}</span>
+      ${u.coach_names ? `<small class="text-muted">${esc(u.coach_names.split(',').join(', '))}</small>` : ''}
+    </div>`).join('')
+    : '<div class="typeahead-empty">No matching users</div>';
+  document.getElementById('career-map-save').disabled = careerMapPick == null || careerMapPick === careerMapRow?.user_id;
+}
+function pickCareerUser(id) {
+  careerMapPick = id;
+  renderCareerMapUsers();
+}
+async function saveCareerMapping(userId) {
+  if (!careerMapRow) return;
+  const res = await fetch(`/api/guilds/${currentGuildId}/career-history/${careerMapRow.id}/user`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId }),
+  });
+  const data = await res.json();
+  if (!data.ok) { alert(data.error || 'Failed to save mapping'); return; }
+  const user = careerUsers.find(u => u.id === userId);
+  flash(user ? `Mapped ${careerMapRow.gamertag} → ${user.discord_username}` : `Unmapped ${careerMapRow.gamertag}`);
+  closeCareerMap();
+  loadCareerHistory();
+}
+function closeCareerMap() {
+  document.getElementById('career-map-modal').classList.remove('open');
+  careerMapRow = null;
+  careerMapPick = null;
+}
 
 // ── Advancement footers ──
 // The message frame is fixed server-side; only these two footers are editable.
@@ -3237,6 +3423,12 @@ document.getElementById('stream-modal').addEventListener('click', e => {
 });
 document.getElementById('team-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeTeamModal();
+});
+document.getElementById('career-map-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeCareerMap();
+});
+document.getElementById('career-records-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeCareerRecords();
 });
 // Dismiss the Discord-user typeahead when clicking elsewhere
 document.addEventListener('click', e => {
