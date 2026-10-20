@@ -250,6 +250,33 @@ function initSchema() {
       posted_roster  TEXT,
       updated_at     DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- Career totals per gamertag carried over from the pre-StreamGate history
+    -- sheet (see src/db/importHistory.js). Keyed by gamertag, not by user:
+    -- user_id is an open cross-reference, NULL until a gamertag is mapped to a
+    -- registered user. Re-imports refresh the stats and leave user_id alone.
+    CREATE TABLE IF NOT EXISTS career_history (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      gamertag         TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      user_id          INTEGER REFERENCES users(id),
+      cpu_wins         INTEGER NOT NULL DEFAULT 0,
+      cpu_losses       INTEGER NOT NULL DEFAULT 0,
+      user_wins        INTEGER NOT NULL DEFAULT 0,
+      user_losses      INTEGER NOT NULL DEFAULT 0,
+      overall_wins     INTEGER NOT NULL DEFAULT 0,
+      overall_losses   INTEGER NOT NULL DEFAULT 0,
+      conf_titles      INTEGER NOT NULL DEFAULT 0,
+      bowl_wins        INTEGER NOT NULL DEFAULT 0,
+      cfp_appearances  INTEGER NOT NULL DEFAULT 0,
+      national_titles  INTEGER NOT NULL DEFAULT 0,
+      points_total     INTEGER NOT NULL DEFAULT 0,
+      points_per_game  REAL NOT NULL DEFAULT 0,
+      grade            TEXT,
+      source           TEXT,
+      imported_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_career_history_user ON career_history(user_id);
   `);
 
   runMigrations();
