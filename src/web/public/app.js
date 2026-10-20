@@ -2985,7 +2985,9 @@ function renderCareerMapUsers() {
     u.discord_username.toLowerCase().includes(q) || (u.coach_names || '').toLowerCase().includes(q));
   const box = document.getElementById('career-map-users');
   box.innerHTML = users.length ? users.map(u => `<div class="typeahead-item${u.id === careerMapPick ? ' selected' : ''}" onclick="pickCareerUser(${u.id})">
-      ${esc(u.discord_username)} <span class="badge badge-blue">${esc((u.leagues || '').split(',').join(', '))}</span>
+      ${esc(u.discord_username)} ${u.leagues
+        ? `<span class="badge badge-blue">${esc(u.leagues.split(',').join(', '))}</span>`
+        : '<span class="text-muted" style="font-size:12px;">No league</span>'}
       ${u.coach_names ? `<small class="text-muted">${esc(u.coach_names.split(',').join(', '))}</small>` : ''}
     </div>`).join('')
     : '<div class="typeahead-empty">No matching users</div>';

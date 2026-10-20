@@ -1254,7 +1254,7 @@ router.put('/guilds/:guildId/career-history/:id/user', requireGuildAccess, (req,
   if (!row) return res.status(404).json({ error: 'History row not found' });
   const userId = req.body?.userId == null ? null : Number(req.body.userId);
   if (userId != null && !getGuildMappableUsers(req.params.guildId).some(u => u.id === userId)) {
-    return res.status(400).json({ error: 'User is not an active member of this server' });
+    return res.status(400).json({ error: 'User not found or inactive' });
   }
   setCareerHistoryUser(row.id, userId);
   logger.info('Career history mapping changed', {
