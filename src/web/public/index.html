@@ -362,7 +362,7 @@
         <!-- COACHES TAB -->
         <div id="tab-coaches" class="tab-panel">
           <div class="card">
-            <div class="card-title">Coach History (all seasons)</div>
+            <div class="card-title" id="coach-history-title">Coach History (all seasons)</div>
             <div class="table-wrap">
               <table id="coach-history-table">
                 <thead><tr>
@@ -370,7 +370,9 @@
                   <th class="sortable" data-col="seasons_count" onclick="sortCoaches('seasons_count')">Seasons</th>
                   <th class="sortable" data-col="wins" onclick="sortCoaches('wins')">W</th>
                   <th class="sortable" data-col="losses" onclick="sortCoaches('losses')">L</th>
-                  <th class="sortable" data-col="win_pct" onclick="sortCoaches('win_pct')">Win%</th>
+                  <th class="sortable" data-col="win_pct" onclick="sortCoaches('win_pct')" title="Overall win % — games actually played (forfeits and fair sims excluded)">OVR Win%</th>
+                  <th class="sortable" data-col="cpu_win_pct" onclick="sortCoaches('cpu_win_pct')" title="Win % in games against a CPU team">CPU Win%</th>
+                  <th class="sortable" data-col="usr_win_pct" onclick="sortCoaches('usr_win_pct')" title="Win % in games against another user">USR Win%</th>
                   <th class="sortable" data-col="natl_titles" onclick="sortCoaches('natl_titles')">Titles</th>
                   <th class="sortable" data-col="conf_titles" onclick="sortCoaches('conf_titles')">Conf</th>
                   <th class="sortable" data-col="teams_count" onclick="sortCoaches('teams_count')">Teams</th>

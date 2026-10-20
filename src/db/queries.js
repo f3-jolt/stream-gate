@@ -1131,6 +1131,7 @@ function sideSelect(meSide, extraFilter = '') {
   return `
     SELECT g.season_id AS season_id, g.week AS week,
       g.${me}_abbrev AS team, g.${me}_coach_id AS coach_id,
+      g.${opp}_coach_id AS opp_coach_id,
       COALESCE(g.${me}_score, 0) AS pf, COALESCE(g.${opp}_score, 0) AS pa,
       COALESCE(g.attempts_taken, 0) AS attempts,
       CASE WHEN g.result_type = 'FR' THEN (CASE WHEN g.winner_side = '${me}' THEN 1 ELSE 0 END)
@@ -1151,8 +1152,16 @@ function sidesCTE(scope, extraFilter = '') {
 }
 
 // Coach history counts only games actually played by a human: attempts > 0.
-// This drops forfeits (FR) and fair sims (FS), which always record 0 attempts.
-const PLAYED_BY_HAND_FILTER = 'g.attempts_taken > 0';
+// Forfeits (FR) and fair sims (FS) are excluded outright too, so they never
+// count toward any coach stat even if an attempt count was recorded.
+const PLAYED_BY_HAND_FILTER = "g.attempts_taken > 0 AND g.result_type NOT IN ('FR', 'FS')";
+
+// W/L split by opponent type: a CPU opponent has no coach on its side.
+const OPPONENT_SPLIT_COLUMNS = `
+      SUM(CASE WHEN s.opp_coach_id IS NULL THEN s.won ELSE 0 END) AS cpu_wins,
+      SUM(CASE WHEN s.opp_coach_id IS NULL THEN s.lost ELSE 0 END) AS cpu_losses,
+      SUM(CASE WHEN s.opp_coach_id IS NOT NULL THEN s.won ELSE 0 END) AS usr_wins,
+      SUM(CASE WHEN s.opp_coach_id IS NOT NULL THEN s.lost ELSE 0 END) AS usr_losses,`;
 
 function getSeasonSummary(seasonId) {
   return db.prepare(`
@@ -1181,7 +1190,7 @@ function getCoachHistory(leagueId) {
     ${sidesCTE('g.season_id IN (SELECT id FROM seasons WHERE league_id = @leagueId)', PLAYED_BY_HAND_FILTER)}
     SELECT co.id AS coach_id, co.display_name, co.user_id, u.discord_id,
       SUM(s.won) AS wins, SUM(s.lost) AS losses, SUM(s.tied) AS ties,
-      SUM(s.pf) AS points_for, SUM(s.pa) AS points_against,
+      SUM(s.pf) AS points_for, SUM(s.pa) AS points_against,${OPPONENT_SPLIT_COLUMNS}
       COUNT(*) AS games_played,
       COUNT(DISTINCT s.season_id) AS seasons_count,
       COUNT(DISTINCT s.team) AS teams_count,
@@ -1195,19 +1204,50 @@ function getCoachHistory(leagueId) {
   `).all({ leagueId });
 }
 
-function getCoachSeasonBreakdown(coachId) {
+// Guild-wide coach history across every active league. Coaches are league-
+// scoped, so one person has a coach row per league; rows sharing a user_id are
+// merged into one person (a coach with no linked user stays on its own).
+function getGuildCoachHistory(guildId) {
   return db.prepare(`
-    ${sidesCTE('(g.home_coach_id = @coachId OR g.away_coach_id = @coachId)', PLAYED_BY_HAND_FILTER)}
-    SELECT se.id AS season_id, se.year, se.label,
+    ${sidesCTE(`g.season_id IN (
+      SELECT se.id FROM seasons se JOIN leagues l ON l.id = se.league_id
+      WHERE l.guild_id = @guildId AND l.active = 1
+    )`, PLAYED_BY_HAND_FILTER)}
+    SELECT MIN(co.id) AS coach_id, MAX(co.display_name) AS display_name, co.user_id, u.discord_id,
+      SUM(s.won) AS wins, SUM(s.lost) AS losses, SUM(s.tied) AS ties,
+      SUM(s.pf) AS points_for, SUM(s.pa) AS points_against,${OPPONENT_SPLIT_COLUMNS}
+      COUNT(*) AS games_played,
+      COUNT(DISTINCT s.season_id) AS seasons_count,
+      COUNT(DISTINCT s.team) AS teams_count,
+      COUNT(DISTINCT co.league_id) AS leagues_count,
+      SUM(CASE WHEN s.week = 19 AND s.won = 1 THEN 1 ELSE 0 END) AS natl_titles,
+      SUM(CASE WHEN s.week = 15 AND s.won = 1 THEN 1 ELSE 0 END) AS conf_titles
+    FROM sides s
+    JOIN coaches co ON co.id = s.coach_id
+    LEFT JOIN users u ON u.id = co.user_id
+    GROUP BY COALESCE('u' || co.user_id, 'c' || co.id)
+    ORDER BY wins DESC
+  `).all({ guildId });
+}
+
+// Per-season breakdown for one or more coach rows (several when the same
+// person is viewed across leagues).
+function getCoachSeasonBreakdown(coachIds) {
+  const ids = JSON.stringify([].concat(coachIds));
+  return db.prepare(`
+    ${sidesCTE(`(g.home_coach_id IN (SELECT value FROM json_each(@ids))
+      OR g.away_coach_id IN (SELECT value FROM json_each(@ids)))`, PLAYED_BY_HAND_FILTER)}
+    SELECT se.id AS season_id, se.year, se.label, l.abbr AS league_abbr,
       GROUP_CONCAT(DISTINCT s.team) AS teams,
       SUM(s.won) AS wins, SUM(s.lost) AS losses, SUM(s.tied) AS ties,
       SUM(s.pf) AS points_for, SUM(s.pa) AS points_against
     FROM sides s
     JOIN seasons se ON se.id = s.season_id
-    WHERE s.coach_id = @coachId
+    JOIN leagues l ON l.id = se.league_id
+    WHERE s.coach_id IN (SELECT value FROM json_each(@ids))
     GROUP BY se.id
-    ORDER BY se.year DESC
-  `).all({ coachId });
+    ORDER BY se.year DESC, l.abbr
+  `).all({ ids });
 }
 
 module.exports = {
@@ -1311,5 +1351,6 @@ module.exports = {
   // Dynasty: derived summaries
   getSeasonSummary,
   getCoachHistory,
+  getGuildCoachHistory,
   getCoachSeasonBreakdown,
 };

@@ -56,6 +56,7 @@ const {
   recordGameResult,
   getSeasonSummary,
   getCoachHistory,
+  getGuildCoachHistory,
   getCoachById,
   getCoachSeasonBreakdown,
   getAllTeams,
@@ -1208,12 +1209,27 @@ router.get('/guilds/:guildId/leagues/:leagueId/coach-history', requireGuildAcces
   res.json(getCoachHistory(league.id));
 });
 
+// "All Leagues" view: one row per person across the guild's active leagues.
+router.get('/guilds/:guildId/coach-history', requireGuildAccess, (req, res) => {
+  res.json(getGuildCoachHistory(req.params.guildId));
+});
+
+// ?allLeagues=1 widens the breakdown to every active-league coach row in this
+// guild belonging to the same user.
 router.get('/guilds/:guildId/coaches/:coachId/history', requireGuildAccess, (req, res) => {
   const coach = getCoachById(Number(req.params.coachId));
   if (!coach) return res.status(404).json({ error: 'Coach not found' });
   const league = getLeagueById(coach.league_id);
   if (!league || league.guild_id !== req.params.guildId) return res.status(404).json({ error: 'Coach not found' });
-  res.json({ coach, seasons: getCoachSeasonBreakdown(coach.id) });
+  let coachIds = [coach.id];
+  if (req.query.allLeagues && coach.user_id != null) {
+    coachIds = db.prepare(`
+      SELECT co.id FROM coaches co JOIN leagues l ON l.id = co.league_id
+      WHERE co.user_id = ? AND l.guild_id = ? AND l.active = 1
+    `).all(coach.user_id, req.params.guildId).map(r => r.id);
+    if (!coachIds.includes(coach.id)) coachIds.push(coach.id);
+  }
+  res.json({ coach, seasons: getCoachSeasonBreakdown(coachIds) });
 });
 
 // ── Advancement footers ───────────────────────────────────────────────────────

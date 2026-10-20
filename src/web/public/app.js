@@ -37,7 +37,10 @@ let coachAssignSort = { col: 'coach', dir: 1 };
 
 const DYNASTY_TABS = new Set(['season', 'schedule', 'results', 'summary', 'coaches']);
 // Tabs that act on one specific league and can't operate on "All Leagues".
-const SINGLE_LEAGUE_TABS = new Set(['advance', 'season', 'schedule', 'results', 'summary', 'coaches', 'settings']);
+// (Coaches works either way: with no league it aggregates across all leagues.)
+const SINGLE_LEAGUE_TABS = new Set(['advance', 'season', 'schedule', 'results', 'summary', 'settings']);
+// Tabs whose button is hidden entirely while "All Leagues" is selected.
+const LEAGUE_ONLY_TAB_BUTTONS = new Set(['summary']);
 // Mirror of src/utils/weeks.js — keep the two in step. `value` is what the
 // database stores (frozen for the weeks that carry games), and the array order
 // is the order a season plays them; `games: false` stages are admin work only,
@@ -185,15 +188,19 @@ function renderActiveTab() {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('configure-btn').classList.toggle('active', activeTab === 'leagues');
   document.querySelector(`.tab-btn[data-tab="${activeTab}"]`)?.classList.add('active');
+  for (const name of LEAGUE_ONLY_TAB_BUTTONS) {
+    document.querySelector(`.tab-btn[data-tab="${name}"]`).style.display = currentLeagueId ? '' : 'none';
+  }
 
   // A single-league tab with no league picked shows the prompt instead.
   const needsLeague = SINGLE_LEAGUE_TABS.has(activeTab) && !currentLeagueId;
   const panelId = needsLeague ? 'pick-league' : activeTab;
   document.getElementById(`tab-${panelId}`).classList.add('active');
 
-  const showDynBar = DYNASTY_TABS.has(activeTab) && !needsLeague;
+  const showDynBar = DYNASTY_TABS.has(activeTab) && !needsLeague && !!currentLeagueId;
   document.getElementById('dynasty-bar').style.display = showDynBar ? 'flex' : 'none';
   if (showDynBar) onDynastyTabShown(activeTab);
+  else if (activeTab === 'coaches') loadCoachHistory();
 
   if (activeTab === 'settings' && !needsLeague) loadLeagueSettings();
   if (activeTab === 'advance' && !needsLeague) showAdvanceTab();
@@ -2758,14 +2765,31 @@ function renderSummary(rows) {
 
 // ── Coach history ──
 async function loadCoachHistory() {
-  if (!currentDynLeagueId) return;
-  const res = await fetch(`/api/guilds/${currentGuildId}/leagues/${currentDynLeagueId}/coach-history`);
+  // No league picked → aggregate each person across every league.
+  const leagueId = currentDynLeagueId;
+  document.getElementById('coach-history-title').textContent =
+    leagueId ? 'Coach History (all seasons)' : 'Coach History (all leagues, all seasons)';
+  const url = leagueId
+    ? `/api/guilds/${currentGuildId}/leagues/${leagueId}/coach-history`
+    : `/api/guilds/${currentGuildId}/coach-history`;
+  const res = await fetch(url);
   const rows = await res.json();
+  if (leagueId !== currentDynLeagueId) return; // league changed mid-fetch
   coachData = rows.map(c => ({
     ...c,
-    win_pct: (c.wins + c.losses) > 0 ? Math.round(c.wins / (c.wins + c.losses) * 1000) / 10 : 0,
+    win_pct: winPct(c.wins, c.losses),
+    cpu_win_pct: winPct(c.cpu_wins, c.cpu_losses),
+    usr_win_pct: winPct(c.usr_wins, c.usr_losses),
   }));
   applyCoaches();
+}
+// Win% over decided games (ties excluded); -1 = no games, so it sorts last.
+function winPct(w, l) {
+  return (w + l) > 0 ? Math.round(w / (w + l) * 1000) / 10 : -1;
+}
+function winPctCell(pct, w, l) {
+  if (pct < 0) return '<td class="text-muted">—</td>';
+  return `<td title="${w}-${l}">${pct}% <span class="text-muted">(${w}-${l})</span></td>`;
 }
 function applyCoaches() {
   renderCoachHistory(sortData(coachData, coachSort.col, coachSort.dir));
@@ -2777,20 +2801,24 @@ function sortCoaches(col) {
 }
 function renderCoachHistory(rows) {
   const tb = document.getElementById('coach-history-tbody');
-  if (!rows.length) { tb.innerHTML = '<tr><td colspan="8" class="text-muted" style="text-align:center;padding:16px;">No coach results yet</td></tr>'; return; }
+  if (!rows.length) { tb.innerHTML = '<tr><td colspan="10" class="text-muted" style="text-align:center;padding:16px;">No coach results yet</td></tr>'; return; }
   tb.innerHTML = rows.map(c => `<tr class="clickable" onclick="openCoachDetail(${c.coach_id}, '${esc(c.display_name).replace(/'/g, "\\'")}')">
     <td><strong>${esc(c.display_name)}</strong></td>
     <td>${c.seasons_count}</td><td>${c.wins}</td><td>${c.losses}</td>
-    <td>${c.win_pct}%</td><td>${c.natl_titles}</td><td>${c.conf_titles}</td><td>${c.teams_count}</td>
+    ${winPctCell(c.win_pct, c.wins, c.losses)}
+    ${winPctCell(c.cpu_win_pct, c.cpu_wins, c.cpu_losses)}
+    ${winPctCell(c.usr_win_pct, c.usr_wins, c.usr_losses)}
+    <td>${c.natl_titles}</td><td>${c.conf_titles}</td><td>${c.teams_count}</td>
   </tr>`).join('');
 }
 async function openCoachDetail(coachId, name) {
-  const res = await fetch(`/api/guilds/${currentGuildId}/coaches/${coachId}/history`);
+  const allLeagues = !currentDynLeagueId;
+  const res = await fetch(`/api/guilds/${currentGuildId}/coaches/${coachId}/history${allLeagues ? '?allLeagues=1' : ''}`);
   const data = await res.json();
   document.getElementById('coach-detail-title').textContent = `${name} — Season History`;
   const tb = document.getElementById('coach-detail-tbody');
   const rows = (data.seasons || []).map(s => `<tr>
-    <td>${s.year}${s.label ? ' — ' + esc(s.label) : ''}</td>
+    <td>${allLeagues ? `<span class="badge badge-blue">${esc(s.league_abbr)}</span> ` : ''}${s.year}${s.label ? ' — ' + esc(s.label) : ''}</td>
     <td>${esc(s.teams || '')}</td>
     <td>${s.wins}</td><td>${s.losses}</td><td>${s.ties}</td><td>${s.points_for}</td><td>${s.points_against}</td>
   </tr>`).join('');
